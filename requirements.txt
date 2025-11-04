@@ -1,0 +1,17 @@
+# WhatsApp Bot Dependencies
+# Minimal setup for webhook testing
+
+# Web framework for webhook endpoint
+flask==3.0.0
+
+# Twilio SDK for WhatsApp integration
+twilio==8.10.0
+
+# Environment variables management
+python-dotenv==1.0.0
+
+# HTTP requests (for downloading media files)
+requests==2.31.0
+
+# WSGI server for production
+gunicorn==21.2.0

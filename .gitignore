@@ -1,0 +1,224 @@
+# ==================================================
+# WHATSAPP BOT - GITIGNORE
+# ==================================================
+# Prevents committing sensitive data and temporary files
+
+# ==================================================
+# ENVIRONMENT & SECRETS
+# ==================================================
+# Never commit credentials or API keys
+.env
+.env.local
+.env.*.local
+*.env
+
+# Twilio credentials
+twilio.json
+credentials.json
+
+# ==================================================
+# CERTIFICATES & UPLOADS
+# ==================================================
+# User-uploaded files (certificates, images, PDFs)
+certificates/
+uploads/
+media/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+*.webp
+
+# But keep the directory structure
+!certificates/.gitkeep
+!uploads/.gitkeep
+
+# ==================================================
+# PYTHON
+# ==================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ==================================================
+# DOCKER
+# ==================================================
+# Docker volumes
+docker-compose.override.yml
+.dockerignore
+
+# ==================================================
+# DATABASE
+# ==================================================
+# SQLite databases (development)
+*.db
+*.sqlite
+*.sqlite3
+database.db
+
+# Database backups
+*.sql
+*.dump
+
+# ==================================================
+# LOGS
+# ==================================================
+# Log files
+*.log
+logs/
+*.log.*
+
+# Flask logs
+flask.log
+app.log
+error.log
+
+# ==================================================
+# IDE & EDITORS
+# ==================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ==================================================
+# OPERATING SYSTEM
+# ==================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ==================================================
+# TEMPORARY FILES
+# ==================================================
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# ==================================================
+# NGROK
+# ==================================================
+# ngrok configuration
+ngrok.yml
+ngrok.exe
+
+# ==================================================
+# JUPYTER NOTEBOOKS
+# ==================================================
+.ipynb_checkpoints/
+*.ipynb
+
+# ==================================================
+# DOCUMENTATION BUILD
+# ==================================================
+docs/_build/
+site/
+
+# ==================================================
+# TESTING
+# ==================================================
+.tox/
+.coverage
+htmlcov/
+
+# ==================================================
+# NOTES & TODO
+# ==================================================
+# Personal notes (keep TODO.md if you want)
+NOTES.md
+TODO.txt
+scratch.md
+
+# ==================================================
+# KEEP THESE FILES
+# ==================================================
+# Examples and templates should be committed
+!.env.example
+!.gitkeep
+!README*.md
+!LICENSE
