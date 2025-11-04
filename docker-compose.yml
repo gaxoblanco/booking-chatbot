@@ -1,0 +1,91 @@
+# ==================================================
+# WHATSAPP BOT - DOCKER COMPOSE
+# ==================================================
+# Orchestrates the WhatsApp webhook service
+# Run with: docker-compose up --build
+
+version: "3.8"
+
+services:
+  # ==================================================
+  # WHATSAPP WEBHOOK SERVICE
+  # ==================================================
+  whatsapp-bot:
+    # Build from local Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # Container name
+    container_name: whatsapp-webhook
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Port mapping: host:container
+    ports:
+      - "5000:5000"
+
+    # Environment variables from .env file
+    env_file:
+      - .env
+
+    # Volume mounts
+    volumes:
+      # Mount certificates directory (persistent storage)
+      - ./certificates:/app/certificates
+
+      # Mount source code for hot reload in development
+      # Comment out for production
+      - ./whatsapp_handler.py:/app/whatsapp_handler.py
+      - ./config.py:/app/config.py
+      - ./bot.py:/app/bot.py
+      - ./states.py:/app/states.py
+      - ./messages.py:/app/messages.py
+      - ./validators.py:/app/validators.py
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network mode
+    networks:
+      - whatsapp-network
+
+# ==================================================
+# NETWORKS
+# ==================================================
+networks:
+  whatsapp-network:
+    driver: bridge
+
+# ==================================================
+# VOLUMES
+# ==================================================
+volumes:
+  certificates:
+    driver: local
+# ==================================================
+# USAGE INSTRUCTIONS
+# ==================================================
+# 1. Copy .env.example to .env and fill in credentials
+# 2. Build and start: docker-compose up --build
+# 3. Stop: docker-compose down
+# 4. View logs: docker-compose logs -f whatsapp-bot
+# 5. Restart: docker-compose restart whatsapp-bot
+#
+# For production:
+# - Remove volume mounts for source code
+# - Use gunicorn in Dockerfile
+# - Set FLASK_ENV=production in .env
