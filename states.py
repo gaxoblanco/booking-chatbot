@@ -57,6 +57,16 @@ class ConversationState(Enum):
     PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"  # Add more days?
     PROF_WEEK_SCHEDULE_CONFIRM = "prof_week_schedule_confirm"  # Confirm all
 
+    # Option 5: Cargar información profesional
+    PROF_INFO_MENU = "prof_info_menu"  # Main info menu
+    PROF_INFO_NAME = "prof_info_name"  # Ask for name
+    PROF_INFO_EMAIL = "prof_info_email"  # Ask for email
+    PROF_INFO_ZONA = "prof_info_zona"  # Ask for zone
+    PROF_INFO_GENERO = "prof_info_genero"  # Ask for gender
+    PROF_INFO_PREPAGA = "prof_info_prepaga"  # Ask for prepaga
+    PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"  # Ask for specialty
+    PROF_INFO_QUICK = "prof_info_quick"
+
     # Client states - Multi-filter
     CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
     CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"

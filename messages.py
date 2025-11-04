@@ -78,6 +78,12 @@ Por favor, intenta nuevamente enviando:
 
 4️⃣ Ver Mi Agenda
 
+5️⃣ Cargar Información
+   (Completar tu perfil profesional)
+
+6️⃣ Carga Rápida de Información
+   (Todo en un mensaje)
+
 0️⃣ Volver al inicio
 
 Responde con el número de opción."""
@@ -204,6 +210,135 @@ Estos horarios se repetirán cada semana.
 
 💡 Escribe '0' para volver al menú"""
 
+# Option 5: Cargar información del profesional
+    PROF_INFO_MENU = """📋 Cargar Información
+
+Configura tu perfil profesional:
+
+1️⃣ Nombre
+2️⃣ Email
+3️⃣ Zona (Norte/Sur)
+4️⃣ Género
+5️⃣ Prepaga (Sí/No)
+6️⃣ Especialidad
+
+9️⃣ Guardar Información
+0️⃣ Volver al menú
+
+━━━━━━━━━━━━━━━━━━━━
+Información actual:
+{current_info}
+━━━━━━━━━━━━━━━━━━━━
+
+Responde con el número de opción."""
+
+    PROF_INFO_ASK_NAME = """👤 Nombre
+
+Ingresa tu nombre completo:
+Ejemplo: Dr. Juan Pérez
+
+💡 Escribe '0' para volver"""
+
+    PROF_INFO_ASK_EMAIL = """📧 Email
+
+Ingresa tu email de contacto:
+Ejemplo: juan.perez@email.com
+
+💡 Escribe '0' para volver"""
+
+    PROF_INFO_ASK_ZONA = """📍 Zona
+
+¿En qué zona trabajas?
+
+1️⃣ Zona Norte
+2️⃣ Zona Sur
+
+Responde con el número."""
+
+    PROF_INFO_ASK_GENERO = """👥 Género
+
+Selecciona tu género:
+
+1️⃣ Masculino
+2️⃣ Femenino
+3️⃣ Otro
+
+Responde con el número."""
+
+    PROF_INFO_ASK_PREPAGA = """💳 Prepaga
+
+¿Aceptas obras sociales/prepagas?
+
+1️⃣ Sí
+2️⃣ No
+
+Responde con el número."""
+
+    PROF_INFO_ASK_ESPECIALIDAD = """🏥 Especialidad
+
+Selecciona tu especialidad:
+
+1️⃣ Médico General
+2️⃣ Dentista
+3️⃣ Psicólogo
+4️⃣ Kinesiólogo
+5️⃣ Nutricionista
+6️⃣ Otro
+
+Responde con el número o escribe tu especialidad."""
+
+    PROF_INFO_SAVED = """✅ ¡Información guardada!
+
+Tu perfil profesional:
+{profile_summary}
+
+Esta información será visible para los clientes."""
+
+    PROF_INFO_INCOMPLETE = """⚠️ Información incompleta
+
+Debes completar al menos:
+- Nombre
+- Especialidad
+- Zona
+
+Antes de guardar."""
+
+    PROF_INFO_QUICK_FORMAT = """📋 Carga Rápida de Información
+
+Envía tu información en cualquiera de estos formatos:
+
+━━━━━━━━━━━━━━━━━━━━
+OPCIÓN 1 - Con etiquetas:
+━━━━━━━━━━━━━━━━━━━━
+
+nombre: Dr. Juan Pérez
+email: juan@email.com
+zona: norte
+genero: masculino
+prepaga: si
+especialidad: dentista
+
+━━━━━━━━━━━━━━━━━━━━
+OPCIÓN 2 - Sin etiquetas (orden importante):
+━━━━━━━━━━━━━━━━━━━━
+
+Dr. Juan Pérez
+juan@email.com
+norte
+masculino
+si
+dentista
+
+━━━━━━━━━━━━━━━━━━━━
+Valores aceptados:
+━━━━━━━━━━━━━━━━━━━━
+
+- zona: norte, sur (o n, s)
+- genero: masculino, femenino, otro (o m, f, o)
+- prepaga: si, no (o s, n)
+- especialidad: texto libre
+
+💡 Escribe '0' para volver"""
     # ==========================================
     # CLIENT MESSAGES - MULTI-FILTER
     # ==========================================
@@ -245,16 +380,26 @@ Procesando búsqueda..."""
 
 Buscar profesionales disponibles:
 
-1️⃣ Buscar por Zona
-2️⃣ Buscar por Disponibilidad
-3️⃣ Filtrar por Prepaga
-4️⃣ Filtrar por Sexo
-5️⃣ Buscar con Todos los Filtros
-6️⃣ Ver Todos los Profesionales
+1️⃣ Buscar para Hoy
+2️⃣ Buscar con Multi-Filtro
+3️⃣ Zona Norte
+4️⃣ Zona Sur
 
 0️⃣ Volver al inicio
 
 Responde con el número de opción."""
+
+    # Quick search - Today
+    CLIENT_SEARCH_TODAY_CONFIRM = """🔍 Buscar para Hoy
+
+Buscando profesionales disponibles HOY ({today_date})...
+
+¿A qué hora necesitas?
+
+Formato: HH:MM
+Ejemplo: 14:00
+
+💡 Escribe '0' para volver al menú"""
 
     # Zona filter
     CLIENT_ASK_ZONA = """📍 Filtrar por Zona
@@ -358,18 +503,20 @@ Puedes contactarlo directamente:
 
     CLIENT_MULTIFILTER_MENU = """🔍 Búsqueda Avanzada
 
-Selecciona los filtros que desees:
+Selecciona los filtros que desees (uno a la vez):
 
 1️⃣ Zona
 2️⃣ Disponibilidad (Fecha/Hora)
 3️⃣ Prepaga
-4️⃣ Sexo del Profesional
-5️⃣ Especialidad
+4️⃣ Genero del Profesional
 
-0️⃣ Buscar con filtros actuales
+9️⃣ Buscar con filtros actuales
+0️⃣ Volver al menú
 
+━━━━━━━━━━━━━━━━━━━━
 Filtros activos:
 {active_filters}
+━━━━━━━━━━━━━━━━━━━━
 
 Responde con el número de opción."""
 

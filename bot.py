@@ -159,6 +159,16 @@ class Bot:
             ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
             ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
             ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
+
+            # Professional info states
+            ConversationState.PROF_INFO_MENU: self.handle_prof_info_menu,
+            ConversationState.PROF_INFO_NAME: self.handle_prof_info_name,
+            ConversationState.PROF_INFO_EMAIL: self.handle_prof_info_email,
+            ConversationState.PROF_INFO_ZONA: self.handle_prof_info_zona,
+            ConversationState.PROF_INFO_GENERO: self.handle_prof_info_genero,
+            ConversationState.PROF_INFO_PREPAGA: self.handle_prof_info_prepaga,
+            ConversationState.PROF_INFO_ESPECIALIDAD: self.handle_prof_info_especialidad,
+            ConversationState.PROF_INFO_QUICK: self.handle_prof_info_quick,
         }
 
         return handlers.get(state, self.handle_unknown_state)
@@ -231,6 +241,21 @@ class Bot:
             # Ver agenda (TODO: implement)
             return "📅 Ver agenda - Próximamente\n\n" + self.messages.PROF_MAIN_MENU
 
+        elif message == '5':
+            # Cargar información
+            session.clear_temp()
+            # Initialize info dict if not exists
+            if not session.get_temp('prof_info'):
+                session.store_temp('prof_info', {})
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        elif message == '6':
+            # Carga rápida
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_INFO_QUICK)
+            return self.messages.PROF_INFO_QUICK_FORMAT
+
         elif message == '0':
             session.reset()
             return self.messages.WELCOME
@@ -238,6 +263,407 @@ class Bot:
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_MAIN_MENU
 
+    def format_prof_info_menu(self, session: SessionData) -> str:
+        """Format professional info menu with current data."""
+        prof_info = session.get_temp('prof_info', {})
+
+        if not prof_info:
+            current_info = "(ninguno)"
+        else:
+            info_lines = []
+            if 'name' in prof_info:
+                info_lines.append(f"👤 {prof_info['name']}")
+            if 'email' in prof_info:
+                info_lines.append(f"📧 {prof_info['email']}")
+            if 'zona' in prof_info:
+                info_lines.append(f"📍 Zona {prof_info['zona'].capitalize()}")
+            if 'genero' in prof_info:
+                genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+                info_lines.append(
+                    f"👥 {genero_map.get(prof_info['genero'], prof_info['genero'])}")
+            if 'prepaga' in prof_info:
+                info_lines.append(
+                    f"💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}")
+            if 'especialidad' in prof_info:
+                info_lines.append(f"🏥 {prof_info['especialidad']}")
+
+            current_info = "\n".join(info_lines) if info_lines else "(ninguno)"
+
+        return self.messages.PROF_INFO_MENU.format(current_info=current_info)
+
+    def handle_prof_info_menu(self, session: SessionData, message: str) -> str:
+        """Handle professional info menu."""
+
+        if message == '1':
+            # Nombre
+            session.transition_to(ConversationState.PROF_INFO_NAME)
+            return self.messages.PROF_INFO_ASK_NAME
+
+        elif message == '2':
+            # Email
+            session.transition_to(ConversationState.PROF_INFO_EMAIL)
+            return self.messages.PROF_INFO_ASK_EMAIL
+
+        elif message == '3':
+            # Zona
+            session.transition_to(ConversationState.PROF_INFO_ZONA)
+            return self.messages.PROF_INFO_ASK_ZONA
+
+        elif message == '4':
+            # Género
+            session.transition_to(ConversationState.PROF_INFO_GENERO)
+            return self.messages.PROF_INFO_ASK_GENERO
+
+        elif message == '5':
+            # Prepaga
+            session.transition_to(ConversationState.PROF_INFO_PREPAGA)
+            return self.messages.PROF_INFO_ASK_PREPAGA
+
+        elif message == '6':
+            # Especialidad
+            session.transition_to(ConversationState.PROF_INFO_ESPECIALIDAD)
+            return self.messages.PROF_INFO_ASK_ESPECIALIDAD
+
+        elif message == '9':
+            # Guardar información
+            prof_info = session.get_temp('prof_info', {})
+
+            # Validate required fields
+            required = ['name', 'especialidad', 'zona']
+            missing = [f for f in required if f not in prof_info]
+
+            if missing:
+                return self.messages.PROF_INFO_INCOMPLETE + "\n\n" + self.format_prof_info_menu(session)
+
+            # TODO: Save to database
+            print(
+                f"[DB] TODO: Save professional info - {session.phone_number}, {prof_info}")
+
+            # Format summary
+            summary_lines = []
+            summary_lines.append(f"👤 Nombre: {prof_info.get('name', 'N/A')}")
+            summary_lines.append(
+                f"🏥 Especialidad: {prof_info.get('especialidad', 'N/A')}")
+            summary_lines.append(
+                f"📍 Zona: {prof_info.get('zona', 'N/A').capitalize()}")
+            if 'email' in prof_info:
+                summary_lines.append(f"📧 Email: {prof_info['email']}")
+            if 'genero' in prof_info:
+                genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+                summary_lines.append(
+                    f"👥 Género: {genero_map.get(prof_info['genero'], prof_info['genero'])}")
+            if 'prepaga' in prof_info:
+                summary_lines.append(
+                    f"💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}")
+
+            profile_summary = "\n".join(summary_lines)
+
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+
+            return self.messages.PROF_INFO_SAVED.format(
+                profile_summary=profile_summary
+            ) + "\n\n" + self.messages.PROF_MAIN_MENU
+
+        elif message == '0':
+            # Volver al menú
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return self.messages.PROF_MAIN_MENU
+
+        else:
+            return self.messages.INVALID_OPTION + "\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_info_name(self, session: SessionData, message: str) -> str:
+        """Handle name input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        # Store name
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['name'] = message
+        session.store_temp('prof_info', prof_info)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Nombre guardado: {message}\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_info_email(self, session: SessionData, message: str) -> str:
+        """Handle email input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        # Validate email format
+        from validators import validate_email
+        if not validate_email(message):
+            return "❌ Email inválido. Intenta nuevamente:\nEjemplo: juan@email.com"
+
+        # Store email
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['email'] = message
+        session.store_temp('prof_info', prof_info)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Email guardado: {message}\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_info_zona(self, session: SessionData, message: str) -> str:
+        """Handle zona input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        if message == '1':
+            zona = 'norte'
+        elif message == '2':
+            zona = 'sur'
+        else:
+            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_ZONA
+
+        # Store zona
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['zona'] = zona
+        session.store_temp('prof_info', prof_info)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Zona guardada: {zona.capitalize()}\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_info_genero(self, session: SessionData, message: str) -> str:
+        """Handle genero input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        if message == '1':
+            genero = 'm'
+        elif message == '2':
+            genero = 'f'
+        elif message == '3':
+            genero = 'o'
+        else:
+            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_GENERO
+
+        # Store genero
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['genero'] = genero
+        session.store_temp('prof_info', prof_info)
+
+        genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Género guardado: {genero_map[genero]}\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_info_prepaga(self, session: SessionData, message: str) -> str:
+        """Handle prepaga input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        if message == '1':
+            prepaga = True
+        elif message == '2':
+            prepaga = False
+        else:
+            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_PREPAGA
+
+        # Store prepaga
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['prepaga'] = prepaga
+        session.store_temp('prof_info', prof_info)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Prepaga: {'Sí' if prepaga else 'No'}\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_info_especialidad(self, session: SessionData, message: str) -> str:
+        """Handle especialidad input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        # Map number to specialty or use custom text
+        especialidades = {
+            '1': 'Médico General',
+            '2': 'Dentista',
+            '3': 'Psicólogo',
+            '4': 'Kinesiólogo',
+            '5': 'Nutricionista',
+            '6': 'Otro'
+        }
+
+        if message in especialidades:
+            if message == '6':
+                # Ask for custom specialty
+                return "🏥 Escribe tu especialidad:"
+            especialidad = especialidades[message]
+        else:
+            # Custom specialty text
+            especialidad = message
+
+        # Store especialidad
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['especialidad'] = especialidad
+        session.store_temp('prof_info', prof_info)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Especialidad guardada: {especialidad}\n\n" + self.format_prof_info_menu(session)
+
+    def parse_prof_info_quick(self, message: str) -> dict:
+        """
+        Parse professional info from message.
+        Supports two formats:
+
+        Format 1 (with labels):
+            nombre: Juan Pérez
+            email: juan@email.com
+            zona: norte
+            genero: masculino
+            prepaga: si
+            especialidad: dentista
+
+        Format 2 (without labels, order matters):
+            Juan Pérez
+            juan@email.com
+            norte
+            masculino
+            si
+            dentista
+
+        Returns:
+            dict with parsed info or None if invalid
+        """
+        import re
+
+        lines = [line.strip()
+                 for line in message.strip().split('\n') if line.strip()]
+
+        # Check if using labeled format (has ':')
+        has_labels = any(':' in line for line in lines)
+
+        result = {}
+        errors = []
+
+        if has_labels:
+            # Parse labeled format
+            for line in lines:
+                if ':' not in line:
+                    continue
+
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+
+                # Map variations to standard keys
+                if key in ['nombre', 'name', 'nom']:
+                    result['name'] = value
+                elif key in ['email', 'correo', 'mail']:
+                    result['email'] = value
+                elif key in ['zona', 'zone', 'area']:
+                    result['zona'] = value.lower()
+                elif key in ['genero', 'género', 'sexo', 'gender']:
+                    result['genero'] = value.lower()
+                elif key in ['prepaga', 'obra social', 'os']:
+                    result['prepaga'] = value.lower()
+                elif key in ['especialidad', 'specialty', 'profesion', 'profesión']:
+                    result['especialidad'] = value
+        else:
+            # Parse order-based format
+            if len(lines) != 6:
+                return None, [f"❌ Esperaba 6 líneas, recibí {len(lines)}"]
+
+            result = {
+                'name': lines[0],
+                'email': lines[1],
+                'zona': lines[2].lower(),
+                'genero': lines[3].lower(),
+                'prepaga': lines[4].lower(),
+                'especialidad': lines[5]
+            }
+
+        # Validate required fields
+        required = ['name', 'email', 'zona',
+                    'genero', 'prepaga', 'especialidad']
+        missing = [f for f in required if f not in result or not result[f]]
+
+        if missing:
+            errors.append(f"❌ Faltan campos: {', '.join(missing)}")
+            return None, errors
+
+        # Validate and normalize each field
+        from validators import validate_email
+
+        # Email
+        if not validate_email(result['email']):
+            errors.append(f"❌ Email inválido: {result['email']}")
+
+        # Zona
+        zona_map = {
+            'norte': 'norte', 'n': 'norte', 'north': 'norte',
+            'sur': 'sur', 's': 'sur', 'south': 'sur'
+        }
+        if result['zona'] not in zona_map:
+            errors.append(
+                f"❌ Zona inválida: {result['zona']} (usa: norte o sur)")
+        else:
+            result['zona'] = zona_map[result['zona']]
+
+        # Género
+        genero_map = {
+            'm': 'm', 'masculino': 'm', 'male': 'm', 'hombre': 'm',
+            'f': 'f', 'femenino': 'f', 'female': 'f', 'mujer': 'f',
+            'o': 'o', 'otro': 'o', 'other': 'o', 'nobinario': 'o', 'no binario': 'o'
+        }
+        if result['genero'] not in genero_map:
+            errors.append(
+                f"❌ Género inválido: {result['genero']} (usa: masculino, femenino, otro)")
+        else:
+            result['genero'] = genero_map[result['genero']]
+
+        # Prepaga
+        prepaga_map = {
+            'si': True, 'sí': True, 's': True, 'yes': True, 'y': True,
+            'no': False, 'n': False
+        }
+        if result['prepaga'] not in prepaga_map:
+            errors.append(
+                f"❌ Prepaga inválida: {result['prepaga']} (usa: si o no)")
+        else:
+            result['prepaga'] = prepaga_map[result['prepaga']]
+
+        if errors:
+            return None, errors
+
+        return result, []
+
+    def handle_prof_info_quick(self, session: SessionData, message: str) -> str:
+        """Handle quick info input (all in one message)."""
+
+        if message == '0':
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return self.messages.PROF_MAIN_MENU
+
+        # Parse the message
+        prof_info, errors = self.parse_prof_info_quick(message)
+
+        if errors:
+            error_msg = "\n".join(errors)
+            return f"{error_msg}\n\n{self.messages.PROF_INFO_QUICK_FORMAT}"
+
+        # TODO: Save to database
+        print(
+            f"[DB] TODO: Save professional info (quick) - {session.phone_number}, {prof_info}")
+
+        # Format summary
+        genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+        summary = f"""👤 Nombre: {prof_info['name']}
+    📧 Email: {prof_info['email']}
+    📍 Zona: {prof_info['zona'].capitalize()}
+    👥 Género: {genero_map[prof_info['genero']]}
+    💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}
+    🏥 Especialidad: {prof_info['especialidad']}"""
+
+        session.clear_temp()
+        session.transition_to(ConversationState.PROF_MAIN_MENU)
+
+        return f"✅ ¡Información guardada!\n\n{summary}\n\n" + self.messages.PROF_MAIN_MENU
     # ==========================================
     # PROFESSIONAL - LIBERAR HORARIO (FREE SLOT)
     # ==========================================
@@ -511,40 +937,47 @@ class Bot:
     def handle_client_main_menu(self, session: SessionData, message: str) -> str:
         """Handle client main menu."""
         if message == '1':
-            # Buscar por zona
+            # Buscar para hoy
+            from datetime import date
+            today = date.today()
             session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_FILTER_ZONA)
-            return self.messages.CLIENT_ASK_ZONA
+            session.store_temp('fecha', today)
+            session.store_temp('fecha_str', today.strftime("%d/%m/%Y"))
+            session.transition_to(ConversationState.CLIENT_FILTER_HORA)
+
+            # Format message with today's date
+            return self.messages.CLIENT_SEARCH_TODAY_CONFIRM.format(
+                today_date=today.strftime("%d/%m/%Y")
+            )
 
         elif message == '2':
-            # Buscar por disponibilidad
+            # Búsqueda con multi-filtro
             session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_FILTER_FECHA)
-            return self.messages.CLIENT_ASK_FECHA
-
-        elif message == '3':
-            # Filtrar por prepaga
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_FILTER_PREPAGA)
-            return self.messages.CLIENT_ASK_PREPAGA
-
-        elif message == '4':
-            # Filtrar por sexo
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_FILTER_SEXO)
-            return self.messages.CLIENT_ASK_SEXO
-
-        elif message == '5':
-            # Búsqueda avanzada (múltiples filtros)
-            session.clear_temp()
-            session.store_temp('filters', {})  # Inicializar filtros vacíos
+            session.store_temp('filters', {})
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return self.format_multifilter_menu(session)
 
-        elif message == '6':
-            # Ver todos
-            # TODO: Query database for all professionals
-            return "👥 Ver todos - Próximamente\n\n" + self.messages.CLIENT_MAIN_MENU
+        elif message == '3':
+            # Zona Norte directo
+            session.clear_temp()
+            session.store_temp('zona', 'norte')
+
+            # TODO: Search database
+            print(f"[DB] TODO: Search Zona Norte")
+
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            return "🔍 Buscando profesionales en Zona Norte...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
+
+        elif message == '4':
+            # Zona Sur directo
+            session.clear_temp()
+            session.store_temp('zona', 'sur')
+
+            # TODO: Search database
+            print(f"[DB] TODO: Search Zona Sur")
+
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            return "🔍 Buscando profesionales en Zona Sur...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
 
         elif message == '0':
             session.reset()
@@ -808,7 +1241,7 @@ class Bot:
 
     def handle_client_multifilter_menu(self, session: SessionData, message: str) -> str:
         """Handle multi-filter menu selection."""
-        if message == '0':
+        if message == '9':
             # Ejecutar búsqueda con filtros actuales
             filters = session.get_temp('filters', {})
 
@@ -839,7 +1272,11 @@ class Bot:
             return self.messages.CLIENT_MULTIFILTER_SEARCH_SUMMARY.format(
                 filters_list="\n".join(filters_list)
             ) + "\n\n[Próximamente: resultados de búsqueda]"
-
+        elif message == '0':
+            # Volver al menú cliente (búsqueda inicial)
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_MAIN_MENU
         elif message == '1':
             # Zona
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_ZONA)
