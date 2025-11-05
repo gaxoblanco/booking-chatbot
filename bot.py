@@ -159,6 +159,7 @@ class Bot:
             ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
             ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
             ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
+            ConversationState.CLIENT_SEARCH_QUICK: self.handle_client_search_quick,
 
             # Professional info states
             ConversationState.PROF_INFO_MENU: self.handle_prof_info_menu,
@@ -945,35 +946,38 @@ class Bot:
             session.store_temp('fecha_str', today.strftime("%d/%m/%Y"))
             session.transition_to(ConversationState.CLIENT_FILTER_HORA)
 
-            # Format message with today's date
             return self.messages.CLIENT_SEARCH_TODAY_CONFIRM.format(
                 today_date=today.strftime("%d/%m/%Y")
             )
 
         elif message == '2':
-            # Búsqueda con multi-filtro
+            # Búsqueda avanzada (paso a paso)
             session.clear_temp()
             session.store_temp('filters', {})
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return self.format_multifilter_menu(session)
 
         elif message == '3':
+            # Búsqueda rápida (todo en 1 mensaje)
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
+            return self.messages.CLIENT_SEARCH_QUICK_FORMAT
+
+        elif message == '4':
             # Zona Norte directo
             session.clear_temp()
             session.store_temp('zona', 'norte')
 
-            # TODO: Search database
             print(f"[DB] TODO: Search Zona Norte")
 
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
             return "🔍 Buscando profesionales en Zona Norte...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
 
-        elif message == '4':
+        elif message == '5':
             # Zona Sur directo
             session.clear_temp()
             session.store_temp('zona', 'sur')
 
-            # TODO: Search database
             print(f"[DB] TODO: Search Zona Sur")
 
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
@@ -1310,6 +1314,217 @@ class Bot:
         session.transition_to(ConversationState.CLIENT_MAIN_MENU)
         return "📋 Resultados - En desarrollo\n\n" + self.messages.CLIENT_MAIN_MENU
 
+    def parse_client_search_quick(self, message: str) -> dict:
+        """
+        Parse client search filters from message.
+        Supports two formats:
+
+        Format 1 (with labels):
+            zona: norte
+            fecha: 15/11/2025
+            hora: 14:00
+            prepaga: si
+            genero: masculino
+
+        Format 2 (without labels, order matters):
+            norte
+            15/11/2025
+            14:00
+            si
+            masculino
+
+        All fields are optional.
+
+        Returns:
+            dict with parsed filters and list of errors
+        """
+        import re
+        from validators import validate_email, parse_date, validate_time
+
+        lines = [line.strip()
+                 for line in message.strip().split('\n') if line.strip()]
+
+        if not lines:
+            return None, ["❌ Debes enviar al menos un filtro"]
+
+        # Check if using labeled format (has ':')
+        has_labels = any(':' in line for line in lines)
+
+        result = {}
+        errors = []
+
+        if has_labels:
+            # Parse labeled format - fields can be in any order
+            for line in lines:
+                if ':' not in line:
+                    continue
+
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+
+                if not value:
+                    continue
+
+                # Map variations to standard keys
+                if key in ['zona', 'zone', 'area']:
+                    result['zona'] = value.lower()
+                elif key in ['fecha', 'date', 'dia', 'día']:
+                    result['fecha_str'] = value
+                elif key in ['hora', 'time', 'horario']:
+                    result['hora'] = value
+                elif key in ['prepaga', 'obra social', 'os']:
+                    result['prepaga'] = value.lower()
+                elif key in ['genero', 'género', 'sexo', 'gender']:
+                    result['genero'] = value.lower()
+        else:
+            # Parse order-based format
+            # Order: zona, fecha, hora, prepaga, genero
+            # But all are optional, so we need to be smart
+
+            # Try to detect what each line is
+            for line in lines:
+                line_lower = line.lower()
+
+                # Detect zona (norte/sur)
+                if line_lower in ['norte', 'sur', 'n', 's'] and 'zona' not in result:
+                    result['zona'] = line_lower
+
+                # Detect fecha (DD/MM/YYYY)
+                elif '/' in line and 'fecha_str' not in result:
+                    result['fecha_str'] = line
+
+                # Detect hora (HH:MM)
+                elif ':' in line and len(line) == 5 and 'hora' not in result:
+                    result['hora'] = line
+
+                # Detect prepaga (si/no)
+                elif line_lower in ['si', 'sí', 's', 'no', 'n'] and 'prepaga' not in result:
+                    result['prepaga'] = line_lower
+
+                # Detect genero
+                elif line_lower in ['masculino', 'femenino', 'otro', 'm', 'f', 'o'] and 'genero' not in result:
+                    result['genero'] = line_lower
+
+        # Check if at least one filter was provided
+        if not result:
+            return None, ["❌ No se detectaron filtros válidos"]
+
+        # Validate and normalize each field
+        validated = {}
+
+        # Zona
+        if 'zona' in result:
+            zona_map = {
+                'norte': 'norte', 'n': 'norte', 'north': 'norte',
+                'sur': 'sur', 's': 'sur', 'south': 'sur'
+            }
+            if result['zona'] not in zona_map:
+                errors.append(
+                    f"❌ Zona inválida: {result['zona']} (usa: norte o sur)")
+            else:
+                validated['zona'] = zona_map[result['zona']]
+
+        # Fecha
+        if 'fecha_str' in result:
+            fecha_obj = parse_date(result['fecha_str'])
+            if not fecha_obj:
+                errors.append(
+                    f"❌ Fecha inválida: {result['fecha_str']} (usa: DD/MM/YYYY)")
+            else:
+                validated['fecha'] = fecha_obj
+                validated['fecha_str'] = result['fecha_str']
+
+        # Hora
+        if 'hora' in result:
+            if not validate_time(result['hora']):
+                errors.append(
+                    f"❌ Hora inválida: {result['hora']} (usa: HH:MM)")
+            else:
+                validated['hora'] = result['hora']
+
+        # Prepaga
+        if 'prepaga' in result:
+            prepaga_map = {
+                'si': True, 'sí': True, 's': True, 'yes': True, 'y': True,
+                'no': False, 'n': False
+            }
+            if result['prepaga'] not in prepaga_map:
+                errors.append(
+                    f"❌ Prepaga inválida: {result['prepaga']} (usa: si o no)")
+            else:
+                validated['prepaga'] = prepaga_map[result['prepaga']]
+
+        # Género
+        if 'genero' in result:
+            genero_map = {
+                'm': 'm', 'masculino': 'm', 'male': 'm', 'hombre': 'm',
+                'f': 'f', 'femenino': 'f', 'female': 'f', 'mujer': 'f',
+                'o': 'o', 'otro': 'o', 'other': 'o'
+            }
+            if result['genero'] not in genero_map:
+                errors.append(
+                    f"❌ Género inválido: {result['genero']} (usa: masculino, femenino, otro)")
+            else:
+                validated['genero'] = genero_map[result['genero']]
+
+        if errors:
+            return None, errors
+
+        if not validated:
+            return None, ["❌ No se pudieron validar los filtros"]
+
+        return validated, []
+
+    def handle_client_search_quick(self, session: SessionData, message: str) -> str:
+        """Handle quick search input (all filters in one message)."""
+
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_MAIN_MENU
+
+        # Parse the message
+        filters, errors = self.parse_client_search_quick(message)
+
+        if errors:
+            error_msg = "\n".join(errors)
+            return f"{error_msg}\n\n{self.messages.CLIENT_SEARCH_QUICK_FORMAT}"
+
+        # Store filters
+        session.store_temp('filters', filters)
+
+        # TODO: Search database with filters
+        print(f"[DB] TODO: Quick search with filters - {filters}")
+
+        # Format filters for display
+        filter_lines = []
+        if 'zona' in filters:
+            filter_lines.append(f"📍 Zona: {filters['zona'].capitalize()}")
+        if 'fecha_str' in filters:
+            filter_lines.append(f"📅 Fecha: {filters['fecha_str']}")
+        if 'hora' in filters:
+            filter_lines.append(f"⏰ Hora: {filters['hora']}")
+        if 'prepaga' in filters:
+            filter_lines.append(
+                f"💳 Prepaga: {'Sí' if filters['prepaga'] else 'No'}")
+        if 'genero' in filters:
+            genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+            filter_lines.append(f"👥 Género: {genero_map[filters['genero']]}")
+
+        filters_text = "\n".join(filter_lines)
+
+        session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+
+        return f"""🔍 Búsqueda Rápida
+
+Filtros aplicados:
+{filters_text}
+
+📋 Buscando profesionales...
+
+Próximamente mostraré resultados.
+
+Escribe 'menu' para volver."""
     # ==========================================
     # UTILITY HANDLERS
     # ==========================================

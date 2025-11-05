@@ -75,6 +75,8 @@ class ConversationState(Enum):
     CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
     CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
     CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
+    # Quick search (all filters at once)
+    CLIENT_SEARCH_QUICK = "client_search_quick"
 
     # ==========================================
     # CLIENT STATES

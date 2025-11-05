@@ -381,9 +381,10 @@ Procesando búsqueda..."""
 Buscar profesionales disponibles:
 
 1️⃣ Buscar para Hoy
-2️⃣ Buscar con Multi-Filtro
-3️⃣ Zona Norte
-4️⃣ Zona Sur
+2️⃣ Búsqueda Avanzada (Paso a Paso)
+3️⃣ Búsqueda Rápida (Todo en 1 mensaje)
+4️⃣ Zona Norte
+5️⃣ Zona Sur
 
 0️⃣ Volver al inicio
 
@@ -519,6 +520,62 @@ Filtros activos:
 ━━━━━━━━━━━━━━━━━━━━
 
 Responde con el número de opción."""
+
+    CLIENT_SEARCH_QUICK_FORMAT = """🔍 Búsqueda Rápida
+
+Envía tus filtros en cualquiera de estos formatos:
+
+━━━━━━━━━━━━━━━━━━━━
+OPCIÓN 1 - Con etiquetas:
+━━━━━━━━━━━━━━━━━━━━
+
+zona: norte
+fecha: 15/11/2025
+hora: 14:00
+prepaga: si
+genero: masculino
+
+━━━━━━━━━━━━━━━━━━━━
+OPCIÓN 2 - Sin etiquetas (orden importante):
+━━━━━━━━━━━━━━━━━━━━
+
+norte
+15/11/2025
+14:00
+si
+masculino
+
+━━━━━━━━━━━━━━━━━━━━
+Valores aceptados:
+━━━━━━━━━━━━━━━━━━━━
+
+- zona: norte, sur (o n, s) - OPCIONAL
+- fecha: DD/MM/YYYY - OPCIONAL
+- hora: HH:MM - OPCIONAL
+- prepaga: si, no (o s, n) - OPCIONAL
+- genero: masculino, femenino, otro (o m, f, o) - OPCIONAL
+
+💡 Todos los campos son opcionales
+💡 Puedes enviar solo los filtros que necesites
+💡 Escribe '0' para volver
+
+━━━━━━━━━━━━━━━━━━━━
+Ejemplos:
+━━━━━━━━━━━━━━━━━━━━
+
+Solo zona:
+zona: norte
+
+Zona y fecha:
+zona: norte
+fecha: 15/11/2025
+
+Todo:
+norte
+15/11/2025
+14:00
+si
+masculino"""
 
     # ==========================================
     # COMMON MESSAGES
