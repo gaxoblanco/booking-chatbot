@@ -19,6 +19,11 @@ from validators import (
     parse_date,
     parse_time_range
 )
+from client_service import client_service
+from professional_service import professional_service
+from analytics_service import analytics_service
+from client_service import client_service
+from analytics_service import analytics_service
 
 
 class Bot:
@@ -136,9 +141,6 @@ class Bot:
             ConversationState.PROF_FREE_SLOT_DATE: self.handle_prof_free_slot_date,
             ConversationState.PROF_FREE_SLOT_TIME: self.handle_prof_free_slot_time,
             ConversationState.PROF_FREE_SLOT_CONFIRM: self.handle_prof_free_slot_confirm,
-            ConversationState.PROF_BUSY_SLOT_DATE: self.handle_prof_busy_slot_date,
-            ConversationState.PROF_BUSY_SLOT_TIME: self.handle_prof_busy_slot_time,
-            ConversationState.PROF_BUSY_SLOT_CONFIRM: self.handle_prof_busy_slot_confirm,
             ConversationState.PROF_WEEK_SCHEDULE_DAY: self.handle_prof_week_day,
             ConversationState.PROF_WEEK_SCHEDULE_TIME: self.handle_prof_week_time,
             ConversationState.PROF_WEEK_SCHEDULE_MORE: self.handle_prof_week_more,
@@ -151,6 +153,7 @@ class Bot:
             ConversationState.CLIENT_FILTER_PREPAGA: self.handle_client_filter_prepaga,
             ConversationState.CLIENT_FILTER_SEXO: self.handle_client_filter_sexo,
             ConversationState.CLIENT_SHOW_RESULTS: self.handle_client_show_results,
+            ConversationState.CLIENT_VIEW_DETAIL: self.handle_client_view_detail,
 
             # Client multi-filter states
             ConversationState.CLIENT_MULTIFILTER_MENU: self.handle_client_multifilter_menu,
@@ -187,7 +190,20 @@ class Bot:
         """Handle role selection - professional or client."""
         if message == '1':
             session.set_role(UserRole.PROFESSIONAL)
-            return self.messages.PROF_NEED_CERTIFICATE
+            # Check if professional already has certificate
+
+            if professional_service.has_certificate(session.phone_number):
+                # Already has certificate - go directly to main menu
+                print(
+                    f"[BOT] Professional {session.phone_number} already has certificate, skipping upload")
+                session.transition_to(ConversationState.PROF_MAIN_MENU)
+                return self.messages.PROF_MAIN_MENU
+            else:
+                # No certificate - ask for upload
+                print(
+                    f"[BOT] Professional {session.phone_number} needs to upload certificate")
+                session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
+                return self.messages.PROF_NEED_CERTIFICATE
         elif message == '2':
             session.set_role(UserRole.CLIENT)
             return self.messages.CLIENT_MAIN_MENU
@@ -226,23 +242,18 @@ class Bot:
             return self.messages.PROF_FREE_SLOT_ASK_DATE
 
         elif message == '2':
-            # Cargar horario ocupado
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_BUSY_SLOT_DATE)
-            return self.messages.PROF_BUSY_SLOT_ASK_DATE
-
-        elif message == '3':
             # Cargar semana completa
             session.clear_temp()
             session.store_temp('week_schedule', {})
             session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_DAY)
             return self.messages.PROF_WEEK_ASK_DAY
 
-        elif message == '4':
-            # Ver agenda (TODO: implement)
-            return "📅 Ver agenda - Próximamente\n\n" + self.messages.PROF_MAIN_MENU
+        elif message == '3':
+            schedule_info = professional_service.get_complete_schedule(
+                session.phone_number)
+            return schedule_info['formatted'] + "\n\n" + self.messages.PROF_MAIN_MENU
 
-        elif message == '5':
+        elif message == '4':
             # Cargar información
             session.clear_temp()
             # Initialize info dict if not exists
@@ -251,7 +262,7 @@ class Bot:
             session.transition_to(ConversationState.PROF_INFO_MENU)
             return self.format_prof_info_menu(session)
 
-        elif message == '6':
+        elif message == '5':
             # Carga rápida
             session.clear_temp()
             session.transition_to(ConversationState.PROF_INFO_QUICK)
@@ -329,6 +340,10 @@ class Bot:
             # Guardar información
             prof_info = session.get_temp('prof_info', {})
 
+            # Type check
+            if not isinstance(prof_info, dict):
+                prof_info = {}
+
             # Validate required fields
             required = ['name', 'especialidad', 'zona']
             missing = [f for f in required if f not in prof_info]
@@ -336,9 +351,15 @@ class Bot:
             if missing:
                 return self.messages.PROF_INFO_INCOMPLETE + "\n\n" + self.format_prof_info_menu(session)
 
-            # TODO: Save to database
-            print(
-                f"[DB] TODO: Save professional info - {session.phone_number}, {prof_info}")
+            # Save to database using professional_service
+            professional_service.register_or_update_professional(
+                phone=session.phone_number,
+                name=prof_info.get('name'),
+                email=prof_info.get('email'),
+                zone=prof_info.get('zona'),
+                gender=prof_info.get('genero'),
+                accept_prepaga=prof_info.get('prepaga', False)
+            )
 
             # Format summary
             summary_lines = []
@@ -347,6 +368,7 @@ class Bot:
                 f"🏥 Especialidad: {prof_info.get('especialidad', 'N/A')}")
             summary_lines.append(
                 f"📍 Zona: {prof_info.get('zona', 'N/A').capitalize()}")
+
             if 'email' in prof_info:
                 summary_lines.append(f"📧 Email: {prof_info['email']}")
             if 'genero' in prof_info:
@@ -648,9 +670,15 @@ class Bot:
             error_msg = "\n".join(errors)
             return f"{error_msg}\n\n{self.messages.PROF_INFO_QUICK_FORMAT}"
 
-        # TODO: Save to database
-        print(
-            f"[DB] TODO: Save professional info (quick) - {session.phone_number}, {prof_info}")
+        # Save to database
+        professional_service.register_or_update_professional(
+            phone=session.phone_number,
+            name=prof_info.get('name'),
+            email=prof_info.get('email'),
+            zone=prof_info.get('zona'),
+            gender=prof_info.get('genero'),
+            accept_prepaga=prof_info.get('prepaga', False)
+        )
 
         # Format summary
         genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
@@ -682,10 +710,16 @@ class Bot:
         if not date_obj:
             return self.messages.INVALID_DATE + "\n\n" + self.messages.PROF_FREE_SLOT_ASK_DATE
 
-        # Store date and ask for time
+        # Store date in YYYY-MM-DD format for database
+        date_str_db = date_obj.strftime("%Y-%m-%d")
+
         session.store_temp('date', date_obj)
-        session.store_temp('date_str', message)
+        # Guardar en formato correcto
+        session.store_temp('date_str', date_str_db)
+        # Guardar formato original para mostrar
+        session.store_temp('date_display', message)
         session.transition_to(ConversationState.PROF_FREE_SLOT_TIME)
+
         return self.messages.PROF_FREE_SLOT_ASK_TIME
 
     def handle_prof_free_slot_time(self, session: SessionData, message: str) -> str:
@@ -717,15 +751,18 @@ class Bot:
     def handle_prof_free_slot_confirm(self, session: SessionData, message: str) -> str:
         """Handle confirmation for freeing a slot."""
         if message == '1':
-            # Confirmed - save to database (TODO: implement database save)
+            # Confirmed - save to database
             date_str = session.get_temp('date_str')
             time_start = session.get_temp('time_start')
             time_end = session.get_temp('time_end')
 
-            # TODO: Save to database
-            # db.add_free_slot(session.phone_number, date, time_start, time_end)
-            print(
-                f"[DB] TODO: Save free slot - {session.phone_number}, {date_str}, {time_start}-{time_end}")
+            # Use date_str directly (it's already in correct format from user input)
+            professional_service.mark_slot_as_free(
+                session.phone_number,
+                date_str,
+                time_start,
+                time_end
+            )
 
             # Clear temp data and return to menu
             session.clear_temp()
@@ -745,87 +782,87 @@ class Bot:
 
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_FREE_SLOT_CONFIRM.format(
-                date=session.get_temp('date_str'),
-                time_start=session.get_temp('time_start'),
-                time_end=session.get_temp('time_end')
+                date=session.get_temp('date_str', ''),
+                time_start=session.get_temp('time_start', ''),
+                time_end=session.get_temp('time_end', '')
             )
-
     # ==========================================
     # PROFESSIONAL - CARGAR HORARIO OCUPADO (BUSY SLOT)
     # ==========================================
 
-    def handle_prof_busy_slot_date(self, session: SessionData, message: str) -> str:
-        """Handle date input for blocking a slot."""
-        # Check for back command
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+    def handle_prof_manage_free_slots(self, session: SessionData, message: str) -> str:
+        """Show menu to manage free slots."""
+        from professional_service import professional_service
 
-        date_obj = parse_date(message)
-
-        if not date_obj:
-            return self.messages.INVALID_DATE + "\n\n" + self.messages.PROF_BUSY_SLOT_ASK_DATE
-
-        session.store_temp('date', date_obj)
-        session.store_temp('date_str', message)
-        session.transition_to(ConversationState.PROF_BUSY_SLOT_TIME)
-        return self.messages.PROF_BUSY_SLOT_ASK_TIME
-
-    def handle_prof_busy_slot_time(self, session: SessionData, message: str) -> str:
-        """Handle time input for blocking a slot."""
-        # Check for back command
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
-
-        time_range = parse_time_range(message)
-
-        if not time_range:
-            return self.messages.INVALID_TIME + "\n\n" + self.messages.PROF_BUSY_SLOT_ASK_TIME
-
-        start_time, end_time = time_range
-        session.store_temp('time_start', start_time)
-        session.store_temp('time_end', end_time)
-        session.transition_to(ConversationState.PROF_BUSY_SLOT_CONFIRM)
-
-        return self.messages.PROF_BUSY_SLOT_CONFIRM.format(
-            date=session.get_temp('date_str'),
-            time_start=start_time,
-            time_end=end_time
-        )
-
-    def handle_prof_busy_slot_confirm(self, session: SessionData, message: str) -> str:
-        """Handle confirmation for blocking a slot."""
         if message == '1':
-            # Confirmed - save to database
-            date_str = session.get_temp('date_str')
-            time_start = session.get_temp('time_start')
-            time_end = session.get_temp('time_end')
+            # Add new free slot
+            session.transition_to(ConversationState.PROF_FREE_SLOT_DATE)
+            return self.messages.PROF_FREE_SLOT_ASK_DATE
 
-            # TODO: Save to database
-            # db.add_busy_slot(session.phone_number, date, time_start, time_end)
-            print(
-                f"[DB] TODO: Save busy slot - {session.phone_number}, {date_str}, {time_start}-{time_end}")
+        elif message == '2':
+            # Delete free slot
+            free_slots = professional_service.get_free_slots(
+                session.phone_number, future_only=True)
 
-            session.clear_temp()
+            if not free_slots:
+                return "❌ No tienes horarios libres activos.\n\n" + self.messages.PROF_MAIN_MENU
+
+            # Show slots with numbers
+            msg = "📅 ELIMINAR HORARIO LIBRE\n\n"
+            msg += "Horarios libres activos:\n\n"
+            for idx, slot in enumerate(free_slots, 1):
+                msg += f"{idx}️⃣ {slot['date']} {slot['start_time']}-{slot['end_time']}\n"
+            msg += "\n0️⃣ Cancelar\n\n"
+            msg += "Selecciona el número del horario a eliminar:"
+
+            session.store_temp('free_slots_list', free_slots)
+            session.transition_to(ConversationState.PROF_DELETE_FREE_SLOT)
+            return msg
+
+        elif message == '0':
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-
-            return self.messages.PROF_BUSY_SLOT_SUCCESS.format(
-                date=date_str,
-                time_start=time_start,
-                time_end=time_end
-            ) + "\n\n" + self.messages.PROF_MAIN_MENU
-
-        elif message == '2' or message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.OPERATION_CANCELLED + "\n\n" + self.messages.PROF_MAIN_MENU
+            return self.messages.PROF_MAIN_MENU
 
         else:
             return self.messages.INVALID_OPTION
 
+    def handle_prof_delete_free_slot(self, session: SessionData, message: str) -> str:
+        """Handle deleting a free slot."""
+
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return self.messages.PROF_MAIN_MENU
+
+        try:
+            selection = int(message)
+            free_slots = session.get_temp('free_slots_list', [])
+
+            if 1 <= selection <= len(free_slots):
+                slot = free_slots[selection - 1]
+
+                from professional_service import professional_service
+                success = professional_service.remove_free_slot(
+                    session.phone_number,
+                    slot['date'],
+                    slot['start_time'],
+                    slot['end_time']
+                )
+
+                if success:
+                    msg = f"✅ Horario eliminado:\n📅 {slot['date']} {slot['start_time']}-{slot['end_time']}\n\n"
+                    msg += "Este horario ya no está disponible para clientes."
+                else:
+                    msg = "❌ Error al eliminar horario."
+
+                session.clear_temp()
+                session.transition_to(ConversationState.PROF_MAIN_MENU)
+                return msg + "\n\n" + self.messages.PROF_MAIN_MENU
+            else:
+                return f"❌ Opción inválida. Selecciona un número entre 1 y {len(free_slots)}."
+
+        except ValueError:
+            return "❌ Por favor, ingresa el número del horario a eliminar."
     # ==========================================
     # PROFESSIONAL - CARGAR SEMANA (WEEKLY SCHEDULE)
     # ==========================================
@@ -903,11 +940,24 @@ class Bot:
             # Finish and save
             week_schedule = session.get_temp('week_schedule', {})
 
-            # TODO: Save to database
-            # for day, data in week_schedule.items():
-            #     db.add_weekly_schedule(session.phone_number, day, data['start'], data['end'])
-            print(
-                f"[DB] TODO: Save weekly schedule - {session.phone_number}, {len(week_schedule)} days")
+            # Type check to satisfy Pylance
+            if not isinstance(week_schedule, dict):
+                week_schedule = {}
+
+            # Build schedules list
+            schedules = []
+            for day, data in week_schedule.items():
+                schedules.append({
+                    'day_of_week': day,
+                    'start_time': data['start'],
+                    'end_time': data['end']
+                })
+
+            # Save to database
+            professional_service.add_multiple_weekly_schedules(
+                session.phone_number,
+                schedules
+            )
 
             # Format summary
             schedule_summary = "\n".join([
@@ -930,7 +980,6 @@ class Bot:
 
         else:
             return self.messages.INVALID_OPTION
-
     # ==========================================
     # CLIENT HANDLERS
     # ==========================================
@@ -964,25 +1013,56 @@ class Bot:
             return self.messages.CLIENT_SEARCH_QUICK_FORMAT
 
         elif message == '4':
-            # Zona Norte directo
-            session.clear_temp()
-            session.store_temp('zona', 'norte')
+            # Zona Norte - BÚSQUEDA DIRECTA
 
-            print(f"[DB] TODO: Search Zona Norte")
+            # Buscar en zona norte
+            results = client_service.search_professionals_by_filters(
+                zone="norte")
 
+            # Log search
+            search_id = analytics_service.log_search(
+                client_phone=session.phone_number,
+                search_type='zona',
+                search_params={'zone': 'norte'},
+                result_count=len(results),
+                session_id=session.phone_number
+            )
+            session.store_temp('current_search_id', search_id)
+
+            # Store results
+            session.store_temp('search_results', results)
+
+            # Format and return
+            formatted = client_service.format_results_list(results)
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-            return "🔍 Buscando profesionales en Zona Norte...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
+
+            return formatted
 
         elif message == '5':
-            # Zona Sur directo
-            session.clear_temp()
-            session.store_temp('zona', 'sur')
+            # Zona Sur - BÚSQUEDA DIRECTA
 
-            print(f"[DB] TODO: Search Zona Sur")
+            # Buscar en zona sur
+            results = client_service.search_professionals_by_filters(
+                zone="sur")
 
+            # Log search
+            search_id = analytics_service.log_search(
+                client_phone=session.phone_number,
+                search_type='zona',
+                search_params={'zone': 'sur'},
+                result_count=len(results),
+                session_id=session.phone_number
+            )
+            session.store_temp('current_search_id', search_id)
+
+            # Store results
+            session.store_temp('search_results', results)
+
+            # Format and return
+            formatted = client_service.format_results_list(results)
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-            return "🔍 Buscando profesionales en Zona Sur...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
 
+            return formatted
         elif message == '0':
             session.reset()
             return self.messages.WELCOME
@@ -1005,12 +1085,29 @@ class Bot:
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_ASK_ZONA
 
-        # TODO: Search database and show results
-        # results = db.search_by_zona(session.get_temp('zona'))
-        print(f"[DB] TODO: Search by zona - {session.get_temp('zona')}")
+        # Search using client_service
+        results = client_service.search_professionals_by_filters(
+            zone=session.get_temp('zona')
+        )
 
+        # Log search
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='zona',
+            search_params={'zone': session.get_temp('zona')},
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+
+        # Store results for later navigation
+        session.store_temp('search_results', results)
+
+        # Format and return results
+        formatted = client_service.format_results_list(results)
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-        return "🔍 Buscando profesionales en Zona " + session.get_temp('zona').capitalize() + "...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
+
+        return formatted  # Retornar el formato directamente
 
     def handle_client_filter_fecha(self, session: SessionData, message: str) -> str:
         """Handle fecha filter - ask for date."""
@@ -1309,10 +1406,100 @@ class Bot:
             return self.messages.INVALID_OPTION + "\n\n" + self.format_multifilter_menu(session)
 
     def handle_client_show_results(self, session: SessionData, message: str) -> str:
-        """Handle showing search results."""
-        # TODO: Implement result navigation
-        session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-        return "📋 Resultados - En desarrollo\n\n" + self.messages.CLIENT_MAIN_MENU
+        """Handle client viewing search results and selecting a professional."""
+
+        # Get stored results
+        results = session.get_temp('search_results', [])
+
+        # Check if no results and user is choosing an option
+        if len(results) == 0:
+            if message == '1':
+                # Modificar búsqueda - volver al menú cliente
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                return self.messages.CLIENT_MAIN_MENU
+
+            elif message == '2':
+                # Ver todos los profesionales (sin filtros)
+                # Search without filters
+                all_results = client_service.search_professionals_by_filters(
+                    limit=10)
+
+                # Log search
+                search_id = analytics_service.log_search(
+                    client_phone=session.phone_number,
+                    search_type='all',
+                    search_params={},
+                    result_count=len(all_results),
+                    session_id=session.phone_number
+                )
+                session.store_temp('current_search_id', search_id)
+                session.store_temp('search_results', all_results)
+
+                # Format and return
+                formatted = client_service.format_results_list(all_results)
+                return formatted
+
+            elif message == '0':
+                # Volver al menú cliente
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                return self.messages.CLIENT_MAIN_MENU
+
+            else:
+                # Invalid option - show no results message again
+                formatted = client_service.format_results_list([])
+                return self.messages.INVALID_OPTION + "\n\n" + formatted
+
+        # Normal flow - has results
+        if message == '0':
+            # Volver al menú
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_MAIN_MENU
+
+        # Check if user selected a number
+        try:
+            selection = int(message)
+
+            if 1 <= selection <= len(results):
+                # Valid selection - show professional detail
+                selected_prof = results[selection - 1]
+
+                # Store selected professional and position
+                session.store_temp('selected_professional', selected_prof)
+                session.store_temp('selected_position', selection)
+
+                # Log analytics: profile view + contact intent
+                from analytics_service import analytics_service
+
+                # Increment profile views
+                analytics_service.log_profile_view(selected_prof['phone'])
+
+                # Log contact
+                search_id = session.get_temp('current_search_id')
+                analytics_service.log_contact(
+                    search_id=search_id,
+                    professional_phone=selected_prof['phone'],
+                    result_position=selection
+                )
+
+                # Get detailed info
+                from client_service import client_service
+                prof_detail = client_service.get_professional_detail(
+                    selected_prof['phone'])
+
+                # Format and show detail
+                formatted = client_service.format_professional_detail(
+                    prof_detail)
+                session.transition_to(ConversationState.CLIENT_VIEW_DETAIL)
+
+                return formatted
+            else:
+                return f"❌ Opción inválida. Selecciona un número entre 1 y {len(results)}, o '0' para volver."
+
+        except ValueError:
+            return "❌ Por favor, ingresa el número del profesional que deseas ver.\nO '0' para volver al menú."
 
     def parse_client_search_quick(self, message: str) -> dict:
         """
@@ -1525,6 +1712,35 @@ Filtros aplicados:
 Próximamente mostraré resultados.
 
 Escribe 'menu' para volver."""
+
+    def handle_client_view_detail(self, session: SessionData, message: str) -> str:
+        """Handle client viewing professional detail and navigation."""
+
+        selected_prof = session.get_temp('selected_professional')
+
+        if not selected_prof:
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error. Volviendo al menú...\n\n" + self.messages.CLIENT_MAIN_MENU
+
+        if message == '1':
+            # Nueva búsqueda - volver al menú cliente
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_MAIN_MENU
+
+        elif message == '0':
+            # Volver al menú cliente (mismo que opción 1)
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_MAIN_MENU
+
+        else:
+            # Invalid option - show detail again
+            prof_detail = client_service.get_professional_detail(
+                selected_prof['phone'])
+            formatted = client_service.format_professional_detail(prof_detail)
+            return self.messages.INVALID_OPTION + "\n\n" + formatted
+
     # ==========================================
     # UTILITY HANDLERS
     # ==========================================
