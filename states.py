@@ -46,11 +46,6 @@ class ConversationState(Enum):
     PROF_FREE_SLOT_TIME = "prof_free_slot_time"  # Ask for time range
     PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"  # Confirm before saving
 
-    # Option 2: Cargar horario ocupado (mark specific slot as BUSY)
-    PROF_BUSY_SLOT_DATE = "prof_busy_slot_date"  # Ask for date
-    PROF_BUSY_SLOT_TIME = "prof_busy_slot_time"  # Ask for time range
-    PROF_BUSY_SLOT_CONFIRM = "prof_busy_slot_confirm"  # Confirm before saving
-
     # Option 3: Cargar semana completa (weekly recurring schedule)
     PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"  # Select day
     PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"  # Enter time range
@@ -66,6 +61,10 @@ class ConversationState(Enum):
     PROF_INFO_PREPAGA = "prof_info_prepaga"  # Ask for prepaga
     PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"  # Ask for specialty
     PROF_INFO_QUICK = "prof_info_quick"
+
+    # Professional - Manage free slots
+    PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"
+    PROF_DELETE_FREE_SLOT = "prof_delete_free_slot"
 
     # Client states - Multi-filter
     CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
