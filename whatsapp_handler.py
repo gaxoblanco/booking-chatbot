@@ -15,6 +15,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from config import Config
 from bot import bot
 from states import session_manager, ConversationState
+from professional_service import professional_service
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -222,6 +223,8 @@ def download_media(sender, media_url, media_type):
         # Save file
         with open(file_path, 'wb') as f:
             f.write(response.content)
+
+        professional_service.save_certificate(sender, file_path)
 
         return file_path
 
