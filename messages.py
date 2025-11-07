@@ -67,22 +67,17 @@ Por favor, intenta nuevamente enviando:
 
 ¿Qué deseas hacer?
 
-1️⃣ Liberar Horario
-   (Marcar un horario como disponible)
+1️⃣ Gestionar Horarios Libres
+   (Ver, agregar o eliminar horarios disponibles)
 
-2️⃣ Cargar Horario Ocupado
-   (Bloquear un horario específico)
+2️⃣ Cargar Agenda Semanal
+   (Configurar horarios recurrentes ocupados)
 
-3️⃣ Cargar Semana Completa
-   (Configurar tu agenda semanal)
+3️⃣ Ver Mi Agenda Completa
 
-4️⃣ Ver Mi Agenda
+4️⃣ Actualizar Mi Información
 
-5️⃣ Cargar Información
-   (Completar tu perfil profesional)
-
-6️⃣ Carga Rápida de Información
-   (Todo en un mensaje)
+5️⃣ Carga Rápida de Información
 
 0️⃣ Volver al inicio
 
@@ -125,47 +120,6 @@ Este horario quedará disponible para clientes.
 
 Este horario ahora está disponible para clientes."""
 
-    # Option 2: Cargar horario ocupado
-    PROF_BUSY_SLOT_ASK_DATE = """📅 Bloquear Horario
-
-¿Qué día quieres bloquear?
-
-Formato: DD/MM/YYYY
-Ejemplo: 15/11/2025
-
-💡 Escribe '0' para volver al menú"""
-
-    PROF_BUSY_SLOT_ASK_TIME = """⏰ Bloquear Horario
-
-¿Qué horario quieres bloquear?
-
-Formato: HH:MM-HH:MM
-Ejemplo: 09:00-17:00
-
-Este horario quedará OCUPADO.
-💡 Escribe '0' para volver al menú"""
-
-    PROF_BUSY_SLOT_CONFIRM = """✅ Confirmar Bloqueo
-
-📅 Fecha: {date}
-⏰ Horario: {time_start} - {time_end}
-
-Este horario NO estará disponible para clientes.
-
-
-¿Confirmar?
-1️⃣ Sí, bloquear
-2️⃣ No, cancelar
-
-💡 Escribe '0' para volver al menú"""
-
-    PROF_BUSY_SLOT_SUCCESS = """✅ ¡Horario bloqueado!
-
-📅 {date}
-⏰ {time_start} - {time_end}
-
-Este horario ahora está ocupado."""
-
     # Option 3: Cargar semana completa
     PROF_WEEK_ASK_DAY = """📅 Configurar Semana
 
@@ -196,7 +150,7 @@ Este será tu horario recurrente cada {day}."""
 ¿Quieres configurar otro día?
 
 1️⃣ Sí, agregar otro día
-2️⃣ No, finalizar
+2️⃣ Finalizar
 
 Días configurados hasta ahora:
 {configured_days}"""
