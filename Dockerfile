@@ -39,6 +39,15 @@ FROM dependencies as application
 # Copy application files
 COPY config.py .
 COPY whatsapp_handler.py .
+COPY bot.py .
+COPY states.py .
+COPY messages.py .
+COPY validators.py .
+COPY database.py .
+COPY init_db.py .
+COPY client_service.py .      
+COPY professional_service.py .
+COPY analytics_service.py .   
 
 # Create directory for certificates (mounted volume in production)
 RUN mkdir -p certificates

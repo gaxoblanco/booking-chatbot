@@ -43,6 +43,10 @@ services:
       - ./states.py:/app/states.py
       - ./messages.py:/app/messages.py
       - ./validators.py:/app/validators.py
+      - ./database.py:/app/database.py
+      - ./client_service.py:/app/client_service.py
+      - ./professional_service.py:/app/professional_service.py
+      - ./analytics_service.py:/app/analytics_service.py
 
     # Health check
     healthcheck:
@@ -75,6 +79,8 @@ networks:
 # ==================================================
 volumes:
   certificates:
+    driver: local
+  database:
     driver: local
 # ==================================================
 # USAGE INSTRUCTIONS
