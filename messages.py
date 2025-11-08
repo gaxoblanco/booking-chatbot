@@ -121,48 +121,80 @@ Este horario quedará disponible para clientes.
 Este horario ahora está disponible para clientes."""
 
     # Option 3: Cargar semana completa
-    PROF_WEEK_ASK_DAY = """📅 Configurar Semana
+    PROF_WEEK_QUICK_FORMAT = """📅 Carga Rápida de Semana
 
-¿Qué día quieres configurar?
+Envía tu agenda semanal ocupada en el siguiente formato:
 
-1️⃣ Lunes
-2️⃣ Martes
-3️⃣ Miércoles
-4️⃣ Jueves
-5️⃣ Viernes
-6️⃣ Sábado
-7️⃣ Domingo
+━━━━━━━━━━━━━━━━━━━━
+FORMATO:
+━━━━━━━━━━━━━━━━━━━━
 
-Responde con el número.
+dia HH:MM-HH:MM+HH:MM-HH:MM
+dia HH:MM-HH:MM
+
+Cada línea = un día
+Múltiples horarios separados por +
+
+━━━━━━━━━━━━━━━━━━━━
+EJEMPLO:
+━━━━━━━━━━━━━━━━━━━━
+
+lunes 09:00-10:00+11:00-11:40+16:20-17:10
+martes 09:00-17:00
+viernes 14:00-18:00
+
+━━━━━━━━━━━━━━━━━━━━
+DÍAS ACEPTADOS:
+━━━━━━━━━━━━━━━━━━━━
+
+lunes, martes, miércoles, miércoles, jueves, viernes, sábado, sabado, domingo
+
+💡 Puedes enviar los días en cualquier orden
+💡 Envía solo los días que estés ocupado
 💡 Escribe '0' para volver al menú"""
 
-    PROF_WEEK_ASK_TIME = """⏰ Horario para {day}
+#     PROF_WEEK_ASK_DAY = """📅 Configurar Semana
 
-¿Qué horario estás OCUPADO este día?
+# ¿Qué día quieres configurar?
 
-Formato: HH:MM-HH:MM
-Ejemplo: 09:00-17:00
+# 1️⃣ Lunes
+# 2️⃣ Martes
+# 3️⃣ Miércoles
+# 4️⃣ Jueves
+# 5️⃣ Viernes
+# 6️⃣ Sábado
+# 7️⃣ Domingo
 
-Este será tu horario recurrente cada {day}."""
+# Responde con el número.
+# 💡 Escribe '0' para volver al menú"""
 
-    PROF_WEEK_ASK_MORE = """✅ {day} configurado: {time_start} - {time_end}
+#     PROF_WEEK_ASK_TIME = """⏰ Horario para {day}
 
-¿Quieres configurar otro día?
+# ¿Qué horario estás OCUPADO este día?
 
-1️⃣ Sí, agregar otro día
-2️⃣ Finalizar
+# Formato: HH:MM-HH:MM
+# Ejemplo: 09:00-17:00
 
-Días configurados hasta ahora:
-{configured_days}"""
+# Este será tu horario recurrente cada {day}."""
 
-    PROF_WEEK_SUCCESS = """✅ ¡Semana configurada!
+#     PROF_WEEK_ASK_MORE = """✅ {day} configurado: {time_start} - {time_end}
 
-Tu agenda semanal:
-{schedule_summary}
+# ¿Quieres configurar otro día?
 
-Estos horarios se repetirán cada semana.
+# 1️⃣ Sí, agregar otro día
+# 2️⃣ Finalizar
 
-💡 Escribe '0' para volver al menú"""
+# Días configurados hasta ahora:
+# {configured_days}"""
+
+#     PROF_WEEK_SUCCESS = """✅ ¡Semana configurada!
+
+# Tu agenda semanal:
+# {schedule_summary}
+
+# Estos horarios se repetirán cada semana.
+
+# 💡 Escribe '0' para volver al menú"""
 
 # Option 5: Cargar información del profesional
     PROF_INFO_MENU = """📋 Cargar Información

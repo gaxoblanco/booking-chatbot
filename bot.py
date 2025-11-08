@@ -141,9 +141,9 @@ class Bot:
             ConversationState.PROF_FREE_SLOT_DATE: self.handle_prof_free_slot_date,
             ConversationState.PROF_FREE_SLOT_TIME: self.handle_prof_free_slot_time,
             ConversationState.PROF_FREE_SLOT_CONFIRM: self.handle_prof_free_slot_confirm,
-            ConversationState.PROF_WEEK_SCHEDULE_DAY: self.handle_prof_week_day,
-            ConversationState.PROF_WEEK_SCHEDULE_TIME: self.handle_prof_week_time,
-            ConversationState.PROF_WEEK_SCHEDULE_MORE: self.handle_prof_week_more,
+            # ConversationState.PROF_WEEK_SCHEDULE_DAY: self.handle_prof_week_day,
+            # ConversationState.PROF_WEEK_SCHEDULE_TIME: self.handle_prof_week_time,
+            # ConversationState.PROF_WEEK_SCHEDULE_MORE: self.handle_prof_week_more,
 
             # Client states
             ConversationState.CLIENT_MAIN_MENU: self.handle_client_main_menu,
@@ -245,8 +245,8 @@ class Bot:
             # Cargar semana completa
             session.clear_temp()
             session.store_temp('week_schedule', {})
-            session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_DAY)
-            return self.messages.PROF_WEEK_ASK_DAY
+            session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_QUICK)
+            return self.messages.PROF_WEEK_QUICK_FORMAT
 
         elif message == '3':
             schedule_info = professional_service.get_complete_schedule(
@@ -693,6 +693,171 @@ class Bot:
         session.transition_to(ConversationState.PROF_MAIN_MENU)
 
         return f"✅ ¡Información guardada!\n\n{summary}\n\n" + self.messages.PROF_MAIN_MENU
+
+    def parse_week_schedule_quick(self, message: str) -> tuple:
+        """
+        Parse weekly schedule from message.
+
+        Format:
+            lunes 09:00-10:00+11:00-11:40
+            martes 09:00-17:00
+
+        Returns:
+            (schedules_list, errors_list)
+            schedules_list: [{'day': 0, 'start': '09:00', 'end': '10:00'}, ...]
+            errors_list: ['Error message', ...]
+        """
+        import re
+
+        lines = [line.strip()
+                 for line in message.strip().split('\n') if line.strip()]
+
+        schedules = []
+        errors = []
+
+        # Day name to number mapping
+        day_map = {
+            'lunes': 0, 'lun': 0,
+            'martes': 1, 'mar': 1,
+            'miércoles': 2, 'miercoles': 2, 'mie': 2, 'mié': 2,
+            'jueves': 3, 'jue': 3,
+            'viernes': 4, 'vie': 4,
+            'sábado': 5, 'sabado': 5, 'sab': 5,
+            'domingo': 6, 'dom': 6
+        }
+
+        for line_num, line in enumerate(lines, 1):
+            # Expected format: "dia HH:MM-HH:MM+HH:MM-HH:MM"
+            parts = line.lower().split(maxsplit=1)
+
+            if len(parts) != 2:
+                errors.append(
+                    f"Línea {line_num}: Formato inválido. Debe ser: dia HH:MM-HH:MM")
+                continue
+
+            day_name, times_str = parts
+
+            # Validate day
+            if day_name not in day_map:
+                errors.append(
+                    f"Línea {line_num}: Día '{day_name}' no reconocido")
+                continue
+
+            day_num = day_map[day_name]
+
+            # Parse time ranges (separated by +)
+            time_ranges = times_str.split('+')
+
+            for time_range in time_ranges:
+                # Validate format HH:MM-HH:MM
+                match = re.match(
+                    r'^(\d{2}):(\d{2})-(\d{2}):(\d{2})$', time_range.strip())
+
+                if not match:
+                    errors.append(
+                        f"Línea {line_num}: Horario '{time_range}' inválido. Debe ser HH:MM-HH:MM")
+                    continue
+
+                start_h, start_m, end_h, end_m = match.groups()
+
+                # Validate hours and minutes
+                if not (0 <= int(start_h) <= 23 and 0 <= int(start_m) <= 59):
+                    errors.append(
+                        f"Línea {line_num}: Hora de inicio inválida: {start_h}:{start_m}")
+                    continue
+
+                if not (0 <= int(end_h) <= 23 and 0 <= int(end_m) <= 59):
+                    errors.append(
+                        f"Línea {line_num}: Hora de fin inválida: {end_h}:{end_m}")
+                    continue
+
+                start_time = f"{start_h}:{start_m}"
+                end_time = f"{end_h}:{end_m}"
+
+                # Validate end > start
+                if end_time <= start_time:
+                    errors.append(
+                        f"Línea {line_num}: La hora de fin debe ser mayor que la de inicio")
+                    continue
+
+                # Add to schedules
+                schedules.append({
+                    'day': day_num,
+                    'day_name': day_name.capitalize(),
+                    'start': start_time,
+                    'end': end_time
+                })
+
+        return schedules, errors
+
+    def handle_prof_week_schedule_quick(self, session: SessionData, message: str) -> str:
+        """Handle quick weekly schedule input (all in one message)."""
+
+        if message == '0':
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return self.messages.PROF_MAIN_MENU
+
+        # Parse the message
+        schedules, errors = self.parse_week_schedule_quick(message)
+
+        if errors:
+            error_msg = "❌ Errores encontrados:\n\n"
+            error_msg += "\n".join(errors)
+            error_msg += "\n\n" + self.messages.PROF_WEEK_QUICK_FORMAT
+            return error_msg
+
+        if not schedules:
+            return "❌ No se encontraron horarios válidos.\n\n" + self.messages.PROF_WEEK_QUICK_FORMAT
+
+        # Save to database
+        from professional_service import professional_service
+
+        schedules_list = [
+            {
+                'day_of_week': s['day'],
+                'start_time': s['start'],
+                'end_time': s['end']
+            }
+            for s in schedules
+        ]
+
+        success_count, total = professional_service.add_multiple_weekly_schedules(
+            session.phone_number,
+            schedules_list
+        )
+
+        # Format summary
+        summary_lines = []
+        day_names = ['Lunes', 'Martes', 'Miércoles',
+                     'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+        # Group by day
+        by_day = {}
+        for s in schedules:
+            day = s['day']
+            if day not in by_day:
+                by_day[day] = []
+            by_day[day].append(f"{s['start']}-{s['end']}")
+
+        for day in sorted(by_day.keys()):
+            times = ', '.join(by_day[day])
+            summary_lines.append(f"• {day_names[day]}: {times}")
+
+        schedule_summary = "\n".join(summary_lines)
+
+        session.clear_temp()
+        session.transition_to(ConversationState.PROF_MAIN_MENU)
+
+        return f"""✅ ¡Semana configurada exitosamente!
+
+    Guardados {success_count}/{total} horarios:
+
+    {schedule_summary}
+
+    Estos horarios se repetirán cada semana.
+
+    """ + self.messages.PROF_MAIN_MENU
+
     # ==========================================
     # PROFESSIONAL - LIBERAR HORARIO (FREE SLOT)
     # ==========================================

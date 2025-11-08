@@ -47,10 +47,7 @@ class ConversationState(Enum):
     PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"  # Confirm before saving
 
     # Option 3: Cargar semana completa (weekly recurring schedule)
-    PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"  # Select day
-    PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"  # Enter time range
-    PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"  # Add more days?
-    PROF_WEEK_SCHEDULE_CONFIRM = "prof_week_schedule_confirm"  # Confirm all
+    PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
 
     # Option 5: Cargar información profesional
     PROF_INFO_MENU = "prof_info_menu"  # Main info menu
