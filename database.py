@@ -64,13 +64,15 @@ class Database:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS professionals (
                     phone TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
+                    name TEXT,
                     email TEXT,
                     zone TEXT CHECK(zone IN ('norte', 'sur')),
                     certificate_path TEXT,
                     gender TEXT CHECK(gender IN ('m', 'f', 'otro')),
                     accept_prepaga BOOLEAN DEFAULT 0,
-                    especialidad TEXT,
+                    category TEXT,
+                    bio TEXT,
+                    fee_range TEXT,  
                     
                     -- Metrics
                     total_views INTEGER DEFAULT 0,
@@ -173,7 +175,7 @@ class Database:
     def add_professional(self, phone: str, name: str, email: str = None,
                          zone: str = None, gender: str = None,
                          accept_prepaga: bool = False,
-                         especialidad: str = None) -> bool:  # ⭐ Agregar parámetro
+                         category: str = None) -> bool:  # ⭐ Agregar parámetro
         """
         Add or update a professional.
 
@@ -184,7 +186,7 @@ class Database:
             zone: Zone ('norte' or 'sur')
             gender: Gender ('m', 'f', 'otro')
             accept_prepaga: Whether accepts prepaga
-            especialidad: Professional specialty  # ⭐ Agregar doc
+            category: Professional specialty  # ⭐ Agregar doc
 
         Returns:
             True if successful, False otherwise
@@ -193,7 +195,7 @@ class Database:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO professionals (phone, name, email, zone, gender, accept_prepaga, especialidad)
+                    INSERT INTO professionals (phone, name, email, zone, gender, accept_prepaga, category)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(phone) DO UPDATE SET
                         name = excluded.name,
@@ -201,9 +203,9 @@ class Database:
                         zone = excluded.zone,
                         gender = excluded.gender,
                         accept_prepaga = excluded.accept_prepaga,
-                        especialidad = excluded.especialidad,
+                        category = excluded.category,
                         updated_at = CURRENT_TIMESTAMP
-                """, (phone, name, email, zone, gender, accept_prepaga, especialidad))
+                """, (phone, name, email, zone, gender, accept_prepaga, category))
 
             print(f"[DB] ✅ Professional added/updated: {phone}")
             return True
@@ -225,16 +227,61 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE professionals 
-                    SET certificate_path = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE phone = ?
-                """, (certificate_path, phone))
+                # Primero verificar si el profesional existe
+                cursor.execute(
+                    "SELECT phone FROM professionals WHERE phone = ?", (phone,))
+                exists = cursor.fetchone() is not None
+
+                if exists:
+                    # Si existe, solo actualizar
+                    cursor.execute("""
+                        UPDATE professionals 
+                        SET certificate_path = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE phone = ?
+                    """, (certificate_path, phone))
+                else:
+                    # Si no existe, crear con valores mínimos
+                    cursor.execute("""
+                        INSERT INTO professionals (phone, name, certificate_path)
+                        VALUES (?, ?, ?)
+                    """, (phone, 'Usuario Nuevo', certificate_path))
 
             print(f"[DB] ✅ Certificate updated: {phone}")
             return True
         except Exception as e:
             print(f"[DB] ❌ Error updating certificate: {e}")
+            return False
+
+    def update_professional_bio(self, phone: str, bio: str) -> bool:
+        """Update professional's bio/description."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE professionals 
+                    SET bio = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (bio, phone))
+            print(f"[DB] ✅ Bio updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating bio: {e}")
+            return False
+
+    def update_professional_fee_range(self, phone: str, fee_range: str) -> bool:
+        """Update professional's fee range."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE professionals 
+                    SET fee_range = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (fee_range, phone))
+            print(f"[DB] ✅ Fee range updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating fee range: {e}")
             return False
 
     def get_professional(self, phone: str) -> Optional[Dict]:

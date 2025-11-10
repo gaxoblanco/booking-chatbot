@@ -4,7 +4,7 @@ Bot Logic
 Main conversation handler with state machine implementation.
 Processes incoming messages and manages conversation flow.
 """
-
+from domain_config import DomainConfig
 from states import (
     ConversationState,
     UserRole,
@@ -141,9 +141,7 @@ class Bot:
             ConversationState.PROF_FREE_SLOT_DATE: self.handle_prof_free_slot_date,
             ConversationState.PROF_FREE_SLOT_TIME: self.handle_prof_free_slot_time,
             ConversationState.PROF_FREE_SLOT_CONFIRM: self.handle_prof_free_slot_confirm,
-            # ConversationState.PROF_WEEK_SCHEDULE_DAY: self.handle_prof_week_day,
-            # ConversationState.PROF_WEEK_SCHEDULE_TIME: self.handle_prof_week_time,
-            # ConversationState.PROF_WEEK_SCHEDULE_MORE: self.handle_prof_week_more,
+            ConversationState.PROF_WEEK_SCHEDULE_QUICK: self.handle_prof_week_schedule_quick,
 
             # Client states
             ConversationState.CLIENT_MAIN_MENU: self.handle_client_main_menu,
@@ -173,6 +171,8 @@ class Bot:
             ConversationState.PROF_INFO_PREPAGA: self.handle_prof_info_prepaga,
             ConversationState.PROF_INFO_ESPECIALIDAD: self.handle_prof_info_especialidad,
             ConversationState.PROF_INFO_QUICK: self.handle_prof_info_quick,
+            ConversationState.PROF_INFO_BIO: self.handle_prof_info_bio,
+            ConversationState.PROF_INFO_FEE_RANGE: self.handle_prof_info_fee_range,
         }
 
         return handlers.get(state, self.handle_unknown_state)
@@ -287,17 +287,23 @@ class Bot:
                 info_lines.append(f"👤 {prof_info['name']}")
             if 'email' in prof_info:
                 info_lines.append(f"📧 {prof_info['email']}")
-            if 'zona' in prof_info:
-                info_lines.append(f"📍 Zona {prof_info['zona'].capitalize()}")
-            if 'genero' in prof_info:
+            if 'zone' in prof_info:  # ← CAMBIAR: era 'zona'
+                info_lines.append(f"📍 Zona {prof_info['zone'].capitalize()}")
+            if 'gender' in prof_info:  # ← CAMBIAR: era 'genero'
                 genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
                 info_lines.append(
-                    f"👥 {genero_map.get(prof_info['genero'], prof_info['genero'])}")
-            if 'prepaga' in prof_info:
+                    f"👥 {genero_map.get(prof_info['gender'], prof_info['gender'])}")
+            if 'accept_prepaga' in prof_info:  # ← CAMBIAR: era 'prepaga'
                 info_lines.append(
-                    f"💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}")
+                    f"💳 Prepaga: {'Sí' if prof_info['accept_prepaga'] else 'No'}")
             if 'especialidad' in prof_info:
                 info_lines.append(f"🏥 {prof_info['especialidad']}")
+            if 'bio' in prof_info:  # ← AGREGAR
+                bio_preview = prof_info['bio'][:40] + \
+                    "..." if len(prof_info['bio']) > 40 else prof_info['bio']
+                info_lines.append(f"📝 {bio_preview}")
+            if 'fee_range' in prof_info:  # ← AGREGAR
+                info_lines.append(f"💰 ${prof_info['fee_range']}")
 
             current_info = "\n".join(info_lines) if info_lines else "(ninguno)"
 
@@ -336,6 +342,16 @@ class Bot:
             session.transition_to(ConversationState.PROF_INFO_ESPECIALIDAD)
             return self.messages.PROF_INFO_ASK_ESPECIALIDAD
 
+        elif message == '7':
+            # Bio
+            session.transition_to(ConversationState.PROF_INFO_BIO)
+            return self.messages.PROF_INFO_ASK_BIO
+
+        elif message == '8':
+            # Honorarios
+            session.transition_to(ConversationState.PROF_INFO_FEE_RANGE)
+            return self.messages.PROF_INFO_ASK_FEE_RANGE
+
         elif message == '9':
             # Guardar información
             prof_info = session.get_temp('prof_info', {})
@@ -358,7 +374,10 @@ class Bot:
                 email=prof_info.get('email'),
                 zone=prof_info.get('zona'),
                 gender=prof_info.get('genero'),
-                accept_prepaga=prof_info.get('prepaga', False)
+                accept_prepaga=prof_info.get('prepaga', False),
+                category=prof_info.get('especialidad'),
+                bio=prof_info.get('bio'),
+                fee_range=prof_info.get('fee_range')
             )
 
             # Format summary
@@ -375,9 +394,13 @@ class Bot:
                 genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
                 summary_lines.append(
                     f"👥 Género: {genero_map.get(prof_info['genero'], prof_info['genero'])}")
-            if 'prepaga' in prof_info:
+            if 'bio' in prof_info:
+                bio_preview = prof_info['bio'][:50] + \
+                    "..." if len(prof_info['bio']) > 50 else prof_info['bio']
+                summary_lines.append(f"📝 Bio: {bio_preview}")
+            if 'fee_range' in prof_info:
                 summary_lines.append(
-                    f"💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}")
+                    f"💰 Honorarios: ${prof_info['fee_range']}")
 
             profile_summary = "\n".join(summary_lines)
 
@@ -529,6 +552,44 @@ class Bot:
         session.transition_to(ConversationState.PROF_INFO_MENU)
         return f"✅ Especialidad guardada: {especialidad}\n\n" + self.format_prof_info_menu(session)
 
+    def handle_prof_info_bio(self, session: SessionData, message: str) -> str:
+        """Handle bio input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        # Guardar bio en temp
+        session.store_temp('bio', message)
+
+        # Volver al menú
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Descripción guardada.\n\n{self.format_prof_info_menu(session)}"
+
+    def handle_prof_info_fee_range(self, session: SessionData, message: str) -> str:
+        """Handle fee range input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu(session)
+
+        # Validar formato: XXX-YYY
+        import re
+        match = re.match(r'^(\d+)-(\d+)$', message.strip())
+
+        if not match:
+            return "❌ Formato incorrecto.\n\nUsa: MÍNIMO-MÁXIMO\nEjemplo: 100-150\n\n💡 Escribe '0' para volver"
+
+        min_fee, max_fee = match.groups()
+
+        if int(min_fee) >= int(max_fee):
+            return "❌ El mínimo debe ser menor que el máximo.\n\n💡 Escribe '0' para volver"
+
+        # Guardar en temp
+        session.store_temp('fee_range', message)
+
+        # Volver al menú
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Honorarios guardados: ${min_fee} - ${max_fee}\n\n{self.format_prof_info_menu(session)}"
+
     def parse_prof_info_quick(self, message: str) -> dict:
         """
         Parse professional info from message.
@@ -541,6 +602,8 @@ class Bot:
             genero: masculino
             prepaga: si
             especialidad: dentista
+            bio: Descripción (opcional)
+            honorarios: 100-150 (opcional)
 
         Format 2 (without labels, order matters):
             Juan Pérez
@@ -549,9 +612,11 @@ class Bot:
             masculino
             si
             dentista
+            Descripción (opcional - línea 7)
+            100-150 (opcional - línea 8)
 
         Returns:
-            dict with parsed info or None if invalid
+            (dict with parsed info, list of errors)
         """
         import re
 
@@ -585,12 +650,16 @@ class Bot:
                     result['genero'] = value.lower()
                 elif key in ['prepaga', 'obra social', 'os']:
                     result['prepaga'] = value.lower()
-                elif key in ['especialidad', 'specialty', 'profesion', 'profesión']:
+                elif key in ['especialidad', 'specialty', 'profesion', 'profesión', 'category']:
                     result['especialidad'] = value
+                elif key in ['bio', 'descripcion', 'descripción', 'about']:  # ← AGREGAR
+                    result['bio'] = value
+                elif key in ['honorarios', 'fee', 'precio', 'costo']:  # ← AGREGAR
+                    result['fee_range'] = value
         else:
             # Parse order-based format
-            if len(lines) != 6:
-                return None, [f"❌ Esperaba 6 líneas, recibí {len(lines)}"]
+            if len(lines) < 6:
+                return None, [f"❌ Esperaba al menos 6 líneas, recibí {len(lines)}"]
 
             result = {
                 'name': lines[0],
@@ -600,6 +669,12 @@ class Bot:
                 'prepaga': lines[4].lower(),
                 'especialidad': lines[5]
             }
+
+            # Optional fields (líneas 7 y 8)
+            if len(lines) >= 7 and lines[6]:  # ← AGREGAR
+                result['bio'] = lines[6]
+            if len(lines) >= 8 and lines[7]:  # ← AGREGAR
+                result['fee_range'] = lines[7]
 
         # Validate required fields
         required = ['name', 'email', 'zona',
@@ -651,6 +726,18 @@ class Bot:
         else:
             result['prepaga'] = prepaga_map[result['prepaga']]
 
+        # Validar fee_range si existe (opcional)  # ← AGREGAR
+        if 'fee_range' in result:
+            match = re.match(r'^(\d+)-(\d+)$', result['fee_range'].strip())
+            if not match:
+                errors.append(
+                    f"❌ Honorarios inválidos: {result['fee_range']} (usa formato: 100-150)")
+            else:
+                min_fee, max_fee = match.groups()
+                if int(min_fee) >= int(max_fee):
+                    errors.append(
+                        f"❌ Honorarios: el mínimo debe ser menor que el máximo")
+
         if errors:
             return None, errors
 
@@ -677,17 +764,32 @@ class Bot:
             email=prof_info.get('email'),
             zone=prof_info.get('zona'),
             gender=prof_info.get('genero'),
-            accept_prepaga=prof_info.get('prepaga', False)
+            accept_prepaga=prof_info.get('prepaga', False),
+            category=prof_info.get('especialidad'),
+            bio=prof_info.get('bio'),
+            fee_range=prof_info.get('fee_range')
         )
 
         # Format summary
         genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
-        summary = f"""👤 Nombre: {prof_info['name']}
-    📧 Email: {prof_info['email']}
-    📍 Zona: {prof_info['zona'].capitalize()}
-    👥 Género: {genero_map[prof_info['genero']]}
-    💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}
-    🏥 Especialidad: {prof_info['especialidad']}"""
+        summary_lines = [
+            f"👤 Nombre: {prof_info['name']}",
+            f"📧 Email: {prof_info['email']}",
+            f"📍 Zona: {prof_info['zona'].capitalize()}",
+            f"👥 Género: {genero_map[prof_info['genero']]}",
+            f"💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}",
+            f"🏥 Especialidad: {prof_info['especialidad']}"
+        ]
+
+        # Agregar opcionales si existen
+        if 'bio' in prof_info:
+            bio_preview = prof_info['bio'][:50] + \
+                "..." if len(prof_info['bio']) > 50 else prof_info['bio']
+            summary_lines.append(f"📝 Bio: {bio_preview}")
+        if 'fee_range' in prof_info:
+            summary_lines.append(f"💰 Honorarios: ${prof_info['fee_range']}")
+
+        summary = "\n".join(summary_lines)
 
         session.clear_temp()
         session.transition_to(ConversationState.PROF_MAIN_MENU)

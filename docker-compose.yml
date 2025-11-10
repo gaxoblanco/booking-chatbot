@@ -30,6 +30,9 @@ services:
     env_file:
       - .env
 
+    environment:
+      - DOMAIN_PRESET=${DOMAIN_PRESET:-SALUD} # Default: SALUD
+
     # Volume mounts
     volumes:
       # Mount certificates directory (persistent storage)

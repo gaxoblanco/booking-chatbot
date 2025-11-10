@@ -58,6 +58,8 @@ class ConversationState(Enum):
     PROF_INFO_PREPAGA = "prof_info_prepaga"  # Ask for prepaga
     PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"  # Ask for specialty
     PROF_INFO_QUICK = "prof_info_quick"
+    PROF_INFO_BIO = "prof_info_bio"
+    PROF_INFO_FEE_RANGE = "prof_info_fee_range"
 
     # Professional - Manage free slots
     PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"

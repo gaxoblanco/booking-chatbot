@@ -32,37 +32,6 @@ class ProfessionalService:
         """
         Register a new professional or update existing one.
         Accepts partial updates - only provided fields are updated.
-
-        Args:
-            phone: Professional's phone (required, unique identifier)
-            **kwargs: Optional fields to update:
-                - name: str
-                - email: str
-                - zone: str ('norte' or 'sur')
-                - gender: str ('m', 'f', 'otro')
-                - accept_prepaga: bool
-
-        Returns:
-            True if successful, False otherwise
-
-        Examples:
-            >>> # Full registration
-            >>> service.register_or_update_professional(
-            ...     "+5491112345678",
-            ...     name="Dr. Juan Pérez",
-            ...     email="juan@example.com",
-            ...     zone="norte",
-            ...     gender="m",
-            ...     accept_prepaga=True
-            ... )
-            True
-
-            >>> # Partial update (only email)
-            >>> service.register_or_update_professional(
-            ...     "+5491112345678",
-            ...     email="newemail@example.com"
-            ... )
-            True
         """
         try:
             # Get existing professional if exists
@@ -76,7 +45,11 @@ class ProfessionalService:
                     'zone': kwargs.get('zone', existing.get('zone')),
                     'gender': kwargs.get('gender', existing.get('gender')),
                     'accept_prepaga': kwargs.get('accept_prepaga', existing.get('accept_prepaga', False)),
-                    'especialidad': kwargs.get('especialidad', existing.get('especialidad') if existing else None)
+                    'category': kwargs.get('category', existing.get('category')),
+                    # ← AGREGAR
+                    'bio': kwargs.get('bio', existing.get('bio')),
+                    # ← AGREGAR
+                    'fee_range': kwargs.get('fee_range', existing.get('fee_range'))
                 }
             else:
                 # New professional - use provided values or None
@@ -86,8 +59,9 @@ class ProfessionalService:
                     'zone': kwargs.get('zone'),
                     'gender': kwargs.get('gender'),
                     'accept_prepaga': kwargs.get('accept_prepaga', False),
-                    'especialidad': kwargs.get('especialidad', existing.get('especialidad') if existing else None)
-
+                    'category': kwargs.get('category'),
+                    'bio': kwargs.get('bio'),              # ← AGREGAR
+                    'fee_range': kwargs.get('fee_range')   # ← AGREGAR
                 }
 
             # Add to database
@@ -98,10 +72,17 @@ class ProfessionalService:
                 zone=data['zone'],
                 gender=data['gender'],
                 accept_prepaga=data['accept_prepaga'],
-                especialidad=data['especialidad']
+                category=data['category']  # ← CORREGIR: era 'especialidad'
             )
 
+            # Update bio and fee_range separately if provided
             if success:
+                if data.get('bio'):
+                    self.db.update_professional_bio(phone, data['bio'])
+                if data.get('fee_range'):
+                    self.db.update_professional_fee_range(
+                        phone, data['fee_range'])
+
                 action = "updated" if existing else "registered"
                 print(f"[PROF_SERVICE] ✅ Professional {action}: {phone}")
 

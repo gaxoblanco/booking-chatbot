@@ -13,6 +13,7 @@ import requests
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from config import Config
+from domain_config import DomainConfig
 from bot import bot
 from states import session_manager, ConversationState
 from professional_service import professional_service

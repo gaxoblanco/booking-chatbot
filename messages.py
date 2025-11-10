@@ -5,6 +5,8 @@ All bot messages organized by conversation flow.
 Centralized message management for easy maintenance and translation.
 """
 
+from domain_config import DomainConfig
+
 
 class Messages:
     """
@@ -16,9 +18,9 @@ class Messages:
     # WELCOME & ROLE SELECTION
     # ==========================================
 
-    WELCOME = """👋 ¡Bienvenido!
+    WELCOME = f"""👋 ¡Bienvenido a {DomainConfig.BUSINESS_NAME}!
 
-Soy un bot para conectar profesionales con clientes.
+{DomainConfig.WELCOME_TAGLINE}
 
 ¿Qué eres?
 1️⃣ Profesional
@@ -37,9 +39,9 @@ Por favor responde:
     # ==========================================
 
     # Certificate upload (mandatory first step)
-    PROF_NEED_CERTIFICATE = """📋 Registro de Profesional
+    PROF_NEED_CERTIFICATE = f"""{DomainConfig.EMOJI_CERTIFICATE} Registro de {DomainConfig.PROFESSIONAL_TITLE}
 
-Para comenzar, necesito que subas tu certificado profesional.
+Para comenzar, necesito que subas tu {DomainConfig.CERTIFICATE_NAME}.
 
 📎 Envía una foto o PDF de tu:
 • Matrícula profesional
@@ -207,6 +209,8 @@ Configura tu perfil profesional:
 4️⃣ Género
 5️⃣ Prepaga (Sí/No)
 6️⃣ Especialidad
+7️⃣ Campo abierto
+8️⃣ Rango de Honorarios
 
 9️⃣ Guardar Información
 0️⃣ Volver al menú
@@ -273,6 +277,24 @@ Selecciona tu especialidad:
 
 Responde con el número o escribe tu especialidad."""
 
+    PROF_INFO_ASK_BIO = """📝 Descripción Personal
+
+Escribe una breve descripción sobre ti:
+Ejemplo: 
+ - "Trabajo infailt +10"
+ - "Terapia de parejas"
+
+💡 Escribe '0' para volver"""
+
+    PROF_INFO_ASK_FEE_RANGE = """💰 Rango de Honorarios
+
+¿Cuánto cobras por sesión/consulta?
+
+Formato: MÍNIMO-MÁXIMO
+Ejemplo: 100-150
+
+💡 Escribe '0' para volver"""
+
     PROF_INFO_SAVED = """✅ ¡Información guardada!
 
 Tu perfil profesional:
@@ -303,6 +325,8 @@ zona: norte
 genero: masculino
 prepaga: si
 especialidad: dentista
+bio: Especialista con 10 años de experiencia
+honorarios: 100-150
 
 ━━━━━━━━━━━━━━━━━━━━
 OPCIÓN 2 - Sin etiquetas (orden importante):
@@ -314,6 +338,8 @@ norte
 masculino
 si
 dentista
+Especialista con 10 años de experiencia
+100-150
 
 ━━━━━━━━━━━━━━━━━━━━
 Valores aceptados:
@@ -323,15 +349,33 @@ Valores aceptados:
 - genero: masculino, femenino, otro (o m, f, o)
 - prepaga: si, no (o s, n)
 - especialidad: texto libre
+- bio: texto libre (opcional)
+- honorarios: MÍNIMO-MÁXIMO (opcional, ej: 100-150)
 
+💡 Los campos bio y honorarios son opcionales
 💡 Escribe '0' para volver"""
+
     # ==========================================
-    # CLIENT MESSAGES - MULTI-FILTER
+    # CLIENT MESSAGES - MULTI-FILTER (Dynamic)
     # ==========================================
 
-    CLIENT_MULTIFILTER_MENU = """🔍 Búsqueda Avanzada
+    @staticmethod
+    def CLIENT_MULTIFILTER_MENU(active_filters: str = "") -> str:
+        """Generate multifilter menu with active filters."""
+        from domain_config import DomainConfig
 
-Selecciona los filtros que desees (uno a la vez):
+        filters_section = ""
+        if active_filters:
+            filters_section = f"""
+━━━━━━━━━━━━━━━━━━━━
+Filtros activos:
+{active_filters}
+━━━━━━━━━━━━━━━━━━━━
+"""
+
+        return f"""{DomainConfig.EMOJI_CLIENT} Menú Cliente
+
+¿Cómo deseas buscar {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER}?
 
 1️⃣ Zona
 2️⃣ Disponibilidad (Fecha/Hora)
@@ -340,21 +384,22 @@ Selecciona los filtros que desees (uno a la vez):
 5️⃣ Especialidad
 
 0️⃣ Buscar con filtros seleccionados
-
-━━━━━━━━━━━━━━━━━━━━
-Filtros activos:
-{active_filters}
-━━━━━━━━━━━━━━━━━━━━
-
+{filters_section}
 Responde con el número de opción."""
 
-    CLIENT_MULTIFILTER_ADDED = """✅ {filter_name}
+    @staticmethod
+    def CLIENT_MULTIFILTER_ADDED(filter_name: str, menu: str) -> str:
+        """Show filter added confirmation with updated menu."""
+        return f"""✅ {filter_name}
 
-    {menu}"""
+{menu}"""
 
-    CLIENT_MULTIFILTER_SEARCH_SUMMARY = """🔍 Buscando profesionales con los siguientes filtros:
+    @staticmethod
+    def CLIENT_MULTIFILTER_SEARCH_SUMMARY(filters_list: str) -> str:
+        """Show search summary with active filters."""
+        return f"""🔍 Buscando profesionales con los siguientes filtros:
 
-    {filters_list}
+{filters_list}
 
 Procesando búsqueda..."""
 
@@ -567,9 +612,8 @@ masculino"""
     # COMMON MESSAGES
     # ==========================================
 
-    INVALID_INPUT = """❌ Entrada inválida
-
-Por favor, verifica el formato e intenta nuevamente."""
+    INVALID_OPTION = "❌ Opción inválida. Por favor, selecciona una opción válida."
+    BACK_TO_MENU = "Volviendo al menú principal..."
 
     INVALID_DATE = """❌ Fecha inválida
 
@@ -683,3 +727,7 @@ Si el problema persiste, escribe 'ayuda'."""
             "o": "Otro"
         }
         return sexos.get(sexo.lower(), sexo)
+
+
+# Create singleton instance
+messages = Messages()
