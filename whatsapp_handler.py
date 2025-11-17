@@ -7,16 +7,32 @@ Handles both text messages and media files (images/PDFs for certificates).
 For testing: Bot echoes back received messages.
 Production: Connect to bot.py for actual logic.
 """
-
 import os
+import importlib
 import requests
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from config import Config
-from domain_config import DomainConfig
-from bot import bot
-from states import session_manager, ConversationState
-from professional_service import professional_service
+from domain_config import DomainConfig, load_preset
+
+# ==========================================
+# LOAD DOMAIN PRESET BEFORE IMPORTING BOT
+# ==========================================
+DOMAIN_PRESET = os.getenv('DOMAIN_PRESET', 'SALUD')
+print(f"🔄 Loading domain preset: {DOMAIN_PRESET}")
+load_preset(DOMAIN_PRESET)
+print(f"✅ Domain loaded: {DomainConfig.BUSINESS_NAME}")
+
+# Import bot AFTER loading preset
+bot_module = importlib.import_module('bot')
+bot = bot_module.bot
+
+states_module = importlib.import_module('states')
+session_manager = states_module.session_manager
+ConversationState = states_module.ConversationState
+
+prof_module = importlib.import_module('professional_service')
+professional_service = prof_module.professional_service
 
 # Initialize Flask application
 app = Flask(__name__)

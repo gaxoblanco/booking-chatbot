@@ -8,6 +8,14 @@ Centralized message management for easy maintenance and translation.
 from domain_config import DomainConfig
 
 
+def _format_categories_list():
+    """Format categories for display in messages."""
+    categories_text = ""
+    for key, value in DomainConfig.CATEGORIES.items():
+        categories_text += f"{key}️⃣ {value}\n"
+    return categories_text.strip()
+
+
 class Messages:
     """
     Bot message templates.
@@ -22,17 +30,14 @@ class Messages:
 
 {DomainConfig.WELCOME_TAGLINE}
 
-¿Qué eres?
-1️⃣ Profesional
-2️⃣ Cliente
-
+{DomainConfig.ROLE_QUESTION}
+{DomainConfig.ROLE_OPTIONS}
 Responde con 1 o 2."""
 
-    INVALID_ROLE = """❌ Opción inválida.
+    INVALID_ROLE = f"""❌ Opción inválida.
 
 Por favor responde:
-1️⃣ para Profesional
-2️⃣ para Cliente"""
+{DomainConfig.ROLE_OPTIONS}"""
 
     # ==========================================
     # PROFESSIONAL MESSAGES
@@ -65,7 +70,9 @@ Por favor, intenta nuevamente enviando:
 • Tamaño menor a 10MB"""
 
     # Main menu
-    PROF_MAIN_MENU = """👨‍⚕️ Menú Profesional
+    PROF_MAIN_MENU = f"""{DomainConfig.EMOJI_PROFESSIONAL} Menú Profesional
+
+{DomainConfig.PROFESSIONAL_WELCOME}
 
 ¿Qué deseas hacer?
 
@@ -264,25 +271,20 @@ Responde con el número."""
 
 Responde con el número."""
 
-    PROF_INFO_ASK_ESPECIALIDAD = """🏥 Especialidad
+    PROF_INFO_ASK_ESPECIALIDAD = f"""{DomainConfig.EMOJI_CATEGORY} {DomainConfig.CATEGORY_LABEL}
 
-Selecciona tu especialidad:
+{DomainConfig.CATEGORY_PROMPT}
 
-1️⃣ Médico General
-2️⃣ Dentista
-3️⃣ Psicólogo
-4️⃣ Kinesiólogo
-5️⃣ Nutricionista
-6️⃣ Otro
+{_format_categories_list()}
 
-Responde con el número o escribe tu especialidad."""
+Responde con el número o escribe tu {DomainConfig.CATEGORY_LABEL_LOWER}."""
 
-    PROF_INFO_ASK_BIO = """📝 Descripción Personal
+    PROF_INFO_ASK_BIO = f"""📝 Descripción Personal
 
 Escribe una breve descripción sobre ti:
 Ejemplo: 
- - "Trabajo infailt +10"
- - "Terapia de parejas"
+    {DomainConfig.CATEGORY_CUSTOM_EXAMPLE1}
+    {DomainConfig.CATEGORY_CUSTOM_EXAMPLE2}
 
 💡 Escribe '0' para volver"""
 
@@ -380,7 +382,7 @@ Filtros activos:
 1️⃣ Zona
 2️⃣ Disponibilidad (Fecha/Hora)
 3️⃣ Prepaga
-4️⃣ Sexo del Profesional
+4️⃣ Genero del Profesional
 5️⃣ Especialidad
 
 0️⃣ Buscar con filtros seleccionados
@@ -407,15 +409,17 @@ Procesando búsqueda..."""
     # CLIENT MESSAGES
     # ==========================================
 
-    CLIENT_MAIN_MENU = """👤 Menú Cliente
+    CLIENT_MAIN_MENU = f"""{DomainConfig.EMOJI_CLIENT} Menú Cliente
 
-Buscar profesionales disponibles:
+{DomainConfig.CLIENT_WELCOME}
+
+Buscar {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} disponibles:
 
 1️⃣ Buscar para Hoy
 2️⃣ Búsqueda Avanzada (Paso a Paso)
 3️⃣ Búsqueda Rápida (Todo en 1 mensaje)
-4️⃣ Zona Norte
-5️⃣ Zona Sur
+4️⃣ Virtual
+5️⃣ Precensial
 
 0️⃣ Volver al inicio
 
@@ -424,12 +428,14 @@ Responde con el número de opción."""
     # Quick search - Today
     CLIENT_SEARCH_TODAY_CONFIRM = """🔍 Buscar para Hoy
 
-Buscando profesionales disponibles HOY ({today_date})...
+Buscando profesionales disponibles HOY ({today_date})
 
-¿A qué hora necesitas?
+¿En qué horario preferís?
 
-Formato: HH:MM
-Ejemplo: 14:00
+1️⃣ Mañana (8:00 - 13:00)
+2️⃣ Tarde (13:00 - 20:00)
+
+Responde con el número o escribe el horario exacto (ej: 14:00)
 
 💡 Escribe '0' para volver al menú"""
 
@@ -470,7 +476,7 @@ Ejemplo: 14:00"""
 Responde con el número."""
 
     # Sexo filter
-    CLIENT_ASK_SEXO = """👥 Filtrar por Sexo del Profesional
+    CLIENT_ASK_SEXO = """👥 Filtrar por genero del Profesional
 
 ¿Qué prefieres?
 
@@ -508,7 +514,7 @@ O escribe '0' para volver al menú."""
 
 📍 Zona: {zona}
 💳 Prepaga: {prepaga}
-👤 Sexo: {sexo}
+👤 Genero: {sexo}
 
 📅 Disponibilidad:
 {availability}

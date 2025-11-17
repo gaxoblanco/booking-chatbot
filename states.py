@@ -82,6 +82,7 @@ class ConversationState(Enum):
 
     # Main menu
     CLIENT_MAIN_MENU = "client_main_menu"  # Show search options
+    CLIENT_SELECT_MODALITY = "client_select_modality"  # Virtual or Presencial
 
     # Filter selection
     CLIENT_SELECT_FILTERS = "client_select_filters"  # Which filters to apply?

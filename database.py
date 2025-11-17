@@ -518,7 +518,7 @@ class Database:
     # ==========================================
 
     def search_professionals(self, zone: str = None, gender: str = None,
-                             accept_prepaga: bool = None) -> List[Dict]:
+                             accept_prepaga: bool = None, online_sessions: bool = None) -> List[Dict]:
         """
         Search professionals by filters.
 
@@ -526,6 +526,7 @@ class Database:
             zone: Filter by zone ('norte' or 'sur')
             gender: Filter by gender ('m', 'f', 'otro')
             accept_prepaga: Filter by prepaga acceptance
+            online_sessions: Filter by online sessions availability
 
         Returns:
             List of matching professionals
@@ -549,6 +550,10 @@ class Database:
                     query += " AND accept_prepaga = ?"
                     params.append(accept_prepaga)
 
+                if online_sessions is not None:
+                    query += " AND online_sessions = ?"
+                    params.append(online_sessions)
+
                 # Only verified professionals (with certificate)
                 query += " AND certificate_path IS NOT NULL"
 
@@ -559,7 +564,6 @@ class Database:
         except Exception as e:
             print(f"[DB] ❌ Error searching professionals: {e}")
             return []
-
     # ==========================================
     # CLIENT SEARCH ANALYTICS
     # ==========================================

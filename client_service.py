@@ -164,7 +164,7 @@ class ClientService:
     # ==========================================
 
     def search_professionals_by_filters(self, zone: str = None, gender: str = None,
-                                        accept_prepaga: bool = None,
+                                        accept_prepaga: bool = None, online_sessions: bool = None,
                                         date_str: str = None, time_str: str = None,
                                         limit: int = 10) -> List[Dict]:
         """
@@ -172,7 +172,7 @@ class ClientService:
         Returns up to 'limit' professionals with most availability.
 
         Business Logic:
-        1. Apply base filters (zone, gender, prepaga)
+        1. Apply base filters (zone, gender, prepaga, online_sessions)
         2. If date/time specified, filter only available at that time
         3. Rank by availability (hours available)
         4. Randomize among top results
@@ -182,6 +182,7 @@ class ClientService:
             zone: Filter by zone ('norte'/'sur')
             gender: Filter by gender ('m'/'f'/'otro')
             accept_prepaga: Filter by prepaga acceptance
+            online_sessions: Filter by online sessions (True/False/None)
             date_str: Filter by availability on date (YYYY-MM-DD)
             time_str: Filter by availability at time (HH:MM)
             limit: Maximum number of results (default 10)
@@ -194,13 +195,14 @@ class ClientService:
             print(
                 f"         Zone: {zone}, Gender: {gender}, Prepaga: {accept_prepaga}")
             print(
-                f"         Date: {date_str}, Time: {time_str}, Limit: {limit}")
+                f"         Online: {online_sessions}, Date: {date_str}, Time: {time_str}, Limit: {limit}")
 
             # Step 1: Get base filtered results
             professionals = self.db.search_professionals(
                 zone=zone,
                 gender=gender,
-                accept_prepaga=accept_prepaga
+                accept_prepaga=accept_prepaga,
+                online_sessions=online_sessions
             )
 
             print(
@@ -326,6 +328,76 @@ class ClientService:
 
         return results[:limit]
 
+    def search_professionals_in_time_range(self, date_str: str, time_start: str,
+                                           time_end: str, zone: str = None,
+                                           gender: str = None, limit: int = 10) -> List[Dict]:
+        """
+        Search professionals available in a time range (e.g., morning or afternoon).
+
+        Args:
+            date_str: Date in YYYY-MM-DD format
+            time_start: Start time in HH:MM format (e.g., "08:00")
+            time_end: End time in HH:MM format (e.g., "13:00")
+            zone: Optional zone filter
+            gender: Optional gender filter
+            limit: Maximum results
+
+        Returns:
+            List of available professionals with availability scores
+        """
+        try:
+            print(
+                f"[CLIENT] 🔍 Searching in time range: {time_start} - {time_end}")
+
+            # Get all professionals matching base filters
+            professionals = self.db.search_professionals(
+                zone=zone,
+                gender=gender
+            )
+
+            if not professionals:
+                return []
+
+            # Check availability for each hour in the range
+            results = []
+
+            for prof in professionals:
+                phone = prof['phone']
+                available_hours = 0
+
+                # Parse time range
+                start_hour = int(time_start.split(':')[0])
+                end_hour = int(time_end.split(':')[0])
+
+                # Check each hour in the range
+                for hour in range(start_hour, end_hour):
+                    time_str = f"{hour:02d}:00"
+                    if self.is_professional_available(phone, date_str, time_str):
+                        available_hours += 1
+
+                # Only include if has at least 1 hour available
+                if available_hours > 0:
+                    prof['availability_score'] = available_hours
+                    results.append(prof)
+
+            print(
+                f"[CLIENT] Found {len(results)} professionals with availability in range")
+
+            if not results:
+                return []
+
+            # Sort by availability
+            results.sort(key=lambda x: x['availability_score'], reverse=True)
+
+            # Randomize top results
+            top_candidates = results[:min(len(results), limit * 2)]
+            random.shuffle(top_candidates)
+
+            return top_candidates[:limit]
+
+        except Exception as e:
+            print(f"[CLIENT] ❌ Error searching time range: {e}")
+            return []
     # ==========================================
     # CONTACT
     # ==========================================

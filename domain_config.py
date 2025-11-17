@@ -12,6 +12,9 @@ class DomainConfig:
     """
     Configuration for the business domain.
     Modify these values to adapt the bot to your specific industry.
+
+    These are DEFAULT values (SALUD domain).
+    Use load_preset() to switch to another domain configuration.
     """
 
     # ==========================================
@@ -129,6 +132,33 @@ class DomainConfig:
     # Welcome message customization
     WELCOME_TAGLINE = "Conectamos profesionales de la salud con pacientes"
 
+    # ==========================================
+    # FLOW MESSAGES CUSTOMIZATION
+    # ==========================================
+    # These messages are used in the conversation flow.
+    # They can be overridden by domain presets.
+
+    # Initial role selection
+    ROLE_QUESTION = "¿Qué eres?"
+    ROLE_OPTIONS = "1️⃣ Profesional\n2️⃣ Cliente"
+
+    # Client menu welcome message
+    CLIENT_WELCOME = "¡Hola! Te ayudo a encontrar profesionales de la salud"
+
+    # Professional menu welcome message
+    PROFESSIONAL_WELCOME = "¡Bienvenido/a! Registrá tu perfil profesional para conectar con pacientes 👋"
+
+    # Category selection prompt (step 6 of registration)
+    CATEGORY_PROMPT = "Selecciona tu especialidad:"
+
+    # Custom category input prompt (step 7 of registration)
+    CATEGORY_CUSTOM_PROMPT = "Escribí tu especialidad:"
+
+    # Examples for custom category field
+    CATEGORY_CUSTOM_EXAMPLE1 = "Traumatología deportiva"
+    CATEGORY_CUSTOM_EXAMPLE2 = "Medicina general con enfoque preventivo"
+
+
 # ==========================================
 # DOMAIN PRESETS
 # ==========================================
@@ -142,12 +172,25 @@ class DomainPresets:
     """
 
     PSICOLOGIA = {
+        # ==========================================
+        # IDENTIFICACIÓN DEL DOMINIO
+        # ==========================================
         "DOMAIN_ID": "psicologia",
         "BUSINESS_NAME": "Psico Connect",
+
+        # ==========================================
+        # TÍTULOS PROFESIONALES
+        # ==========================================
+        # Cómo referirse a los proveedores del servicio
         "PROFESSIONAL_TITLE": "Psicólogo",
         "PROFESSIONAL_TITLE_PLURAL": "Psicólogos",
         "PROFESSIONAL_TITLE_LOWER": "psicólogo",
         "PROFESSIONAL_TITLE_PLURAL_LOWER": "psicólogos",
+
+        # ==========================================
+        # CREDENCIALES
+        # ==========================================
+        # Cómo llamar a los certificados/credenciales
         "CERTIFICATE_NAME": "matrícula profesional",
         "CERTIFICATE_NAME_PLURAL": "matrículas profesionales",
         "CERTIFICATE_EXAMPLES": [
@@ -155,6 +198,10 @@ class DomainPresets:
             "Título de Licenciado en Psicología",
             "Certificado de especialización"
         ],
+
+        # ==========================================
+        # CATEGORÍAS (Orientaciones terapéuticas)
+        # ==========================================
         "CATEGORY_LABEL": "Orientación",
         "CATEGORY_LABEL_LOWER": "orientación",
         "CATEGORIES": {
@@ -171,7 +218,10 @@ class DomainPresets:
         },
         "ALLOW_CUSTOM_CATEGORY": True,
 
-        # Filtros de búsqueda
+        # ==========================================
+        # FILTROS DE BÚSQUEDA
+        # ==========================================
+        # Filtro por zona geográfica
         "ZONE_ENABLED": True,
         "ZONE_LABEL": "Zona",
         "ZONES": {
@@ -179,6 +229,7 @@ class DomainPresets:
             "sur": "Zona Sur",
         },
 
+        # Filtro por género del profesional
         "GENDER_ENABLED": True,
         "GENDER_LABEL": "Género del profesional",
         "GENDERS": {
@@ -187,27 +238,38 @@ class DomainPresets:
             "otro": "Indistinto"
         },
 
-        # Campo personalizado: Acepta obra social
-        "CUSTOM_FIELD_1_ENABLED": True,
+        # ==========================================
+        # CAMPOS PERSONALIZADOS
+        # ==========================================
+        # Campo personalizado 1: Acepta obra social
+        "CUSTOM_FIELD_1_ENABLED": False,
         "CUSTOM_FIELD_1_KEY": "accept_prepaga",
         "CUSTOM_FIELD_1_LABEL": "Acepta Obra Social",
         "CUSTOM_FIELD_1_TYPE": "boolean",
 
-        # Campo personalizado 2: Modalidad de atención
+        # Campo personalizado 2: Sesiones online
         "CUSTOM_FIELD_2_ENABLED": True,
         "CUSTOM_FIELD_2_KEY": "online_sessions",
         "CUSTOM_FIELD_2_LABEL": "Sesiones Online",
         "CUSTOM_FIELD_2_TYPE": "boolean",
 
-        # Campos requeridos
+        # ==========================================
+        # CAMPOS REQUERIDOS EN REGISTRO
+        # ==========================================
         "REQUIRED_FIELDS": ['name', 'category', 'zone'],
 
-        # Configuración de disponibilidad
+        # ==========================================
+        # CONFIGURACIÓN DE DISPONIBILIDAD
+        # ==========================================
+        # Cómo referirse a los turnos/espacios disponibles
         "SLOT_NAME": "sesión",
         "SLOT_NAME_PLURAL": "sesiones",
         "DEFAULT_SEARCH_LIMIT": 10,
 
-        # Personalización UI/UX
+        # ==========================================
+        # PERSONALIZACIÓN UI/UX
+        # ==========================================
+        # Emojis para branding
         "EMOJI_PROFESSIONAL": "🧠",
         "EMOJI_CLIENT": "👤",
         "EMOJI_CALENDAR": "📅",
@@ -215,7 +277,28 @@ class DomainPresets:
         "EMOJI_LOCATION": "📍",
         "EMOJI_CATEGORY": "🎯",
 
-        "WELCOME_TAGLINE": "Conectamos psicólogos con pacientes de forma simple y rápida"
+        # Mensaje de bienvenida
+        "WELCOME_TAGLINE": "Conectamos psicólogos con pacientes de forma simple y rápida",
+
+        # ==========================================
+        # MENSAJES PERSONALIZADOS DEL FLUJO
+        # ==========================================
+        # Pregunta inicial: ¿Qué eres?
+        "ROLE_QUESTION": "¿Sos paciente o psicólogo/a?",
+        "ROLE_OPTIONS": "1️⃣ Paciente\n2️⃣ Psicólogo/a",
+
+        # Saludo menú cliente
+        "CLIENT_WELCOME": "¡Hola! Te ayudo a encontrar el psicólogo ideal para vos 🧠",
+
+        # Saludo menú profesional
+        "PROFESSIONAL_WELCOME": "¡Bienvenido/a! Registrá tu perfil profesional para conectar con pacientes 👋",
+
+        # Mensaje para seleccionar especialidad (paso 6 del registro)
+        "CATEGORY_PROMPT": "¿Cuál es tu orientación terapéutica principal?",
+
+        # Mensaje para especialidad personalizada (paso 7)
+        "CATEGORY_CUSTOM_EXAMPLE1": "- Trabajo infailt +10",
+        "CATEGORY_CUSTOM_EXAMPLE2": "- Terapia de parejas",
     }
 
     SALUD = {

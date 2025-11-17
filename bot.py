@@ -24,6 +24,7 @@ from professional_service import professional_service
 from analytics_service import analytics_service
 from client_service import client_service
 from analytics_service import analytics_service
+import validators
 
 
 class Bot:
@@ -189,9 +190,16 @@ class Bot:
     def handle_role_selection(self, session: SessionData, message: str) -> str:
         """Handle role selection - professional or client."""
         if message == '1':
-            session.set_role(UserRole.PROFESSIONAL)
-            # Check if professional already has certificate
+            # Usuario seleccionó opción 1 = CLIENTE/PACIENTE
+            session.set_role(UserRole.CLIENT)
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_MAIN_MENU
 
+        elif message == '2':
+            # Usuario seleccionó opción 2 = PROFESIONAL
+            session.set_role(UserRole.PROFESSIONAL)
+
+            # Check if professional already has certificate
             if professional_service.has_certificate(session.phone_number):
                 # Already has certificate - go directly to main menu
                 print(
@@ -204,12 +212,9 @@ class Bot:
                     f"[BOT] Professional {session.phone_number} needs to upload certificate")
                 session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
                 return self.messages.PROF_NEED_CERTIFICATE
-        elif message == '2':
-            session.set_role(UserRole.CLIENT)
-            return self.messages.CLIENT_MAIN_MENU
+
         else:
             return self.messages.INVALID_ROLE
-
     # ==========================================
     # PROFESSIONAL HANDLERS
     # ==========================================
@@ -1280,17 +1285,18 @@ class Bot:
             return self.messages.CLIENT_SEARCH_QUICK_FORMAT
 
         elif message == '4':
-            # Zona Norte - BÚSQUEDA DIRECTA
-
-            # Buscar en zona norte
+            # Virtual - BÚSQUEDA DIRECTA
+            # Buscar profesionales con sesiones online
             results = client_service.search_professionals_by_filters(
-                zone="norte")
+                online_sessions=True,
+                limit=10
+            )
 
             # Log search
             search_id = analytics_service.log_search(
                 client_phone=session.phone_number,
-                search_type='zona',
-                search_params={'zone': 'norte'},
+                search_type='virtual',
+                search_params={'online_sessions': True},
                 result_count=len(results),
                 session_id=session.phone_number
             )
@@ -1300,36 +1306,19 @@ class Bot:
             session.store_temp('search_results', results)
 
             # Format and return
+            if len(results) == 0:
+                return self.messages.CLIENT_NO_RESULTS
+
             formatted = client_service.format_results_list(results)
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-
             return formatted
 
         elif message == '5':
-            # Zona Sur - BÚSQUEDA DIRECTA
-
-            # Buscar en zona sur
-            results = client_service.search_professionals_by_filters(
-                zone="sur")
-
-            # Log search
-            search_id = analytics_service.log_search(
-                client_phone=session.phone_number,
-                search_type='zona',
-                search_params={'zone': 'sur'},
-                result_count=len(results),
-                session_id=session.phone_number
-            )
-            session.store_temp('current_search_id', search_id)
-
-            # Store results
-            session.store_temp('search_results', results)
-
-            # Format and return
-            formatted = client_service.format_results_list(results)
-            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-
-            return formatted
+            # Presencial - PREGUNTAR ZONA
+            session.clear_temp()
+            session.store_temp('modality', 'presencial')
+            session.transition_to(ConversationState.CLIENT_FILTER_ZONA)
+            return self.messages.CLIENT_ASK_ZONA
         elif message == '0':
             session.reset()
             return self.messages.WELCOME
@@ -1346,35 +1335,38 @@ class Bot:
             return self.messages.CLIENT_MAIN_MENU
 
         if message == '1':
-            session.store_temp('zona', 'norte')
+            zona = 'norte'
         elif message == '2':
-            session.store_temp('zona', 'sur')
+            zona = 'sur'
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_ASK_ZONA
 
-        # Search using client_service
+        # Buscar profesionales con la zona seleccionada
         results = client_service.search_professionals_by_filters(
-            zone=session.get_temp('zona')
+            zone=zona,
+            limit=10
         )
 
         # Log search
         search_id = analytics_service.log_search(
             client_phone=session.phone_number,
             search_type='zona',
-            search_params={'zone': session.get_temp('zona')},
+            search_params={'zone': zona},
             result_count=len(results),
             session_id=session.phone_number
         )
         session.store_temp('current_search_id', search_id)
 
-        # Store results for later navigation
+        # Store results
         session.store_temp('search_results', results)
 
-        # Format and return results
+        # Format and return
+        if len(results) == 0:
+            return self.messages.CLIENT_NO_RESULTS
+
         formatted = client_service.format_results_list(results)
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-
-        return formatted  # Retornar el formato directamente
+        return formatted
 
     def handle_client_filter_fecha(self, session: SessionData, message: str) -> str:
         """Handle fecha filter - ask for date."""
@@ -1395,26 +1387,85 @@ class Bot:
         return self.messages.CLIENT_ASK_HORA
 
     def handle_client_filter_hora(self, session: SessionData, message: str) -> str:
-        """Handle hora filter - ask for time."""
+        """Handle hora filter - accepts specific time or morning/afternoon."""
         # Check for back command
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return self.messages.CLIENT_MAIN_MENU
 
-        # Simple time validation (HH:MM)
-        if ':' not in message or len(message) != 5:
-            return self.messages.INVALID_INPUT + "\n\n" + self.messages.CLIENT_ASK_HORA
+        # Check if user selected morning or afternoon
+        if message == '1' or message.lower() in ['mañana', 'manana', 'morning']:
+            # Morning: 8:00 - 13:00
+            time_start = "08:00"
+            time_end = "13:00"
+            time_range = True
+        elif message == '2' or message.lower() in ['tarde', 'afternoon']:
+            # Afternoon: 13:00 - 20:00
+            time_start = "13:00"
+            time_end = "20:00"
+            time_range = True
+        else:
+            # User entered specific time
+            if not validators.validate_time(message):
+                return self.messages.INVALID_TIME
+            time_start = message
+            time_end = None
+            time_range = False
 
-        session.store_temp('hora', message)
+        # Get date from temp storage
+        fecha = session.get_temp('fecha')
+        fecha_str = session.get_temp('fecha_str')
 
-        # TODO: Search database
-        # results = db.search_by_availability(fecha, hora)
-        print(
-            f"[DB] TODO: Search by availability - {session.get_temp('fecha_str')} {message}")
+        # Store time info
+        if time_range:
+            session.store_temp('time_range', f"{time_start}-{time_end}")
+            session.store_temp('time_start', time_start)
+            session.store_temp('time_end', time_end)
+        else:
+            session.store_temp('hora', time_start)
 
+        # Search professionals
+        if time_range:
+            # Search for professionals available in the time range
+            results = client_service.search_professionals_in_time_range(
+                date_str=fecha.strftime("%Y-%m-%d"),
+                time_start=time_start,
+                time_end=time_end
+            )
+        else:
+            # Search for specific time
+            results = client_service.search_professionals_by_filters(
+                date_str=fecha.strftime("%Y-%m-%d"),
+                time_str=time_start
+            )
+
+        # Log search
+        search_params = {
+            'date': fecha_str,
+        }
+        if time_range:
+            search_params['time_range'] = f"{time_start}-{time_end}"
+        else:
+            search_params['time'] = time_start
+
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='today' if time_range else 'datetime',
+            search_params=search_params,
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+
+        # Store results
+        session.store_temp('search_results', results)
+
+        # Format and return
+        formatted = client_service.format_results_list(results)
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-        return f"🔍 Buscando disponibles el {session.get_temp('fecha_str')} a las {message}...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
+
+        return formatted
 
     def handle_client_filter_prepaga(self, session: SessionData, message: str) -> str:
         """Handle prepaga filter."""
