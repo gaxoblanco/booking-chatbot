@@ -23,39 +23,43 @@ class Messages:
     """
 
     # ==========================================
-    # WELCOME & ROLE SELECTION
+    # BIENVENIDA PSIVALE
     # ==========================================
 
-    WELCOME = f"""👋 ¡Bienvenido a {DomainConfig.BUSINESS_NAME}!
+    WELCOME = """🌿 Hola, soy Vale, tu asistente de PSIVALE.
 
-{DomainConfig.WELCOME_TAGLINE}
+Sé que dar el primer paso no siempre es fácil, así que gracias por animarte.
+Estoy acá para ayudarte a encontrar el psicólogo que mejor se adapte a vos. 💚
 
-{DomainConfig.ROLE_QUESTION}
-{DomainConfig.ROLE_OPTIONS}
-Responde con 1 o 2."""
+¿Querés que te ayudemos a encontrar un profesional para comenzar terapia?
 
-    INVALID_ROLE = f"""❌ Opción inválida.
+1️⃣ Sí, quiero empezar
+2️⃣ Buscar por mi cuenta
 
-Por favor responde:
-{DomainConfig.ROLE_OPTIONS}"""
+Responde con el número."""
 
     # ==========================================
     # PROFESSIONAL MESSAGES
     # ==========================================
 
     # Certificate upload (mandatory first step)
-    PROF_NEED_CERTIFICATE = f"""{DomainConfig.EMOJI_CERTIFICATE} Registro de {DomainConfig.PROFESSIONAL_TITLE}
+    PROF_NEED_CERTIFICATE = """📋 Registro de Psicólogo
 
-Para comenzar, necesito que subas tu {DomainConfig.CERTIFICATE_NAME}.
+Para comenzar, necesito que subas tu matrícula profesional.
 
 📎 Envía una foto o PDF de tu:
-• Matrícula profesional
-• Título habilitante
-• Documento que acredite tu profesión
+- Matrícula profesional
+- Título habilitante
+- Documento que acredite tu profesión
 
 ⚠️ Solo profesionales verificados aparecen en búsquedas.
 
-💡 Escribe '0' para volver al menú"""
+💡 Escribe '0' para volver"""
+
+    # ⭐ MODIFICAR - Detección de psicólogo (sin info extra)
+    PSIVALE_AUTH_DETECTED = """💼 ¡Hola! Veo que sos psicólogo.
+
+🌿 Gracias por dar el primer paso para sumarte a PSIVALE."""
 
     PROF_CERTIFICATE_RECEIVED = """✅ ¡Certificado recibido!
 
@@ -205,7 +209,7 @@ lunes, martes, miércoles, miércoles, jueves, viernes, sábado, sabado, domingo
 
 # 💡 Escribe '0' para volver al menú"""
 
-# Option 5: Cargar información del profesional
+    # Option 5: Cargar información del profesional
     PROF_INFO_MENU = """📋 Cargar Información
 
 Configura tu perfil profesional:
@@ -282,7 +286,7 @@ Responde con el número o escribe tu {DomainConfig.CATEGORY_LABEL_LOWER}."""
     PROF_INFO_ASK_BIO = f"""📝 Descripción Personal
 
 Escribe una breve descripción sobre ti:
-Ejemplo: 
+Ejemplo:
     {DomainConfig.CATEGORY_CUSTOM_EXAMPLE1}
     {DomainConfig.CATEGORY_CUSTOM_EXAMPLE2}
 
@@ -357,9 +361,9 @@ Valores aceptados:
 💡 Los campos bio y honorarios son opcionales
 💡 Escribe '0' para volver"""
 
-    # ==========================================
-    # CLIENT MESSAGES - MULTI-FILTER (Dynamic)
-    # ==========================================
+  # ==========================================
+  # CLIENT MESSAGES - MULTI-FILTER (Dynamic)
+  # ==========================================
 
     @staticmethod
     def CLIENT_MULTIFILTER_MENU(active_filters: str = "") -> str:
@@ -437,54 +441,54 @@ Buscando profesionales disponibles HOY ({today_date})
 
 Responde con el número o escribe el horario exacto (ej: 14:00)
 
-💡 Escribe '0' para volver al menú"""
+# 💡 Escribe '0' para volver al menú"""
 
-    # Zona filter
-    CLIENT_ASK_ZONA = """📍 Filtrar por Zona
+#     # Zona filter
+#     CLIENT_ASK_ZONA = """📍 Filtrar por Zona
 
-¿En qué zona buscas?
+# ¿En qué zona buscas?
 
-1️⃣ Zona Norte
-2️⃣ Zona Sur
+# 1️⃣ Zona Norte
+# 2️⃣ Zona Sur
 
-Responde con el número."""
+# Responde con el número."""
 
     # Disponibilidad filter
-    CLIENT_ASK_FECHA = """📅 Filtrar por Disponibilidad
+#     CLIENT_ASK_FECHA = """📅 Filtrar por Disponibilidad
 
-¿Qué día necesitas?
+# ¿Qué día necesitas?
 
-Formato: DD/MM/YYYY
-Ejemplo: 15/11/2025"""
+# Formato: DD/MM/YYYY
+# Ejemplo: 15/11/2025"""
 
-    CLIENT_ASK_HORA = """⏰ Filtrar por Disponibilidad
+#     CLIENT_ASK_HORA = """⏰ Filtrar por Disponibilidad
 
-¿A qué hora necesitas?
+# ¿A qué hora necesitas?
 
-Formato: HH:MM
-Ejemplo: 14:00"""
+# Formato: HH:MM
+# Ejemplo: 14:00"""
 
     # Prepaga filter
-    CLIENT_ASK_PREPAGA = """💳 Filtrar por Prepaga
+#     CLIENT_ASK_PREPAGA = """💳 Filtrar por Prepaga
 
-¿Buscas profesionales que acepten prepaga?
+# ¿Buscas profesionales que acepten prepaga?
 
-1️⃣ Sí, con prepaga
-2️⃣ No, sin prepaga
-3️⃣ No importa
+# 1️⃣ Sí, con prepaga
+# 2️⃣ No, sin prepaga
+# 3️⃣ No importa
 
-Responde con el número."""
+# Responde con el número."""
 
     # Sexo filter
-    CLIENT_ASK_SEXO = """👥 Filtrar por genero del Profesional
+#     CLIENT_ASK_SEXO = """👥 Filtrar por genero del Profesional
 
-¿Qué prefieres?
+# ¿Qué prefieres?
 
-1️⃣ Masculino
-2️⃣ Femenino
-3️⃣ No importa
+# 1️⃣ Masculino
+# 2️⃣ Femenino
+# 3️⃣ No importa
 
-Responde con el número."""
+# Responde con el número."""
 
     # Search summary before results
     CLIENT_SEARCH_SUMMARY = """🔍 Buscando con filtros:
@@ -539,80 +543,63 @@ Puedes contactarlo directamente:
 2️⃣ Nueva búsqueda
 3️⃣ Volver al menú"""
 
-    CLIENT_MULTIFILTER_MENU = """🔍 Búsqueda Avanzada
+#     CLIENT_MULTIFILTER_MENU = """🔍 Búsqueda Avanzada
 
-Selecciona los filtros que desees (uno a la vez):
+# Selecciona los filtros que desees (uno a la vez):
 
-1️⃣ Zona
-2️⃣ Disponibilidad (Fecha/Hora)
-3️⃣ Prepaga
-4️⃣ Genero del Profesional
+# 1️⃣ Zona
+# 2️⃣ Disponibilidad (Fecha/Hora)
+# 3️⃣ Prepaga
+# 4️⃣ Genero del Profesional
 
-9️⃣ Buscar con filtros actuales
-0️⃣ Volver al menú
+# 9️⃣ Buscar con filtros actuales
+# 0️⃣ Volver al menú
 
-━━━━━━━━━━━━━━━━━━━━
-Filtros activos:
-{active_filters}
-━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━
+# Filtros activos:
+# {active_filters}
+# ━━━━━━━━━━━━━━━━━━━━
 
-Responde con el número de opción."""
+# Responde con el número de opción."""
+
+    # ==========================================
+    # REEMPLAZAR en messages.py
+    # ==========================================
 
     CLIENT_SEARCH_QUICK_FORMAT = """🔍 Búsqueda Rápida
 
-Envía tus filtros en cualquiera de estos formatos:
+Escribí los filtros que necesites, uno por línea:
 
 ━━━━━━━━━━━━━━━━━━━━
-OPCIÓN 1 - Con etiquetas:
+📝 Ejemplo simple:
 ━━━━━━━━━━━━━━━━━━━━
 
-zona: norte
-fecha: 15/11/2025
-hora: 14:00
-prepaga: si
-genero: masculino
+tcc
+adultos
+online
 
 ━━━━━━━━━━━━━━━━━━━━
-OPCIÓN 2 - Sin etiquetas (orden importante):
+🎯 Opciones disponibles:
 ━━━━━━━━━━━━━━━━━━━━
 
-norte
-15/11/2025
-14:00
-si
-masculino
+🧠 Enfoque: tcc, contextual, sistemica, gestaltica, psicoanalisis, neuropsicologia
+
+👥 Población: ninos, adolescentes, adultos, parejas
+
+💻 Modalidad: online, presencial, ambas
+
+📍 Zona: norte, sur, nueva_cordoba
+
+📅 Horarios: manana, tarde, noche, sabado
+
+💰 Honorarios: 1, 2, 3 o 4
+   (1=hasta $15k | 2=$15-25k | 3=$25-35k | 4=+$35k)
 
 ━━━━━━━━━━━━━━━━━━━━
-Valores aceptados:
-━━━━━━━━━━━━━━━━━━━━
-
-- zona: norte, sur (o n, s) - OPCIONAL
-- fecha: DD/MM/YYYY - OPCIONAL
-- hora: HH:MM - OPCIONAL
-- prepaga: si, no (o s, n) - OPCIONAL
-- genero: masculino, femenino, otro (o m, f, o) - OPCIONAL
 
 💡 Todos los campos son opcionales
-💡 Puedes enviar solo los filtros que necesites
-💡 Escribe '0' para volver
-
-━━━━━━━━━━━━━━━━━━━━
-Ejemplos:
-━━━━━━━━━━━━━━━━━━━━
-
-Solo zona:
-zona: norte
-
-Zona y fecha:
-zona: norte
-fecha: 15/11/2025
-
-Todo:
-norte
-15/11/2025
-14:00
-si
-masculino"""
+💡 Escribí solo lo que necesites
+💡 Escribe '0' para volver al menú"""
 
     # ==========================================
     # COMMON MESSAGES
@@ -733,6 +720,400 @@ Si el problema persiste, escribe 'ayuda'."""
             "o": "Otro"
         }
         return sexos.get(sexo.lower(), sexo)
+
+    # ==========================================
+    # PSIVALE - MENSAJES CON TONO EMPÁTICO
+    # ==========================================
+
+    # Detección automática de psicólogo
+    PSIVALE_PROF_REGISTER_CONFIRM = """💼 ¡Hola! Veo que sos psicólogo.
+
+🌿 Gracias por dar el primer paso para sumarte a PSIVALE.
+
+¿Querés registrarte para recibir derivaciones de pacientes?
+
+1️⃣ Sí, quiero unirme
+2️⃣ Necesito más información
+
+Responde con el número."""
+
+    # Info sobre PSIVALE para profesionales
+    PSIVALE_PROF_INFO = """🌿 PSIVALE - Información para Profesionales
+
+📋 ¿Qué es PSIVALE?
+PSIVALE es una plataforma que conecta psicólogos con pacientes que buscan terapia, facilitando el acceso a atención psicológica de calidad.
+
+✅ Beneficios de sumarte:
+- Recibí derivaciones de pacientes que buscan tu perfil
+- Mayor visibilidad profesional
+- Con una suscripción accesible
+- Vos decidís tus honorarios y disponibilidad
+- No pierdas horas por cancelaciones de último momento
+
+📋 Requisitos:
+- Matrícula profesional activa
+- Título habilitante
+
+💚 ¿Querés registrarte?
+
+1️⃣ Sí, quiero unirme
+0️⃣ Volver al inicio
+
+Responde con el número."""
+
+    # ==========================================
+    # PROFESIONAL - REGISTRO EXTENDIDO PSIVALE
+    # ==========================================
+
+    PROF_INFO_MENU_PSIVALE = """📋 Configurá tu Perfil Profesional
+
+Para conectar con los pacientes adecuados, completá tu información:
+
+1️⃣ Nombre
+2️⃣ Email
+3️⃣ Zona
+4️⃣ Género
+5️⃣ Prepaga
+
+🌿 INFORMACIÓN PSIVALE:
+6️⃣ Enfoque Terapéutico (hasta 2)
+7️⃣ Población que Atendés
+8️⃣ Modalidad (Online/Presencial)
+9️⃣ Horarios Disponibles
+🔟 Bio Profesional
+1️⃣1️⃣ Rango de Honorarios
+
+✅ Guardar y Finalizar
+0️⃣ Volver al menú
+
+━━━━━━━━━━━━━━━━━━━━
+Información actual:
+{current_info}
+━━━━━━━━━━━━━━━━━━━━
+
+Responde con el número."""
+
+    # Enfoque terapéutico (nuevo campo)
+    PROF_INFO_ASK_ENFOQUE = """🧠 Enfoque Terapéutico
+
+¿Desde qué enfoque trabajás? (podés elegir hasta 2)
+
+1️⃣ Terapia Cognitivo-Conductual (TCC)
+   → Enfoque práctico en pensamientos y conductas
+
+2️⃣ Terapias Contextuales (ACT, DBT, FAP)
+   → Aceptación, mindfulness y valores personales
+
+3️⃣ Terapia Sistémica
+   → Enfoque en relaciones y contexto familiar
+
+4️⃣ Terapia Gestáltica
+   → Conciencia del presente y responsabilidad personal
+
+5️⃣ Psicoanálisis / Psicodinámica
+   → Exploración profunda del inconsciente
+
+6️⃣ Neuropsicología / Neurorehabilitación
+   → Enfoque en funciones cognitivas y cerebrales
+
+Responde con el número (o números separados por coma para elegir 2).
+💡 Ejemplo: 1,3"""
+
+    PROF_INFO_ASK_ENFOQUE_SECOND = """🧠 Segundo Enfoque (Opcional)
+
+Ya seleccionaste: {first_enfoque}
+
+¿Querés agregar un segundo enfoque?
+
+1️⃣ Terapia Cognitivo-Conductual (TCC)
+2️⃣ Terapias Contextuales (ACT, DBT, FAP)
+3️⃣ Terapia Sistémica
+4️⃣ Terapia Gestáltica
+5️⃣ Psicoanálisis / Psicodinámica
+6️⃣ Neuropsicología / Neurorehabilitación
+
+0️⃣ No, solo uno
+
+Responde con el número."""
+
+    # Población atendida (nuevo campo)
+    PROF_INFO_ASK_POBLACION = """👥 Población que Atendés
+
+¿Con qué tipo de pacientes trabajás habitualmente?
+(podés elegir varios)
+
+1️⃣ Niños/as
+2️⃣ Adolescentes
+3️⃣ Adultos
+4️⃣ Parejas / Familias
+
+Responde con el número (o números separados por coma).
+💡 Ejemplo: 1,2,3"""
+
+    # Modalidad (nuevo campo)
+    PROF_INFO_ASK_MODALIDAD = """💻 Modalidad de Atención
+
+¿Tus sesiones son online, presenciales o ambas?
+
+1️⃣ Online (sesiones virtuales)
+2️⃣ Presencial (en consultorio)
+3️⃣ Ambas modalidades
+
+Responde con el número."""
+
+    # Horarios disponibles (nuevo campo)
+    PROF_INFO_ASK_HORARIOS = """📅 Disponibilidad Horaria
+
+¿En qué horarios solés tener disponibilidad?
+(podés elegir varios)
+
+1️⃣ Mañana (8:00 - 13:00)
+2️⃣ Tarde (13:00 - 19:00)
+3️⃣ Noche (19:00 - 22:00)
+4️⃣ Sábados
+
+Responde con el número (o números separados por coma).
+💡 Ejemplo: 1,2"""
+
+    # ==========================================
+    # CLIENTE - FLUJO ASESORADO PSIVALE
+    # ==========================================
+
+    CLIENT_WELCOME_PSIVALE = """🌿 Perfecto, te voy a acompañar en la búsqueda.
+
+¿Cómo preferís buscar tu psicólogo/a?
+
+1️⃣ Quiero que me acompañes paso a paso
+   (Te guío con preguntas para encontrar el mejor match)
+
+2️⃣ Prefiero filtrado rápido
+   (Enviás todos los filtros de una vez)
+
+💡 Te recomiendo la primera opción para que te ayude a encontrar el profesional ideal."""
+
+    # Bienvenida del flujo asesorado
+    CLIENT_ASESORADO_WELCOME = """🌿 Hola, soy Vale, tu asistente de PSIVALE.
+
+Sé que dar el primer paso no siempre es fácil, así que gracias por animarte.
+Estoy acá para ayudarte a encontrar el psicólogo que mejor se adapte a vos. 💚
+
+Te voy a hacer algunas preguntas para entender qué necesitás.
+Podés escribir '0' en cualquier momento para volver al menú.
+
+¿Empezamos? 
+1️⃣ Sí, ayudame a buscar
+2️⃣ Solo estoy explorando"""
+
+    # Confirmación de intención
+    CLIENT_ASESORADO_CONFIRMA = """💚 Perfecto, vamos paso a paso.
+
+Te voy a hacer algunas preguntas para encontrar el profesional ideal.
+No te preocupes, es muy simple y rápido.
+
+Presioná cualquier tecla para continuar..."""
+
+    # Pregunta por enfoque terapéutico
+    CLIENT_ASESORADO_ASK_ENFOQUE = """🌱 Cada persona necesita algo diferente.
+
+¿Qué tipo de terapia te gustaría probar o te interesa más?
+
+1️⃣ Terapia Cognitivo-Conductual (TCC)
+   💭 Enfoque práctico en pensamientos y conductas
+
+2️⃣ Terapias Contextuales (ACT, DBT, FAP)
+   🧘 Aceptación, mindfulness y valores
+
+3️⃣ Terapia Sistémica
+   👨‍👩‍👧 Enfoque en relaciones y familia
+
+4️⃣ Terapia Gestáltica
+   ✨ Conciencia del presente
+
+5️⃣ Psicoanálisis / Psicodinámica
+   🔍 Exploración profunda
+
+6️⃣ Neuropsicología / Neurorehabilitación
+   🧠 Funciones cognitivas
+
+7️⃣ Me da igual / No sé bien
+   🤷 Te mostramos todas las opciones
+
+Responde con el número."""
+
+    # Pregunta por población
+    CLIENT_ASESORADO_ASK_POBLACION = """👥 ¿Para quién es la terapia?
+
+1️⃣ Para un niño/a
+2️⃣ Para un adolescente
+3️⃣ Para mí (adulto)
+4️⃣ Para una pareja o familia
+
+Responde con el número."""
+
+    # Pregunta por modalidad
+    CLIENT_ASESORADO_ASK_MODALIDAD = """💻 ¿Cómo preferís tener tus sesiones?
+
+1️⃣ Online (videollamada)
+   💡 Más flexible, desde tu casa
+
+2️⃣ Presencial (en consultorio)
+   💡 Encuentro cara a cara
+
+3️⃣ Me da igual
+   💡 Te mostramos ambas opciones
+
+Responde con el número."""
+
+    # Pregunta por zona (solo si es presencial)
+    CLIENT_ASESORADO_ASK_ZONA = """📍 ¿En qué zona estás buscando?
+
+1️⃣ Zona Norte
+2️⃣ Zona Sur
+3️⃣ Nueva Córdoba
+
+Responde con el número."""
+
+    # Pregunta por horarios
+    CLIENT_ASESORADO_ASK_HORARIOS = """📅 ¿En qué horarios te resultaría más cómodo?
+
+1️⃣ Mañana (8:00 - 13:00)
+2️⃣ Tarde (13:00 - 19:00)
+3️⃣ Noche (19:00 - 22:00)
+4️⃣ Sábados
+5️⃣ Cualquier horario
+
+Responde con el número."""
+
+    # Pregunta por honorarios
+    CLIENT_ASESORADO_ASK_HONORARIOS = """💰 Para ayudarte mejor, ¿cuál es tu presupuesto aproximado?
+
+1️⃣ Hasta $15.000
+2️⃣ $15.000 – $25.000
+3️⃣ $25.000 – $35.000
+4️⃣ Más de $35.000
+5️⃣ Prefiero no decirlo ahora
+
+Responde con el número."""
+
+    # Mensaje 1 - Resumen
+    CLIENT_ASESORADO_RESUMEN = """✨ Perfecto, ya tengo toda la información.
+
+🌿 Estás buscando:
+{resumen}
+
+Buscando psicólogos que se ajusten a tu perfil...
+
+💚 Gracias por compartir. Este paso vale."""
+
+    # Mensaje 2 - Con resultados
+    CLIENT_ASESORADO_RESULTADOS_INTRO = """💚 Encontré {count} psicólogo(s) que se ajustan a tu búsqueda.
+
+{resultados}"""
+
+    # Mensaje 2 - Sin resultados
+    CLIENT_ASESORADO_SIN_RESULTADOS = """💚 Gracias por compartir. Este paso vale.
+
+🌿 No encontré psicólogos con exactamente esos filtros.
+
+Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+¿Qué querés hacer?
+1️⃣ Ampliar la búsqueda (menos filtros)
+2️⃣ Ver todos los profesionales disponibles
+3️⃣ Empezar de nuevo
+
+Responde con el número."""
+
+    # Cierre con resultados
+    CLIENT_ASESORADO_RESULTADOS = """💚 Encontré {count} psicólogo(s) que se ajustan a tu búsqueda.
+
+{results_list}
+
+🌿 Cada uno de estos profesionales puede acompañarte en tu proceso.
+
+Responde con el número para ver más detalles.
+O escribí '0' para hacer una nueva búsqueda."""
+
+    # Sin resultados
+    CLIENT_ASESORADO_SIN_RESULTADOS = """🌿 No encontré psicólogos con exactamente esos filtros.
+
+Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+¿Qué querés hacer?
+1️⃣ Ampliar la búsqueda (menos filtros)
+2️⃣ Ver todos los profesionales disponibles
+3️⃣ Empezar de nuevo
+
+Responde con el número."""
+
+    # Detalle del profesional (formato Psivale)
+    CLIENT_PROFESSIONAL_DETAIL_PSIVALE = """🧠 {name}
+
+🎯 Enfoque: {enfoque}
+👥 Trabaja con: {poblacion}
+💻 Modalidad: {modalidad}
+📍 Zona: {zona}
+📅 Horarios: {horarios}
+💰 Honorarios: {honorarios}
+
+📝 Sobre el profesional:
+{bio}
+
+━━━━━━━━━━━━━━━━━━━━
+
+¿Qué querés hacer?
+1️⃣ Ver contacto
+2️⃣ Volver a resultados
+3️⃣ Nueva búsqueda
+
+Responde con el número."""
+
+    CLIENT_CONTACTO_PSIVALE = """💚 Perfecto, acá está el contacto:
+
+📱 WhatsApp: {phone}
+📧 Email: {email}
+
+🌿 Recordá que dar el primer paso vale.
+Mucha suerte en tu proceso.
+
+¿Qué querés hacer ahora?
+1️⃣ Ver otros profesionales
+2️⃣ Nueva búsqueda
+0️⃣ Volver al menú"""
+
+    # ==========================================
+    # MENSAJES DE TRANSICIÓN EMPÁTICOS
+    # ==========================================
+
+    PSIVALE_EXPLORANDO = """🌿 Está perfecto explorar.
+
+PSIVALE conecta pacientes con psicólogos según su enfoque, disponibilidad y presupuesto.
+
+Cuando estés list@ para buscar, escribí 'hola' y te ayudo.
+
+💚 Dar el primer paso vale en cualquier momento."""
+
+    PSIVALE_CUALQUIER_MOMENTO = """💚 Sin problema, volvé cuando quieras.
+
+Acá vamos a estar para ayudarte cuando decidas dar ese primer paso.
+
+🌿 Escribí 'hola' cuando estés list@."""
+
+    # ==========================================
+    # VALIDACIONES CON TONO PSIVALE
+    # ==========================================
+
+    PSIVALE_OPCION_INVALIDA = """🌿 No entendí esa opción.
+
+Por favor, elegí uno de los números del menú.
+
+Si tenés dudas, escribí '0' para volver al inicio."""
+
+    PSIVALE_ERROR_GENERICO = """💚 Ups, algo salió mal.
+
+No te preocupes, intentemos de nuevo.
+
+Escribí 'hola' para empezar de nuevo, o '0' para volver al menú."""
 
 
 # Create singleton instance
