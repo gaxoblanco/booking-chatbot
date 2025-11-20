@@ -30,8 +30,14 @@ class ProfessionalService:
 
     def register_or_update_professional(self, phone: str, **kwargs) -> bool:
         """
-        Register a new professional or update existing one.
+        Register a new professional or update existing one (PSIVALE VERSION).
         Accepts partial updates - only provided fields are updated.
+
+        New Psivale fields:
+        - enfoque_terapeutico: List of therapeutic approaches
+        - poblacion: List of populations served
+        - modalidad: Modality ('online', 'presencial', 'ambas')
+        - horarios_disponibles: List of available schedules
         """
         try:
             # Get existing professional if exists
@@ -46,13 +52,17 @@ class ProfessionalService:
                     'gender': kwargs.get('gender', existing.get('gender')),
                     'accept_prepaga': kwargs.get('accept_prepaga', existing.get('accept_prepaga', False)),
                     'category': kwargs.get('category', existing.get('category')),
-                    # ← AGREGAR
                     'bio': kwargs.get('bio', existing.get('bio')),
-                    # ← AGREGAR
-                    'fee_range': kwargs.get('fee_range', existing.get('fee_range'))
+                    'fee_range': kwargs.get('fee_range', existing.get('fee_range')),
+
+                    # ⭐ NUEVOS CAMPOS PSIVALE
+                    'enfoque_terapeutico': kwargs.get('enfoque_terapeutico', existing.get('enfoque_terapeutico', [])),
+                    'poblacion': kwargs.get('poblacion', existing.get('poblacion', [])),
+                    'modalidad': kwargs.get('modalidad', existing.get('modalidad')),
+                    'horarios_disponibles': kwargs.get('horarios_disponibles', existing.get('horarios_disponibles', [])),
                 }
             else:
-                # New professional - use provided values or None
+                # New professional - use provided values or None/empty
                 data = {
                     'name': kwargs.get('name'),
                     'email': kwargs.get('email'),
@@ -60,11 +70,17 @@ class ProfessionalService:
                     'gender': kwargs.get('gender'),
                     'accept_prepaga': kwargs.get('accept_prepaga', False),
                     'category': kwargs.get('category'),
-                    'bio': kwargs.get('bio'),              # ← AGREGAR
-                    'fee_range': kwargs.get('fee_range')   # ← AGREGAR
+                    'bio': kwargs.get('bio'),
+                    'fee_range': kwargs.get('fee_range'),
+
+                    # ⭐ NUEVOS CAMPOS PSIVALE
+                    'enfoque_terapeutico': kwargs.get('enfoque_terapeutico', []),
+                    'poblacion': kwargs.get('poblacion', []),
+                    'modalidad': kwargs.get('modalidad'),
+                    'horarios_disponibles': kwargs.get('horarios_disponibles', []),
                 }
 
-            # Add to database
+            # Add to database (database.py ya tiene estos campos)
             success = self.db.add_professional(
                 phone=phone,
                 name=data['name'],
@@ -72,7 +88,11 @@ class ProfessionalService:
                 zone=data['zone'],
                 gender=data['gender'],
                 accept_prepaga=data['accept_prepaga'],
-                category=data['category']  # ← CORREGIR: era 'especialidad'
+                category=data['category'],
+                enfoque_terapeutico=data['enfoque_terapeutico'],
+                poblacion=data['poblacion'],
+                modalidad=data['modalidad'],
+                horarios_disponibles=data['horarios_disponibles']
             )
 
             # Update bio and fee_range separately if provided
@@ -626,9 +646,261 @@ class ProfessionalService:
             print(f"[PROF_SERVICE] ❌ Error formatting profile: {e}")
             return "❌ Error al cargar perfil"
 
-    # ==========================================
-    # PRIVATE HELPERS
-    # ==========================================
+    def update_enfoque_terapeutico(self, phone: str, enfoque_list: List[str]) -> bool:
+        """
+        Update professional's therapeutic approaches.
+
+        Args:
+            phone: Professional's phone
+            enfoque_list: List of approaches (max 2): ["tcc", "gestaltica"]
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Validate max 2 enfoques
+            if len(enfoque_list) > 2:
+                enfoque_list = enfoque_list[:2]
+
+            success = self.db.update_professional_enfoque(phone, enfoque_list)
+
+            if success:
+                print(
+                    f"[PROF_SERVICE] ✅ Enfoque updated: {phone} -> {enfoque_list}")
+
+            return success
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error updating enfoque: {e}")
+            return False
+
+    def update_poblacion(self, phone: str, poblacion_list: List[str]) -> bool:
+        """
+        Update professional's population served.
+
+        Args:
+            phone: Professional's phone
+            poblacion_list: List of populations: ["ninos", "adultos", "parejas"]
+
+        Returns:
+            True if successful
+        """
+        try:
+            success = self.db.update_professional_poblacion(
+                phone, poblacion_list)
+
+            if success:
+                print(
+                    f"[PROF_SERVICE] ✅ Población updated: {phone} -> {poblacion_list}")
+
+            return success
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error updating población: {e}")
+            return False
+
+    def update_modalidad(self, phone: str, modalidad: str) -> bool:
+        """
+        Update professional's modality.
+
+        Args:
+            phone: Professional's phone
+            modalidad: 'online', 'presencial', or 'ambas'
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Validate modalidad
+            if modalidad not in ['online', 'presencial', 'ambas']:
+                print(f"[PROF_SERVICE] ❌ Invalid modalidad: {modalidad}")
+                return False
+
+            success = self.db.update_professional_modalidad(phone, modalidad)
+
+            if success:
+                print(
+                    f"[PROF_SERVICE] ✅ Modalidad updated: {phone} -> {modalidad}")
+
+            return success
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error updating modalidad: {e}")
+            return False
+
+    def update_horarios_disponibles(self, phone: str, horarios_list: List[str]) -> bool:
+        """
+        Update professional's available schedules.
+
+        Args:
+            phone: Professional's phone
+            horarios_list: List of schedules: ["manana", "tarde", "noche", "sabado"]
+
+        Returns:
+            True if successful
+        """
+        try:
+            success = self.db.update_professional_horarios(
+                phone, horarios_list)
+
+            if success:
+                print(
+                    f"[PROF_SERVICE] ✅ Horarios updated: {phone} -> {horarios_list}")
+
+            return success
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error updating horarios: {e}")
+            return False
+
+    def has_complete_profile_psivale(self, phone: str) -> bool:
+        """
+        Check if professional has completed all required Psivale profile fields.
+
+        Required for Psivale:
+        - name, email, zone, gender, certificate_path (base)
+        - enfoque_terapeutico (at least 1)
+        - poblacion (at least 1)
+        - modalidad
+
+        Args:
+            phone: Professional's phone
+
+        Returns:
+            True if profile is complete, False otherwise
+        """
+        try:
+            prof = self.db.get_professional(phone)
+            if not prof:
+                return False
+
+            # Required base fields
+            base_required = ['name', 'email',
+                             'zone', 'gender', 'certificate_path']
+            for field in base_required:
+                if not prof.get(field):
+                    return False
+
+            # Required Psivale fields
+            if not prof.get('enfoque_terapeutico') or len(prof.get('enfoque_terapeutico', [])) == 0:
+                return False
+
+            if not prof.get('poblacion') or len(prof.get('poblacion', [])) == 0:
+                return False
+
+            if not prof.get('modalidad'):
+                return False
+
+            return True
+
+        except Exception as e:
+            print(
+                f"[PROF_SERVICE] ❌ Error checking Psivale profile completion: {e}")
+            return False
+
+    def get_missing_profile_fields_psivale(self, phone: str) -> List[str]:
+        """
+        Get list of missing required Psivale profile fields.
+
+        Args:
+            phone: Professional's phone
+
+        Returns:
+            List of missing field names (Spanish labels)
+        """
+        try:
+            prof = self.db.get_professional(phone)
+            if not prof:
+                return ['Nombre', 'Email', 'Zona', 'Género', 'Certificado',
+                        'Enfoque Terapéutico', 'Población', 'Modalidad']
+
+            required = {
+                'name': 'Nombre',
+                'email': 'Email',
+                'zone': 'Zona',
+                'gender': 'Género',
+                'certificate_path': 'Certificado',
+                'enfoque_terapeutico': 'Enfoque Terapéutico',
+                'poblacion': 'Población que Atiende',
+                'modalidad': 'Modalidad de Atención'
+            }
+
+            missing = []
+            for field, label in required.items():
+                value = prof.get(field)
+
+                # Special handling for lists
+                if field in ['enfoque_terapeutico', 'poblacion']:
+                    if not value or len(value) == 0:
+                        missing.append(label)
+                else:
+                    if not value:
+                        missing.append(label)
+
+            return missing
+
+        except Exception as e:
+            print(
+                f"[PROF_SERVICE] ❌ Error getting missing Psivale fields: {e}")
+            return []
+
+    def format_professional_profile_psivale(self, phone: str) -> str:
+        """
+        Format professional profile for display (Psivale version with all fields).
+
+        Args:
+            phone: Professional's phone
+
+        Returns:
+            Formatted profile string
+        """
+        try:
+            prof = self.db.get_professional(phone)
+            if not prof:
+                return "❌ Perfil no encontrado"
+
+            lines = []
+
+            # Base info
+            lines.append(f"👤 {prof.get('name', 'N/A')}")
+            lines.append(f"📧 {prof.get('email', 'N/A')}")
+            lines.append(f"📍 Zona: {prof.get('zone', 'N/A').capitalize()}")
+            lines.append(
+                f"👥 Género: {self._format_gender(prof.get('gender'))}")
+            lines.append(
+                f"💳 Prepaga: {'Sí' if prof.get('accept_prepaga') else 'No'}")
+
+            # Psivale fields
+            if prof.get('enfoque_terapeutico'):
+                enfoques = self._format_enfoques(prof['enfoque_terapeutico'])
+                lines.append(f"🧠 Enfoque: {enfoques}")
+
+            if prof.get('poblacion'):
+                poblaciones = self._format_poblaciones(prof['poblacion'])
+                lines.append(f"👥 Población: {poblaciones}")
+
+            if prof.get('modalidad'):
+                lines.append(f"💻 Modalidad: {prof['modalidad'].capitalize()}")
+
+            if prof.get('horarios_disponibles'):
+                horarios = self._format_horarios(prof['horarios_disponibles'])
+                lines.append(f"📅 Horarios: {horarios}")
+
+            if prof.get('fee_range'):
+                lines.append(f"💰 Honorarios: ${prof['fee_range']}")
+
+            if prof.get('bio'):
+                lines.append(f"\n📝 Bio:\n{prof['bio']}")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error formatting profile: {e}")
+            return "❌ Error al formatear perfil"
+
+        # ==========================================
+        # PRIVATE HELPERS
+        # ==========================================
 
     def _format_zone(self, zone: str) -> str:
         """Format zone for display."""
@@ -642,14 +914,50 @@ class ProfessionalService:
         """Format prepaga acceptance."""
         return "Sí" if accepts else "No"
 
+    # MÉTODOS AUXILIARES PARA FORMATEO
+
     def _format_gender(self, gender: str) -> str:
         """Format gender for display."""
-        genders = {
-            'm': 'Masculino',
-            'f': 'Femenino',
-            'otro': 'Otro'
+        gender_map = {'m': 'Masculino', 'f': 'Femenino', 'otro': 'Otro'}
+        return gender_map.get(gender, 'N/A')
+
+    def _format_enfoques(self, enfoques: List[str]) -> str:
+        """Format therapeutic approaches for display."""
+        enfoque_map = {
+            'tcc': 'TCC',
+            'contextual': 'Contextuales (ACT, DBT)',
+            'sistemica': 'Sistémica',
+            'gestaltica': 'Gestáltica',
+            'psicoanalisis': 'Psicoanálisis',
+            'neuropsicologia': 'Neuropsicología'
         }
-        return genders.get(gender, '❌ No configurado')
+
+        formatted = [enfoque_map.get(e, e.capitalize()) for e in enfoques]
+        return ', '.join(formatted)
+
+    def _format_poblaciones(self, poblaciones: List[str]) -> str:
+        """Format populations for display."""
+        poblacion_map = {
+            'ninos': 'Niños/as',
+            'adolescentes': 'Adolescentes',
+            'adultos': 'Adultos',
+            'parejas': 'Parejas/Familias'
+        }
+
+        formatted = [poblacion_map.get(p, p.capitalize()) for p in poblaciones]
+        return ', '.join(formatted)
+
+    def _format_horarios(self, horarios: List[str]) -> str:
+        """Format schedules for display."""
+        horario_map = {
+            'manana': 'Mañana',
+            'tarde': 'Tarde',
+            'noche': 'Noche',
+            'sabado': 'Sábados'
+        }
+
+        formatted = [horario_map.get(h, h.capitalize()) for h in horarios]
+        return ', '.join(formatted)
 
 
 # Global professional service instance
