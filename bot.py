@@ -17,7 +17,23 @@ from validators import (
     validate_time_range,
     validate_option,
     parse_date,
-    parse_time_range
+    parse_time_range,
+    # IMPORTS PSIVALE
+    validate_enfoque,
+    normalize_enfoque,
+    parse_enfoque_list,
+    validate_poblacion,
+    normalize_poblacion,
+    parse_poblacion_list,
+    validate_modalidad,
+    normalize_modalidad,
+    validate_horarios,
+    normalize_horario,
+    parse_horarios_list,
+    validate_fee_range,
+    normalize_fee_range,
+    validate_zona_psivale,
+    normalize_zona_psivale,
 )
 from client_service import client_service
 from professional_service import professional_service
@@ -40,13 +56,6 @@ class Bot:
     def process_message(self, phone_number: str, message: str) -> str:
         """
         Process incoming message and return response.
-
-        Args:
-            phone_number: User's WhatsApp number
-            message: Text message from user
-
-        Returns:
-            Bot's response message
         """
         # Get or create session
         session = session_manager.get_session(phone_number)
@@ -56,12 +65,34 @@ class Bot:
         message_lower = message.lower()
 
         # ==========================================
+        # ⭐ PSIVALE: DETECCIÓN "SOY PSICÓLOGO" (PRIMERO)
+        # ==========================================
+        if any(phrase in message_lower for phrase in [
+            'soy psicologo', 'soy psicólogo',
+            'soy psico', 'psicologo aqui', 'psicólogo aquí',
+            'hola soy psicologo', 'hola soy psicólogo', 'soy psicologa', 'soy psicóloga', 'psicologo aqui', 'psicólogo aquí',
+            'hola soy psicologa', 'hola soy psicóloga'
+        ]):
+            session.reset()
+            session.set_role(UserRole.PROFESSIONAL)
+
+            # ⭐ NUEVO: Verificar si ya tiene certificado
+            if professional_service.has_certificate(phone_number):
+                # Ya está registrado - ir a menú
+                session.transition_to(ConversationState.PROF_MAIN_MENU)
+                return "💚 ¡Hola de nuevo! Ya estás registrado en PSIVALE.\n\n" + self.messages.PROF_MAIN_MENU
+            else:
+                # ⭐ NO registrado - ir a confirmación de registro
+                session.transition_to(ConversationState.PROF_REGISTER_CONFIRM)
+                return self.messages.PSIVALE_PROF_REGISTER_CONFIRM
+        # ==========================================
         # SUPER COMMAND: "HOLA" ALWAYS RESETS
         # ==========================================
-        # No matter what state, "hola" restarts conversation
         if message_lower in ['hola', 'hello', 'hi', 'hey']:
             session.reset()
-            session.transition_to(ConversationState.ROLE_SELECTION)
+            # Asumir que es paciente por defecto
+            session.set_role(UserRole.CLIENT)
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
             return self.messages.WELCOME
 
         # ==========================================
@@ -122,46 +153,20 @@ class Bot:
             return self.messages.ERROR_GENERIC
 
     def get_handler_for_state(self, state: ConversationState):
-        """
-        Get the appropriate handler function for a state.
-
-        Args:
-            state: Current conversation state
-
-        Returns:
-            Handler function
-        """
+        """Get the appropriate handler function for a state."""
         handlers = {
             # Initial states
             ConversationState.START: self.handle_start,
-            ConversationState.ROLE_SELECTION: self.handle_role_selection,
+            # ConversationState.ROLE_SELECTION: self.handle_role_selection,
 
             # Professional states
+            ConversationState.PROF_REGISTER_CONFIRM: self.handle_prof_register_confirm,
             ConversationState.PROF_NEED_CERTIFICATE: self.handle_prof_need_certificate,
             ConversationState.PROF_MAIN_MENU: self.handle_prof_main_menu,
             ConversationState.PROF_FREE_SLOT_DATE: self.handle_prof_free_slot_date,
             ConversationState.PROF_FREE_SLOT_TIME: self.handle_prof_free_slot_time,
             ConversationState.PROF_FREE_SLOT_CONFIRM: self.handle_prof_free_slot_confirm,
             ConversationState.PROF_WEEK_SCHEDULE_QUICK: self.handle_prof_week_schedule_quick,
-
-            # Client states
-            ConversationState.CLIENT_MAIN_MENU: self.handle_client_main_menu,
-            ConversationState.CLIENT_FILTER_ZONA: self.handle_client_filter_zona,
-            ConversationState.CLIENT_FILTER_FECHA: self.handle_client_filter_fecha,
-            ConversationState.CLIENT_FILTER_HORA: self.handle_client_filter_hora,
-            ConversationState.CLIENT_FILTER_PREPAGA: self.handle_client_filter_prepaga,
-            ConversationState.CLIENT_FILTER_SEXO: self.handle_client_filter_sexo,
-            ConversationState.CLIENT_SHOW_RESULTS: self.handle_client_show_results,
-            ConversationState.CLIENT_VIEW_DETAIL: self.handle_client_view_detail,
-
-            # Client multi-filter states
-            ConversationState.CLIENT_MULTIFILTER_MENU: self.handle_client_multifilter_menu,
-            ConversationState.CLIENT_MULTIFILTER_ZONA: self.handle_client_multifilter_zona,
-            ConversationState.CLIENT_MULTIFILTER_FECHA: self.handle_client_multifilter_fecha,
-            ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
-            ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
-            ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
-            ConversationState.CLIENT_SEARCH_QUICK: self.handle_client_search_quick,
 
             # Professional info states
             ConversationState.PROF_INFO_MENU: self.handle_prof_info_menu,
@@ -170,65 +175,132 @@ class Bot:
             ConversationState.PROF_INFO_ZONA: self.handle_prof_info_zona,
             ConversationState.PROF_INFO_GENERO: self.handle_prof_info_genero,
             ConversationState.PROF_INFO_PREPAGA: self.handle_prof_info_prepaga,
-            ConversationState.PROF_INFO_ESPECIALIDAD: self.handle_prof_info_especialidad,
+            # ConversationState.PROF_INFO_ESPECIALIDAD: self.handle_prof_info_especialidad,
             ConversationState.PROF_INFO_QUICK: self.handle_prof_info_quick,
             ConversationState.PROF_INFO_BIO: self.handle_prof_info_bio,
             ConversationState.PROF_INFO_FEE_RANGE: self.handle_prof_info_fee_range,
+
+            # ⭐ NUEVOS HANDLERS PSIVALE - PROFESIONAL
+            ConversationState.PROF_INFO_ENFOQUE: self.handle_prof_info_enfoque,
+            ConversationState.PROF_INFO_POBLACION: self.handle_prof_info_poblacion,
+            ConversationState.PROF_INFO_MODALIDAD: self.handle_prof_info_modalidad,
+            ConversationState.PROF_INFO_HORARIOS: self.handle_prof_info_horarios,
+
+            # Client states (existentes)
+            # ConversationState.CLIENT_MAIN_MENU: self.handle_client_main_menu,
+            # ConversationState.CLIENT_FILTER_ZONA: self.handle_client_filter_zona,
+            # ConversationState.CLIENT_FILTER_FECHA: self.handle_client_filter_fecha,
+            # ConversationState.CLIENT_FILTER_HORA: self.handle_client_filter_hora,
+            # ConversationState.CLIENT_FILTER_PREPAGA: self.handle_client_filter_prepaga,
+            # ConversationState.CLIENT_FILTER_SEXO: self.handle_client_filter_sexo,
+            ConversationState.CLIENT_SHOW_RESULTS: self.handle_client_show_results,
+            ConversationState.CLIENT_VIEW_DETAIL: self.handle_client_view_detail,
+
+            # Client multi-filter
+            ConversationState.CLIENT_MULTIFILTER_MENU: self.handle_client_multifilter_menu,
+            ConversationState.CLIENT_MULTIFILTER_ZONA: self.handle_client_multifilter_zona,
+            ConversationState.CLIENT_MULTIFILTER_FECHA: self.handle_client_multifilter_fecha,
+            ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
+            ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
+            ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
+            ConversationState.CLIENT_SEARCH_QUICK: self.handle_client_search_quick,
+
+            # ⭐ NUEVOS HANDLERS PSIVALE - CLIENTE (FLUJO ASESORADO)
+            ConversationState.CLIENT_ASESORADO_WELCOME: self.handle_client_asesorado_welcome,
+            # ConversationState.CLIENT_ASESORADO_INTENCION: self.handle_client_asesorado_intencion,
+            ConversationState.CLIENT_ASESORADO_ENFOQUE: self.handle_client_asesorado_enfoque,
+            ConversationState.CLIENT_ASESORADO_POBLACION: self.handle_client_asesorado_poblacion,
+            ConversationState.CLIENT_ASESORADO_MODALIDAD: self.handle_client_asesorado_modalidad,
+            ConversationState.CLIENT_ASESORADO_ZONA: self.handle_client_asesorado_zona,
+            ConversationState.CLIENT_ASESORADO_HORARIOS: self.handle_client_asesorado_horarios,
+            ConversationState.CLIENT_ASESORADO_HONORARIOS: self.handle_client_asesorado_honorarios,
+            ConversationState.CLIENT_ASESORADO_RESUMEN: self.handle_client_asesorado_resumen,
+            ConversationState.CLIENT_ASESORADO_BUSCANDO: self.handle_client_asesorado_buscando,
         }
 
         return handlers.get(state, self.handle_unknown_state)
-
     # ==========================================
     # INITIAL HANDLERS
     # ==========================================
 
     def handle_start(self, session: SessionData, message: str) -> str:
-        """Handle start state - show welcome message."""
-        session.transition_to(ConversationState.ROLE_SELECTION)
+        """Handle start state - mostrar bienvenida Vale directamente."""
+        session.set_role(UserRole.CLIENT)  # Por defecto es paciente
+        session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
         return self.messages.WELCOME
 
-    def handle_role_selection(self, session: SessionData, message: str) -> str:
-        """Handle role selection - professional or client."""
-        if message == '1':
-            # Usuario seleccionó opción 1 = CLIENTE/PACIENTE
-            session.set_role(UserRole.CLIENT)
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_MAIN_MENU
+    # def handle_role_selection(self, session: SessionData, message: str) -> str:
+    #     """Handle role selection - professional or client."""
+    #     if message == '1':
+    #         # Usuario seleccionó opción 1 = CLIENTE/PACIENTE
+    #         session.set_role(UserRole.CLIENT)
+    #         session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+    #         return self.messages.CLIENT_MAIN_MENU
 
-        elif message == '2':
-            # Usuario seleccionó opción 2 = PROFESIONAL
-            session.set_role(UserRole.PROFESSIONAL)
+    #     elif message == '2':
+    #         # Usuario seleccionó opción 2 = PROFESIONAL
+    #         session.set_role(UserRole.PROFESSIONAL)
 
-            # Check if professional already has certificate
-            if professional_service.has_certificate(session.phone_number):
-                # Already has certificate - go directly to main menu
-                print(
-                    f"[BOT] Professional {session.phone_number} already has certificate, skipping upload")
-                session.transition_to(ConversationState.PROF_MAIN_MENU)
-                return self.messages.PROF_MAIN_MENU
-            else:
-                # No certificate - ask for upload
-                print(
-                    f"[BOT] Professional {session.phone_number} needs to upload certificate")
-                session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
-                return self.messages.PROF_NEED_CERTIFICATE
+    #         # Check if professional already has certificate
+    #         if professional_service.has_certificate(session.phone_number):
+    #             # Already has certificate - go directly to main menu
+    #             print(
+    #                 f"[BOT] Professional {session.phone_number} already has certificate, skipping upload")
+    #             session.transition_to(ConversationState.PROF_MAIN_MENU)
+    #             return self.messages.PROF_MAIN_MENU
+    #         else:
+    #             # No certificate - ask for upload
+    #             print(
+    #                 f"[BOT] Professional {session.phone_number} needs to upload certificate")
+    #             session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
+    #             return self.messages.PROF_NEED_CERTIFICATE
 
-        else:
-            return self.messages.INVALID_ROLE
+    #     else:
+    #         return self.messages.INVALID_ROLE
+
     # ==========================================
     # PROFESSIONAL HANDLERS
     # ==========================================
 
+    def handle_prof_register_confirm(self, session: SessionData, message: str) -> str:
+        """Handle professional registration confirmation."""
+
+        if message == '1':
+            # Sí, quiero unirme → Solicitar certificado
+            session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
+            return self.messages.PROF_NEED_CERTIFICATE
+
+        elif message == '2':
+            # Necesito más información
+            # ⭐ MANTENER en mismo estado (PROF_REGISTER_CONFIRM)
+            # No cambiar de estado, solo mostrar info
+            return self.messages.PSIVALE_PROF_INFO
+
+        elif message == '0':
+            # Volver al inicio
+            session.reset()
+            session.set_role(UserRole.CLIENT)  # ⭐ Resetear a cliente
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.WELCOME
+
+        else:
+            # Opción inválida
+            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.PSIVALE_PROF_REGISTER_CONFIRM
+
     def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
-        """
-        Handle certificate requirement state.
-        Professional MUST upload certificate before accessing any menu.
-        Block all text inputs until file is uploaded.
-        Note: File upload is handled separately in whatsapp_handler.py
-        """
-        # Block '0' and any other text input
-        # User must upload certificate file to continue
-        return self.messages.PROF_NEED_CERTIFICATE
+        """Handle professional certificate requirement."""
+
+        if message == '0':
+            # Volver a confirmación de registro
+            session.transition_to(ConversationState.PROF_REGISTER_CONFIRM)
+            return self.messages.PSIVALE_PROF_REGISTER_CONFIRM
+
+        # Si escribe cualquier cosa (excepto 0), recordar que debe subir archivo
+        return """📎 Por favor, envía el archivo de tu matrícula.
+        
+        ⚠️ Debes subir una imagen o PDF (no texto).
+
+        💡 Escribe '0' para volver"""
 
     def handle_prof_certificate_uploaded(self, session: SessionData) -> str:
         """
@@ -314,8 +386,14 @@ class Bot:
 
         return self.messages.PROF_INFO_MENU.format(current_info=current_info)
 
+    # handle_prof_info_menu para incluir opciones Psivale:
     def handle_prof_info_menu(self, session: SessionData, message: str) -> str:
-        """Handle professional info menu."""
+        """Handle professional info menu (PSIVALE VERSION)."""
+
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return self.messages.PROF_MAIN_MENU
 
         if message == '1':
             # Nombre
@@ -342,37 +420,66 @@ class Bot:
             session.transition_to(ConversationState.PROF_INFO_PREPAGA)
             return self.messages.PROF_INFO_ASK_PREPAGA
 
+        # ⭐ NUEVAS OPCIONES PSIVALE
         elif message == '6':
-            # Especialidad
-            session.transition_to(ConversationState.PROF_INFO_ESPECIALIDAD)
-            return self.messages.PROF_INFO_ASK_ESPECIALIDAD
+            # Enfoque terapéutico
+            session.transition_to(ConversationState.PROF_INFO_ENFOQUE)
+            return self.messages.PROF_INFO_ASK_ENFOQUE
 
         elif message == '7':
+            # Población
+            session.transition_to(ConversationState.PROF_INFO_POBLACION)
+            return self.messages.PROF_INFO_ASK_POBLACION
+
+        elif message == '8':
+            # Modalidad
+            session.transition_to(ConversationState.PROF_INFO_MODALIDAD)
+            return self.messages.PROF_INFO_ASK_MODALIDAD
+
+        elif message == '9':
+            # Horarios disponibles
+            session.transition_to(ConversationState.PROF_INFO_HORARIOS)
+            return self.messages.PROF_INFO_ASK_HORARIOS
+
+        elif message == '10':
             # Bio
             session.transition_to(ConversationState.PROF_INFO_BIO)
             return self.messages.PROF_INFO_ASK_BIO
 
-        elif message == '8':
+        elif message == '11':
             # Honorarios
             session.transition_to(ConversationState.PROF_INFO_FEE_RANGE)
             return self.messages.PROF_INFO_ASK_FEE_RANGE
 
-        elif message == '9':
+        elif message.lower() in ['guardar', 'save', 's']:
             # Guardar información
             prof_info = session.get_temp('prof_info', {})
 
-            # Type check
             if not isinstance(prof_info, dict):
                 prof_info = {}
 
-            # Validate required fields
-            required = ['name', 'especialidad', 'zona']
-            missing = [f for f in required if f not in prof_info]
+            # Validate required fields Psivale
+            required = ['name', 'zona', 'enfoque_terapeutico',
+                        'poblacion', 'modalidad']
+            missing = []
+            for field in required:
+                if field not in prof_info or not prof_info[field]:
+                    missing.append(field)
 
             if missing:
-                return self.messages.PROF_INFO_INCOMPLETE + "\n\n" + self.format_prof_info_menu(session)
+                s
+                missing_display = {
+                    'name': 'Nombre',
+                    'zona': 'Zona',
+                    'enfoque_terapeutico': 'Enfoque Terapéutico',
+                    'poblacion': 'Población',
+                    'modalidad': 'Modalidad'
+                }
+                missing_text = ", ".join(
+                    [missing_display.get(m, m) for m in missing])
+                return f"⚠️ Faltan campos obligatorios: {missing_text}\n\n" + self.format_prof_info_menu_psivale(session)
 
-            # Save to database using professional_service
+            # Save to database
             professional_service.register_or_update_professional(
                 phone=session.phone_number,
                 name=prof_info.get('name'),
@@ -380,50 +487,26 @@ class Bot:
                 zone=prof_info.get('zona'),
                 gender=prof_info.get('genero'),
                 accept_prepaga=prof_info.get('prepaga', False),
-                category=prof_info.get('especialidad'),
+                enfoque_terapeutico=prof_info.get('enfoque_terapeutico', []),
+                poblacion=prof_info.get('poblacion', []),
+                modalidad=prof_info.get('modalidad'),
+                horarios_disponibles=prof_info.get('horarios_disponibles', []),
                 bio=prof_info.get('bio'),
                 fee_range=prof_info.get('fee_range')
             )
 
             # Format summary
-            summary_lines = []
-            summary_lines.append(f"👤 Nombre: {prof_info.get('name', 'N/A')}")
-            summary_lines.append(
-                f"🏥 Especialidad: {prof_info.get('especialidad', 'N/A')}")
-            summary_lines.append(
-                f"📍 Zona: {prof_info.get('zona', 'N/A').capitalize()}")
-
-            if 'email' in prof_info:
-                summary_lines.append(f"📧 Email: {prof_info['email']}")
-            if 'genero' in prof_info:
-                genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
-                summary_lines.append(
-                    f"👥 Género: {genero_map.get(prof_info['genero'], prof_info['genero'])}")
-            if 'bio' in prof_info:
-                bio_preview = prof_info['bio'][:50] + \
-                    "..." if len(prof_info['bio']) > 50 else prof_info['bio']
-                summary_lines.append(f"📝 Bio: {bio_preview}")
-            if 'fee_range' in prof_info:
-                summary_lines.append(
-                    f"💰 Honorarios: ${prof_info['fee_range']}")
-
-            profile_summary = "\n".join(summary_lines)
+            profile_summary = professional_service.format_professional_profile_psivale(
+                session.phone_number
+            )
 
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
 
-            return self.messages.PROF_INFO_SAVED.format(
-                profile_summary=profile_summary
-            ) + "\n\n" + self.messages.PROF_MAIN_MENU
-
-        elif message == '0':
-            # Volver al menú
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return f"✅ ¡Información guardada!\n\n{profile_summary}\n\n" + self.messages.PROF_MAIN_MENU
 
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.format_prof_info_menu(session)
+            return self.messages.INVALID_OPTION + "\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_name(self, session: SessionData, message: str) -> str:
         """Handle name input."""
@@ -1252,79 +1335,183 @@ class Bot:
 
         else:
             return self.messages.INVALID_OPTION
+
+    # ==========================================
+    # ⭐ NUEVOS HANDLERS - PROFESIONAL PSIVALE
+    # ==========================================
+
+    def handle_prof_info_enfoque(self, session: SessionData, message: str) -> str:
+        """Handle enfoque terapéutico input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu_psivale(session)
+
+        # Parse enfoque list (puede ser "1" o "1,3")
+        enfoque_list = parse_enfoque_list(message)
+
+        if not enfoque_list:
+            return "❌ Opción inválida. Por favor elige 1 o 2 enfoques válidos.\n\n" + self.messages.PROF_INFO_ASK_ENFOQUE
+
+        # Store enfoques
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['enfoque_terapeutico'] = enfoque_list
+        session.store_temp('prof_info', prof_info)
+
+        # Format display
+        from professional_service import professional_service
+        enfoque_display = professional_service._format_enfoques(enfoque_list)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Enfoque guardado: {enfoque_display}\n\n" + self.format_prof_info_menu_psivale(session)
+
+    def handle_prof_info_poblacion(self, session: SessionData, message: str) -> str:
+        """Handle población input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu_psivale(session)
+
+        # Parse población list (puede ser "1,2,3")
+        poblacion_list = parse_poblacion_list(message)
+
+        if not poblacion_list:
+            return "❌ Opción inválida. Por favor elige al menos una población.\n\n" + self.messages.PROF_INFO_ASK_POBLACION
+
+        # Store población
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['poblacion'] = poblacion_list
+        session.store_temp('prof_info', prof_info)
+
+        # Format display
+        from professional_service import professional_service
+        poblacion_display = professional_service._format_poblaciones(
+            poblacion_list)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Población guardada: {poblacion_display}\n\n" + self.format_prof_info_menu_psivale(session)
+
+    def handle_prof_info_modalidad(self, session: SessionData, message: str) -> str:
+        """Handle modalidad input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu_psivale(session)
+
+        if not validate_modalidad(message):
+            return "❌ Opción inválida.\n\n" + self.messages.PROF_INFO_ASK_MODALIDAD
+
+        modalidad = normalize_modalidad(message)
+
+        # Store modalidad
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['modalidad'] = modalidad
+        session.store_temp('prof_info', prof_info)
+
+        modalidad_display = {'online': '💻 Online',
+                             'presencial': '🏢 Presencial', 'ambas': '🔀 Ambas'}
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Modalidad guardada: {modalidad_display[modalidad]}\n\n" + self.format_prof_info_menu_psivale(session)
+
+    def handle_prof_info_horarios(self, session: SessionData, message: str) -> str:
+        """Handle horarios disponibles input."""
+        if message == '0':
+            session.transition_to(ConversationState.PROF_INFO_MENU)
+            return self.format_prof_info_menu_psivale(session)
+
+        # Parse horarios list (puede ser "1,2,3")
+        horarios_list = parse_horarios_list(message)
+
+        if not horarios_list:
+            return "❌ Opción inválida. Por favor elige al menos un horario.\n\n" + self.messages.PROF_INFO_ASK_HORARIOS
+
+        # Store horarios
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['horarios_disponibles'] = horarios_list
+        session.store_temp('prof_info', prof_info)
+
+        # Format display
+        from professional_service import professional_service
+        horarios_display = professional_service._format_horarios(horarios_list)
+
+        session.transition_to(ConversationState.PROF_INFO_MENU)
+        return f"✅ Horarios guardados: {horarios_display}\n\n" + self.format_prof_info_menu_psivale(session)
+
+    def format_prof_info_menu_psivale(self, session: SessionData) -> str:
+        """Format professional info menu with current data (Psivale version)."""
+        prof_info = session.get_temp('prof_info', {})
+
+        # Build current info display
+        info_lines = []
+        if prof_info.get('name'):
+            info_lines.append(f"👤 {prof_info['name']}")
+        if prof_info.get('email'):
+            info_lines.append(f"📧 {prof_info['email']}")
+        if prof_info.get('zona'):
+            info_lines.append(f"📍 {prof_info['zona'].capitalize()}")
+        if prof_info.get('genero'):
+            gender_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+            info_lines.append(f"👥 {gender_map.get(prof_info['genero'])}")
+        if prof_info.get('prepaga') is not None:
+            info_lines.append(f"💳 {'Sí' if prof_info['prepaga'] else 'No'}")
+
+        # Psivale fields
+        if prof_info.get('enfoque_terapeutico'):
+            from professional_service import professional_service
+            enfoque_display = professional_service._format_enfoques(
+                prof_info['enfoque_terapeutico'])
+            info_lines.append(f"🧠 {enfoque_display}")
+
+        if prof_info.get('poblacion'):
+            from professional_service import professional_service
+            poblacion_display = professional_service._format_poblaciones(
+                prof_info['poblacion'])
+            info_lines.append(f"👥 {poblacion_display}")
+
+        if prof_info.get('modalidad'):
+            info_lines.append(f"💻 {prof_info['modalidad'].capitalize()}")
+
+        if prof_info.get('horarios_disponibles'):
+            from professional_service import professional_service
+            horarios_display = professional_service._format_horarios(
+                prof_info['horarios_disponibles'])
+            info_lines.append(f"📅 {horarios_display}")
+
+        if prof_info.get('bio'):
+            info_lines.append(f"📝 Bio: {prof_info['bio'][:50]}...")
+
+        if prof_info.get('fee_range'):
+            info_lines.append(f"💰 ${prof_info['fee_range']}")
+
+        current_info = "\n".join(
+            info_lines) if info_lines else "Sin información cargada"
+
+        return self.messages.PROF_INFO_MENU_PSIVALE.format(current_info=current_info)
     # ==========================================
     # CLIENT HANDLERS
     # ==========================================
 
-    def handle_client_main_menu(self, session: SessionData, message: str) -> str:
-        """Handle client main menu."""
-        if message == '1':
-            # Buscar para hoy
-            from datetime import date
-            today = date.today()
-            session.clear_temp()
-            session.store_temp('fecha', today)
-            session.store_temp('fecha_str', today.strftime("%d/%m/%Y"))
-            session.transition_to(ConversationState.CLIENT_FILTER_HORA)
+    # handle_client_main_menu para Psivale:
+    # def handle_client_main_menu(self, session: SessionData, message: str) -> str:
+    #     """Handle client main menu (PSIVALE VERSION)."""
 
-            return self.messages.CLIENT_SEARCH_TODAY_CONFIRM.format(
-                today_date=today.strftime("%d/%m/%Y")
-            )
+    #     if message == '1':
+    #         # Flujo asesorado (recomendado)
+    #         session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+    #         return self.messages.CLIENT_ASESORADO_WELCOME
 
-        elif message == '2':
-            # Búsqueda avanzada (paso a paso)
-            session.clear_temp()
-            session.store_temp('filters', {})
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
+    #     elif message == '2':
+    #         # Filtrado rápido
+    #         session.clear_temp()
+    #         session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
+    #         return self.messages.CLIENT_SEARCH_QUICK_FORMAT
 
-        elif message == '3':
-            # Búsqueda rápida (todo en 1 mensaje)
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
-            return self.messages.CLIENT_SEARCH_QUICK_FORMAT
+    #     elif message == '0':
+    #         # Volver al inicio
+    #         session.reset()
+    #         session.transition_to(ConversationState.ROLE_SELECTION)
+    #         return self.messages.WELCOME
 
-        elif message == '4':
-            # Virtual - BÚSQUEDA DIRECTA
-            # Buscar profesionales con sesiones online
-            results = client_service.search_professionals_by_filters(
-                online_sessions=True,
-                limit=10
-            )
-
-            # Log search
-            search_id = analytics_service.log_search(
-                client_phone=session.phone_number,
-                search_type='virtual',
-                search_params={'online_sessions': True},
-                result_count=len(results),
-                session_id=session.phone_number
-            )
-            session.store_temp('current_search_id', search_id)
-
-            # Store results
-            session.store_temp('search_results', results)
-
-            # Format and return
-            if len(results) == 0:
-                return self.messages.CLIENT_NO_RESULTS
-
-            formatted = client_service.format_results_list(results)
-            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-            return formatted
-
-        elif message == '5':
-            # Presencial - PREGUNTAR ZONA
-            session.clear_temp()
-            session.store_temp('modality', 'presencial')
-            session.transition_to(ConversationState.CLIENT_FILTER_ZONA)
-            return self.messages.CLIENT_ASK_ZONA
-        elif message == '0':
-            session.reset()
-            return self.messages.WELCOME
-
-        else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_MAIN_MENU
+    #     else:
+    #         return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_WELCOME_PSIVALE
 
     def handle_client_filter_zona(self, session: SessionData, message: str) -> str:
         """Handle zona filter."""
@@ -1723,8 +1910,9 @@ class Bot:
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.format_multifilter_menu(session)
 
+    # handle_client_show_results para usar formato Psivale:
     def handle_client_show_results(self, session: SessionData, message: str) -> str:
-        """Handle client viewing search results and selecting a professional."""
+        """Handle client viewing search results (PSIVALE VERSION)."""
 
         # Get stored results
         results = session.get_temp('search_results', [])
@@ -1732,21 +1920,20 @@ class Bot:
         # Check if no results and user is choosing an option
         if len(results) == 0:
             if message == '1':
-                # Modificar búsqueda - volver al menú cliente
+                # Ampliar búsqueda - volver al flujo asesorado pero con menos filtros
                 session.clear_temp()
-                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-                return self.messages.CLIENT_MAIN_MENU
+                session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
+                return "🌿 Perfecto, intentemos con menos filtros.\n\n" + self.messages.CLIENT_SEARCH_QUICK_FORMAT
 
             elif message == '2':
-                # Ver todos los profesionales (sin filtros)
-                # Search without filters
-                all_results = client_service.search_professionals_by_filters(
+                # Ver todos los profesionales
+                all_results = client_service.search_professionals_psivale(
                     limit=10)
 
                 # Log search
                 search_id = analytics_service.log_search(
                     client_phone=session.phone_number,
-                    search_type='all',
+                    search_type='psivale_all',
                     search_params={},
                     result_count=len(all_results),
                     session_id=session.phone_number
@@ -1755,26 +1942,25 @@ class Bot:
                 session.store_temp('search_results', all_results)
 
                 # Format and return
-                formatted = client_service.format_results_list(all_results)
+                formatted = client_service.format_results_list_psivale(
+                    all_results)
                 return formatted
 
-            elif message == '0':
-                # Volver al menú cliente
+            elif message == '3' or message == '0':
+                # Empezar de nuevo
                 session.clear_temp()
                 session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-                return self.messages.CLIENT_MAIN_MENU
+                return self.messages.CLIENT_WELCOME_PSIVALE
 
             else:
-                # Invalid option - show no results message again
-                formatted = client_service.format_results_list([])
-                return self.messages.INVALID_OPTION + "\n\n" + formatted
+                return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_ASESORADO_SIN_RESULTADOS
 
         # Normal flow - has results
         if message == '0':
             # Volver al menú
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_MAIN_MENU
+            return self.messages.CLIENT_WELCOME_PSIVALE
 
         # Check if user selected a number
         try:
@@ -1788,28 +1974,12 @@ class Bot:
                 session.store_temp('selected_professional', selected_prof)
                 session.store_temp('selected_position', selection)
 
-                # Log analytics: profile view + contact intent
-                from analytics_service import analytics_service
-
-                # Increment profile views
+                # Log analytics: profile view
                 analytics_service.log_profile_view(selected_prof['phone'])
 
-                # Log contact
-                search_id = session.get_temp('current_search_id')
-                analytics_service.log_contact(
-                    search_id=search_id,
-                    professional_phone=selected_prof['phone'],
-                    result_position=selection
-                )
-
-                # Get detailed info
-                from client_service import client_service
-                prof_detail = client_service.get_professional_detail(
-                    selected_prof['phone'])
-
-                # Format and show detail
-                formatted = client_service.format_professional_detail(
-                    prof_detail)
+                # Format and show detail (Psivale version)
+                formatted = client_service.format_professional_detail_psivale(
+                    selected_prof)
                 session.transition_to(ConversationState.CLIENT_VIEW_DETAIL)
 
                 return formatted
@@ -1819,174 +1989,121 @@ class Bot:
         except ValueError:
             return "❌ Por favor, ingresa el número del profesional que deseas ver.\nO '0' para volver al menú."
 
-    def parse_client_search_quick(self, message: str) -> dict:
+    def parse_client_search_quick(self, message: str) -> tuple:
         """
-        Parse client search filters from message.
+        Parse client search filters from message (PSIVALE VERSION).
         Supports two formats:
 
         Format 1 (with labels):
+            enfoque: tcc
+            poblacion: adultos
+            modalidad: online
             zona: norte
-            fecha: 15/11/2025
-            hora: 14:00
-            prepaga: si
-            genero: masculino
+            horarios: tarde
+            honorarios: 2
 
         Format 2 (without labels, order matters):
+            tcc
+            adultos
+            online
             norte
-            15/11/2025
-            14:00
-            si
-            masculino
+            tarde
+            2
 
         All fields are optional.
 
         Returns:
-            dict with parsed filters and list of errors
+            (filters_dict, errors_list)
         """
-        import re
-        from validators import validate_email, parse_date, validate_time
 
         lines = [line.strip()
                  for line in message.strip().split('\n') if line.strip()]
 
         if not lines:
-            return None, ["❌ Debes enviar al menos un filtro"]
+            return {}, ["No se detectaron filtros. Por favor intenta nuevamente."]
 
-        # Check if using labeled format (has ':')
-        has_labels = any(':' in line for line in lines)
-
-        result = {}
+        filters = {}
         errors = []
 
+        # Check if using labels (contains ':')
+        has_labels = any(':' in line for line in lines)
+
         if has_labels:
-            # Parse labeled format - fields can be in any order
+            # Format 1: With labels
             for line in lines:
                 if ':' not in line:
                     continue
 
                 key, value = line.split(':', 1)
                 key = key.strip().lower()
-                value = value.strip()
+                value = value.strip().lower()
 
-                if not value:
-                    continue
+                if key == 'enfoque':
+                    if validate_enfoque(value):
+                        filters['enfoque'] = normalize_enfoque(value)
+                    else:
+                        errors.append(f"❌ Enfoque inválido: {value}")
 
-                # Map variations to standard keys
-                if key in ['zona', 'zone', 'area']:
-                    result['zona'] = value.lower()
-                elif key in ['fecha', 'date', 'dia', 'día']:
-                    result['fecha_str'] = value
-                elif key in ['hora', 'time', 'horario']:
-                    result['hora'] = value
-                elif key in ['prepaga', 'obra social', 'os']:
-                    result['prepaga'] = value.lower()
-                elif key in ['genero', 'género', 'sexo', 'gender']:
-                    result['genero'] = value.lower()
+                elif key == 'poblacion' or key == 'población':
+                    if validate_poblacion(value):
+                        filters['poblacion'] = normalize_poblacion(value)
+                    else:
+                        errors.append(f"❌ Población inválida: {value}")
+
+                elif key == 'modalidad':
+                    if validate_modalidad(value):
+                        filters['modalidad'] = normalize_modalidad(value)
+                    else:
+                        errors.append(f"❌ Modalidad inválida: {value}")
+
+                elif key == 'zona':
+                    if validate_zona_psivale(value):
+                        filters['zone'] = normalize_zona_psivale(value)
+                    else:
+                        errors.append(f"❌ Zona inválida: {value}")
+
+                elif key == 'horarios':
+                    if validate_horarios(value):
+                        filters['horarios'] = normalize_horario(value)
+                    else:
+                        errors.append(f"❌ Horario inválido: {value}")
+
+                elif key == 'honorarios':
+                    if validate_fee_range(value):
+                        filters['fee_range'] = normalize_fee_range(value)
+                    else:
+                        errors.append(f"❌ Honorarios inválidos: {value}")
+
         else:
-            # Parse order-based format
-            # Order: zona, fecha, hora, prepaga, genero
-            # But all are optional, so we need to be smart
+            # Format 2: Without labels (order matters)
+            # Order: enfoque, poblacion, modalidad, zona, horarios, honorarios
 
-            # Try to detect what each line is
-            for line in lines:
-                line_lower = line.lower()
+            if len(lines) >= 1 and validate_enfoque(lines[0]):
+                filters['enfoque'] = normalize_enfoque(lines[0])
 
-                # Detect zona (norte/sur)
-                if line_lower in ['norte', 'sur', 'n', 's'] and 'zona' not in result:
-                    result['zona'] = line_lower
+            if len(lines) >= 2 and validate_poblacion(lines[1]):
+                filters['poblacion'] = normalize_poblacion(lines[1])
 
-                # Detect fecha (DD/MM/YYYY)
-                elif '/' in line and 'fecha_str' not in result:
-                    result['fecha_str'] = line
+            if len(lines) >= 3 and validate_modalidad(lines[2]):
+                filters['modalidad'] = normalize_modalidad(lines[2])
 
-                # Detect hora (HH:MM)
-                elif ':' in line and len(line) == 5 and 'hora' not in result:
-                    result['hora'] = line
+            if len(lines) >= 4 and validate_zona_psivale(lines[3]):
+                filters['zone'] = normalize_zona_psivale(lines[3])
 
-                # Detect prepaga (si/no)
-                elif line_lower in ['si', 'sí', 's', 'no', 'n'] and 'prepaga' not in result:
-                    result['prepaga'] = line_lower
+            if len(lines) >= 5 and validate_horarios(lines[4]):
+                filters['horarios'] = normalize_horario(lines[4])
 
-                # Detect genero
-                elif line_lower in ['masculino', 'femenino', 'otro', 'm', 'f', 'o'] and 'genero' not in result:
-                    result['genero'] = line_lower
+            if len(lines) >= 6 and validate_fee_range(lines[5]):
+                filters['fee_range'] = normalize_fee_range(lines[5])
 
-        # Check if at least one filter was provided
-        if not result:
-            return None, ["❌ No se detectaron filtros válidos"]
-
-        # Validate and normalize each field
-        validated = {}
-
-        # Zona
-        if 'zona' in result:
-            zona_map = {
-                'norte': 'norte', 'n': 'norte', 'north': 'norte',
-                'sur': 'sur', 's': 'sur', 'south': 'sur'
-            }
-            if result['zona'] not in zona_map:
-                errors.append(
-                    f"❌ Zona inválida: {result['zona']} (usa: norte o sur)")
-            else:
-                validated['zona'] = zona_map[result['zona']]
-
-        # Fecha
-        if 'fecha_str' in result:
-            fecha_obj = parse_date(result['fecha_str'])
-            if not fecha_obj:
-                errors.append(
-                    f"❌ Fecha inválida: {result['fecha_str']} (usa: DD/MM/YYYY)")
-            else:
-                validated['fecha'] = fecha_obj
-                validated['fecha_str'] = result['fecha_str']
-
-        # Hora
-        if 'hora' in result:
-            if not validate_time(result['hora']):
-                errors.append(
-                    f"❌ Hora inválida: {result['hora']} (usa: HH:MM)")
-            else:
-                validated['hora'] = result['hora']
-
-        # Prepaga
-        if 'prepaga' in result:
-            prepaga_map = {
-                'si': True, 'sí': True, 's': True, 'yes': True, 'y': True,
-                'no': False, 'n': False
-            }
-            if result['prepaga'] not in prepaga_map:
-                errors.append(
-                    f"❌ Prepaga inválida: {result['prepaga']} (usa: si o no)")
-            else:
-                validated['prepaga'] = prepaga_map[result['prepaga']]
-
-        # Género
-        if 'genero' in result:
-            genero_map = {
-                'm': 'm', 'masculino': 'm', 'male': 'm', 'hombre': 'm',
-                'f': 'f', 'femenino': 'f', 'female': 'f', 'mujer': 'f',
-                'o': 'o', 'otro': 'o', 'other': 'o'
-            }
-            if result['genero'] not in genero_map:
-                errors.append(
-                    f"❌ Género inválido: {result['genero']} (usa: masculino, femenino, otro)")
-            else:
-                validated['genero'] = genero_map[result['genero']]
-
-        if errors:
-            return None, errors
-
-        if not validated:
-            return None, ["❌ No se pudieron validar los filtros"]
-
-        return validated, []
+        return filters, errors
 
     def handle_client_search_quick(self, session: SessionData, message: str) -> str:
-        """Handle quick search input (all filters in one message)."""
+        """Handle client quick search input (PSIVALE VERSION)."""
 
         if message == '0':
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_MAIN_MENU
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.WELCOME
 
         # Parse the message
         filters, errors = self.parse_client_search_quick(message)
@@ -1995,69 +2112,567 @@ class Bot:
             error_msg = "\n".join(errors)
             return f"{error_msg}\n\n{self.messages.CLIENT_SEARCH_QUICK_FORMAT}"
 
+        if not filters:
+            return f"❌ No se detectaron filtros válidos.\n\n{self.messages.CLIENT_SEARCH_QUICK_FORMAT}"
+
         # Store filters
         session.store_temp('filters', filters)
 
-        # TODO: Search database with filters
-        print(f"[DB] TODO: Quick search with filters - {filters}")
+        # ⭐ EJECUTAR BÚSQUEDA
+        results = client_service.search_professionals_psivale(
+            enfoque=filters.get('enfoque'),
+            poblacion=filters.get('poblacion'),
+            modalidad=filters.get('modalidad'),
+            zone=filters.get('zone'),
+            horarios=filters.get('horarios'),
+            fee_range=filters.get('fee_range'),
+            limit=5
+        )
+
+        # Log search
+        from analytics_service import analytics_service
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='psivale_quick',
+            search_params=filters,
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+        session.store_temp('search_results', results)
 
         # Format filters for display
         filter_lines = []
-        if 'zona' in filters:
-            filter_lines.append(f"📍 Zona: {filters['zona'].capitalize()}")
-        if 'fecha_str' in filters:
-            filter_lines.append(f"📅 Fecha: {filters['fecha_str']}")
-        if 'hora' in filters:
-            filter_lines.append(f"⏰ Hora: {filters['hora']}")
-        if 'prepaga' in filters:
+        if 'enfoque' in filters:
+            enfoque_map = {
+                'tcc': 'TCC',
+                'contextual': 'Contextuales',
+                'sistemica': 'Sistémica',
+                'gestaltica': 'Gestáltica',
+                'psicoanalisis': 'Psicoanálisis',
+                'neuropsicologia': 'Neuropsicología'
+            }
             filter_lines.append(
-                f"💳 Prepaga: {'Sí' if filters['prepaga'] else 'No'}")
-        if 'genero' in filters:
-            genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
-            filter_lines.append(f"👥 Género: {genero_map[filters['genero']]}")
+                f"🧠 Enfoque: {enfoque_map.get(filters['enfoque'], filters['enfoque'])}")
+
+        if 'poblacion' in filters:
+            poblacion_map = {
+                'ninos_adolescentes': 'Niños/Adolescentes',
+                'adultos': 'Adultos',
+                'parejas': 'Parejas/Familias'
+            }
+            filter_lines.append(
+                f"👥 Población: {poblacion_map.get(filters['poblacion'], filters['poblacion'])}")
+
+        if 'modalidad' in filters:
+            modalidad_map = {
+                'online': '💻 Online',
+                'presencial': '🏢 Presencial',
+                'ambas': '🔀 Ambas'
+            }
+            filter_lines.append(
+                f"💻 Modalidad: {modalidad_map.get(filters['modalidad'], filters['modalidad'])}")
+
+        if 'zone' in filters:
+            zone_map = {
+                'norte': 'Zona Norte',
+                'sur': 'Zona Sur',
+                'nueva_cordoba': 'Nueva Córdoba'
+            }
+            filter_lines.append(
+                f"📍 Zona: {zone_map.get(filters['zone'], filters['zone'])}")
+
+        if 'horarios' in filters:
+            horarios_map = {
+                'manana': 'Mañana',
+                'tarde': 'Tarde',
+                'noche': 'Noche',
+                'sabado': 'Sábados'
+            }
+            filter_lines.append(
+                f"📅 Horarios: {horarios_map.get(filters['horarios'], filters['horarios'])}")
+
+        if 'fee_range' in filters:
+            from validators import get_fee_range_display
+            filter_lines.append(
+                f"💰 Honorarios: {get_fee_range_display(filters['fee_range'])}")
 
         filters_text = "\n".join(filter_lines)
 
-        session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+        # ⭐ PREPARAR MENSAJE 2 (resultados)
+        if len(results) > 0:
+            formatted = client_service.format_results_list_psivale(results)
+            message_2 = f"""💚 Encontré profesionales para vos.
 
+    {formatted}"""
+        else:
+            message_2 = """💚 No encontré psicólogos con esos filtros.
+
+    ¿Qué querés hacer?
+    1️⃣ Intentar con menos filtros
+    2️⃣ Ver todos los profesionales
+    3️⃣ Volver al inicio
+
+    Responde con el número."""
+
+        # ⭐ CALLBACK PARA CAMBIAR ESTADO
+        def change_state_after_send():
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            print(
+                f"[BOT] ✅ State changed to CLIENT_SHOW_RESULTS after delayed message")
+
+        # ⭐ PROGRAMAR ENVÍO CON CALLBACK
+        from messaging_utils import send_delayed_message
+        send_delayed_message(
+            to_number=f'whatsapp:{session.phone_number}',
+            message=message_2,
+            delay_seconds=3,
+            callback=change_state_after_send
+        )
+
+        # ⭐ RETORNAR MENSAJE 1 (confirmación) INMEDIATAMENTE
         return f"""🔍 Búsqueda Rápida
 
-Filtros aplicados:
-{filters_text}
+    Filtros aplicados:
+    {filters_text}
 
-📋 Buscando profesionales...
+    Buscando psicólogos..."""
 
-Próximamente mostraré resultados.
-
-Escribe 'menu' para volver."""
+    # handle_client_view_detail para usar formato Psivale:
 
     def handle_client_view_detail(self, session: SessionData, message: str) -> str:
-        """Handle client viewing professional detail and navigation."""
+        """Handle client viewing professional detail (PSIVALE VERSION)."""
 
         selected_prof = session.get_temp('selected_professional')
 
         if not selected_prof:
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return "❌ Error. Volviendo al menú...\n\n" + self.messages.CLIENT_MAIN_MENU
+            return "❌ Error. Volviendo al menú...\n\n" + self.messages.CLIENT_WELCOME_PSIVALE
 
         if message == '1':
-            # Nueva búsqueda - volver al menú cliente
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_MAIN_MENU
+            # Ver contacto
 
-        elif message == '0':
-            # Volver al menú cliente (mismo que opción 1)
+            # Log contact in analytics
+            search_id = session.get_temp('current_search_id')
+            selection = session.get_temp('selected_position')
+            analytics_service.log_contact(
+                search_id=search_id,
+                professional_phone=selected_prof['phone'],
+                result_position=selection
+            )
+
+            # Show contact info (Psivale format)
+            contact_msg = client_service.format_contact_info_psivale(
+                selected_prof)
+
+            # Stay in same state so user can navigate after
+            return contact_msg
+
+        elif message == '2':
+            # Volver a resultados
+            results = session.get_temp('search_results', [])
+            formatted = client_service.format_results_list_psivale(results)
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            return formatted
+
+        elif message == '3' or message == '0':
+            # Nueva búsqueda
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_MAIN_MENU
+            return self.messages.CLIENT_WELCOME_PSIVALE
 
         else:
             # Invalid option - show detail again
-            prof_detail = client_service.get_professional_detail(
-                selected_prof['phone'])
-            formatted = client_service.format_professional_detail(prof_detail)
-            return self.messages.INVALID_OPTION + "\n\n" + formatted
+            formatted = client_service.format_professional_detail_psivale(
+                selected_prof)
+            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + formatted
+    # ==========================================
+    # ⭐ NUEVOS HANDLERS - CLIENTE ASESORADO PSIVALE
+    # ==========================================
+
+    def handle_client_asesorado_welcome(self, session: SessionData, message: str) -> str:
+        """Handle bienvenida del flujo asesorado (respuesta a WELCOME)."""
+
+        if message == '1':
+            # Sí, quiero empezar → IR A ENFOQUE
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_ASESORADO_ENFOQUE)
+            return self.messages.CLIENT_ASESORADO_ASK_ENFOQUE
+
+        elif message == '2':
+            # Buscar por mi cuenta → FILTRADO RÁPIDO
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
+            return self.messages.CLIENT_SEARCH_QUICK_FORMAT
+
+        elif message == '0':
+            # Volver (reiniciar)
+            session.reset()
+            session.transition_to(ConversationState.START)
+            return self.messages.WELCOME
+
+        else:
+            return self.messages.INVALID_OPTION + "\n\n" + self.messages.WELCOME
+
+    # def handle_client_asesorado_intencion(self, session: SessionData, message: str) -> str:
+    #     """Handle confirmación de intención - continuar al flujo."""
+    #     # Cualquier tecla continúa
+    #     session.clear_temp()
+    #     session.transition_to(ConversationState.CLIENT_ASESORADO_ENFOQUE)
+    #     return self.messages.CLIENT_ASESORADO_ASK_ENFOQUE
+
+    def handle_client_asesorado_enfoque(self, session: SessionData, message: str) -> str:
+        """Handle selección de enfoque terapéutico."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_WELCOME_PSIVALE
+
+        # Validar enfoque
+        if message == '7':
+            # No sabe / Me da igual - no filtrar por enfoque
+            enfoque = None
+            enfoque_display = "Cualquier enfoque"
+        else:
+            if not validate_enfoque(message):
+                return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_ASK_ENFOQUE
+
+            enfoque = normalize_enfoque(message)
+
+            # Get display name
+            enfoque_map = {
+                'tcc': 'TCC',
+                'contextual': 'Contextuales (ACT, DBT)',
+                'sistemica': 'Sistémica',
+                'gestaltica': 'Gestáltica',
+                'psicoanalisis': 'Psicoanálisis',
+                'neuropsicologia': 'Neuropsicología'
+            }
+            enfoque_display = enfoque_map.get(enfoque, enfoque)
+
+        # Store filter
+        filters = session.get_temp('filters', {})
+        if enfoque:
+            filters['enfoque'] = enfoque
+        filters['enfoque_display'] = enfoque_display
+        session.store_temp('filters', filters)
+
+        # Next: población
+        session.transition_to(ConversationState.CLIENT_ASESORADO_POBLACION)
+        return self.messages.CLIENT_ASESORADO_ASK_POBLACION
+
+    def handle_client_asesorado_poblacion(self, session: SessionData, message: str) -> str:
+        """Handle selección de población."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_WELCOME_PSIVALE
+
+        if not validate_poblacion(message):
+            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_ASK_POBLACION
+
+        poblacion = normalize_poblacion(message)
+
+        # Get display name
+        poblacion_map = {
+            'ninos': 'Niño/a',
+            'adolescentes': 'Adolescente',
+            'adultos': 'Adulto',
+            'parejas': 'Pareja/Familia'
+        }
+        poblacion_display = poblacion_map.get(poblacion, poblacion)
+
+        # Store filter
+        filters = session.get_temp('filters', {})
+        filters['poblacion'] = poblacion
+        filters['poblacion_display'] = poblacion_display
+        session.store_temp('filters', filters)
+
+        # Next: modalidad
+        session.transition_to(ConversationState.CLIENT_ASESORADO_MODALIDAD)
+        return self.messages.CLIENT_ASESORADO_ASK_MODALIDAD
+
+    def handle_client_asesorado_modalidad(self, session: SessionData, message: str) -> str:
+        """Handle selección de modalidad."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_WELCOME_PSIVALE
+
+        if message == '3':
+            # Me da igual - no filtrar por modalidad
+            modalidad = None
+            modalidad_display = "Cualquier modalidad"
+            skip_zone = True
+        else:
+            if not validate_modalidad(message):
+                return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_ASK_MODALIDAD
+
+            modalidad = normalize_modalidad(message)
+
+            # Get display name
+            modalidad_map = {
+                'online': '💻 Online',
+                'presencial': '🏢 Presencial',
+                'ambas': 'Online o Presencial'
+            }
+            modalidad_display = modalidad_map.get(modalidad, modalidad)
+            skip_zone = (modalidad == 'online')  # Si es online, skip zona
+
+        # Store filter
+        filters = session.get_temp('filters', {})
+        if modalidad:
+            filters['modalidad'] = modalidad
+        filters['modalidad_display'] = modalidad_display
+        session.store_temp('filters', filters)
+
+        # Next: zona (solo si es presencial o ambas)
+        if skip_zone:
+            session.transition_to(ConversationState.CLIENT_ASESORADO_HORARIOS)
+            return self.messages.CLIENT_ASESORADO_ASK_HORARIOS
+        else:
+            session.transition_to(ConversationState.CLIENT_ASESORADO_ZONA)
+            return self.messages.CLIENT_ASESORADO_ASK_ZONA
+
+    def handle_client_asesorado_zona(self, session: SessionData, message: str) -> str:
+        """Handle selección de zona (solo si presencial)."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_WELCOME_PSIVALE
+
+        if not validate_zona_psivale(message):
+            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_ASK_ZONA
+
+        zone = normalize_zona_psivale(message)
+
+        # Get display name
+        zone_map = {
+            'norte': 'Zona Norte',
+            'sur': 'Zona Sur',
+            'nueva_cordoba': 'Nueva Córdoba'
+        }
+        zone_display = zone_map.get(zone, zone)
+
+        # Store filter
+        filters = session.get_temp('filters', {})
+        filters['zone'] = zone
+        filters['zone_display'] = zone_display
+        session.store_temp('filters', filters)
+
+        # Next: horarios
+        session.transition_to(ConversationState.CLIENT_ASESORADO_HORARIOS)
+        return self.messages.CLIENT_ASESORADO_ASK_HORARIOS
+
+    def handle_client_asesorado_horarios(self, session: SessionData, message: str) -> str:
+        """Handle selección de horarios."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_WELCOME_PSIVALE
+
+        if message == '5':
+            # Cualquier horario - no filtrar
+            horarios = None
+            horarios_display = "Cualquier horario"
+        else:
+            if not validate_horarios(message):
+                return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_ASK_HORARIOS
+
+            horarios = normalize_horario(message)
+
+            # Get display name
+            horarios_map = {
+                'manana': 'Mañana',
+                'tarde': 'Tarde',
+                'noche': 'Noche',
+                'sabado': 'Sábados'
+            }
+            horarios_display = horarios_map.get(horarios, horarios)
+
+        # Store filter
+        filters = session.get_temp('filters', {})
+        if horarios:
+            filters['horarios'] = horarios
+        filters['horarios_display'] = horarios_display
+        session.store_temp('filters', filters)
+
+        # Next: honorarios
+        session.transition_to(ConversationState.CLIENT_ASESORADO_HONORARIOS)
+        return self.messages.CLIENT_ASESORADO_ASK_HONORARIOS
+
+    def handle_client_asesorado_honorarios(self, session: SessionData, message: str) -> str:
+        """Handle selección de rango de honorarios."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return self.messages.CLIENT_WELCOME_PSIVALE
+
+        if message == '5':
+            # Prefiero no decirlo - no filtrar
+            fee_range = None
+            fee_display = "No especificado"
+        else:
+            if not validate_fee_range(message):
+                return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_ASK_HONORARIOS
+
+            fee_range = normalize_fee_range(message)
+
+            # Get display name
+            from validators import get_fee_range_display
+            fee_display = get_fee_range_display(fee_range)
+
+        # Store filter
+        filters = session.get_temp('filters', {})
+        if fee_range:
+            filters['fee_range'] = fee_range
+        filters['fee_display'] = fee_display
+        session.store_temp('filters', filters)
+
+        # ⭐ EJECUTAR BÚSQUEDA AHORA
+        results = client_service.search_professionals_psivale(
+            enfoque=filters.get('enfoque'),
+            poblacion=filters.get('poblacion'),
+            modalidad=filters.get('modalidad'),
+            zone=filters.get('zone'),
+            horarios=filters.get('horarios'),
+            fee_range=filters.get('fee_range'),
+            limit=5
+        )
+
+        # Log search in analytics
+        from analytics_service import analytics_service
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='psivale_asesorado',
+            search_params=filters,
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+        session.store_temp('search_results', results)
+
+        # ⭐ PREPARAR MENSAJE 2 (resultados)
+        if len(results) > 0:
+            formatted = client_service.format_results_list_psivale(results)
+            message_2 = f"""💚 Gracias por compartir. Este paso vale.
+
+    {formatted}"""
+        else:
+            message_2 = """💚 Gracias por compartir. Este paso vale.
+
+    🌿 No encontré psicólogos con exactamente esos filtros.
+
+    Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+    ¿Qué querés hacer?
+    1️⃣ Ampliar la búsqueda (menos filtros)
+    2️⃣ Ver todos los profesionales disponibles
+    3️⃣ Empezar de nuevo
+
+    Responde con el número."""
+
+        # ⭐ CREAR FUNCIÓN CALLBACK PARA CAMBIAR ESTADO
+        def change_state_after_send():
+            """Change session state after second message is sent."""
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            print(
+                f"[BOT] ✅ State changed to CLIENT_SHOW_RESULTS after delayed message")
+
+        from messaging_utils import send_delayed_message
+        send_delayed_message(
+            to_number=f'whatsapp:{session.phone_number}',
+            message=message_2,
+            delay_seconds=3,
+            callback=change_state_after_send  # ⭐ Cambiar estado después de enviar
+        )
+
+        # ⭐ NO CAMBIAR ESTADO TODAVÍA - quedarse en estado actual
+        # El estado cambiará después de enviar el mensaje
+
+        # ⭐ RETORNAR MENSAJE 1 (resumen) INMEDIATAMENTE
+        # Build summary
+        resumen_lines = []
+        if filters.get('enfoque_display'):
+            resumen_lines.append(f"🧠 {filters['enfoque_display']}")
+        if filters.get('poblacion_display'):
+            resumen_lines.append(f"👥 Para: {filters['poblacion_display']}")
+        if filters.get('modalidad_display'):
+            resumen_lines.append(f"💻 {filters['modalidad_display']}")
+        if filters.get('zone_display'):
+            resumen_lines.append(f"📍 {filters['zone_display']}")
+        if filters.get('horarios_display'):
+            resumen_lines.append(f"📅 {filters['horarios_display']}")
+        if filters.get('fee_display'):
+            resumen_lines.append(f"💰 {filters['fee_display']}")
+
+        resumen_text = "\n".join(resumen_lines)
+
+        return f"""✨ Perfecto, ya tengo toda la información.
+
+    🌿 Estás buscando:
+    {resumen_text}
+
+    Buscando psicólogos que se ajusten a tu perfil..."""
+
+    def handle_client_asesorado_resumen(self, session: SessionData, message: str) -> str:
+        """
+        ⚠️ DEPRECADO: Este handler ya no se usa en el flujo principal.
+        La búsqueda ahora se ejecuta desde handle_client_asesorado_honorarios.
+
+        Mantener solo por compatibilidad.
+        """
+        # Redirigir al welcome
+        session.clear_temp()
+        session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+        return self.messages.WELCOME
+
+    def handle_client_asesorado_buscando(self, session: SessionData, message: str) -> str:
+        """
+        Handle ejecución de búsqueda y mostrar resultados.
+        Este handler se ejecuta después de mostrar el resumen.
+        """
+
+        filters = session.get_temp('filters', {})
+
+        # Execute search using Psivale search
+        results = client_service.search_professionals_psivale(
+            enfoque=filters.get('enfoque'),
+            poblacion=filters.get('poblacion'),
+            modalidad=filters.get('modalidad'),
+            zone=filters.get('zone'),
+            horarios=filters.get('horarios'),
+            fee_range=filters.get('fee_range'),
+            limit=5  # Solo 5 resultados
+        )
+
+        # Log search in analytics
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='psivale_asesorado',
+            search_params=filters,
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+        session.store_temp('search_results', results)
+
+        # Transition to results
+        session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+
+        # ⭐ MENSAJE 2: Resultados o sin resultados
+        if len(results) > 0:
+            formatted = client_service.format_results_list_psivale(results)
+            return f"""💚 Gracias por compartir. Este paso vale.
+
+    {formatted}"""
+        else:
+            return """💚 Gracias por compartir. Este paso vale.
+
+    🌿 No encontré psicólogos con exactamente esos filtros.
+
+    Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+    ¿Qué querés hacer?
+    1️⃣ Ampliar la búsqueda (menos filtros)
+    2️⃣ Ver todos los profesionales disponibles
+    3️⃣ Empezar de nuevo
+
+    Responde con el número."""
 
     # ==========================================
     # UTILITY HANDLERS
