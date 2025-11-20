@@ -20,95 +20,97 @@ class UserRole(Enum):
 
 class ConversationState(Enum):
     """
-    All possible states in the conversation flow.
-    State machine transitions based on user input.
+    All possible states in the conversation flow - PSIVALE VERSION.
     """
 
     # ==========================================
     # INITIAL STATES
     # ==========================================
-    START = "start"  # Initial state, ask for role
-    ROLE_SELECTION = "role_selection"  # Waiting for role choice
+    START = "start"
+    # ROLE_SELECTION = "role_selection"
 
     # ==========================================
-    # PROFESSIONAL STATES
+    # PROFESSIONAL STATES - PSIVALE
     # ==========================================
-
-    # Certificate upload (mandatory first step)
-    PROF_NEED_CERTIFICATE = "prof_need_certificate"  # Must upload certificate
-    PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"  # Waiting for file
+    PROF_REGISTER_CONFIRM = "prof_register_confirm"
+    # Certificate upload
+    PROF_NEED_CERTIFICATE = "prof_need_certificate"
+    PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"
 
     # Main menu
-    PROF_MAIN_MENU = "prof_main_menu"  # Show professional menu
+    PROF_MAIN_MENU = "prof_main_menu"
 
-    # Option 1: Liberar horario específico (mark slot as FREE)
-    PROF_FREE_SLOT_DATE = "prof_free_slot_date"  # Ask for date
-    PROF_FREE_SLOT_TIME = "prof_free_slot_time"  # Ask for time range
-    PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"  # Confirm before saving
+    # Option 1: Liberar horario
+    PROF_FREE_SLOT_DATE = "prof_free_slot_date"
+    PROF_FREE_SLOT_TIME = "prof_free_slot_time"
+    PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"
 
-    # Option 3: Cargar semana completa (weekly recurring schedule)
+    # Option 3: Cargar semana
     PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
 
-    # Option 5: Cargar información profesional
-    PROF_INFO_MENU = "prof_info_menu"  # Main info menu
-    PROF_INFO_NAME = "prof_info_name"  # Ask for name
-    PROF_INFO_EMAIL = "prof_info_email"  # Ask for email
-    PROF_INFO_ZONA = "prof_info_zona"  # Ask for zone
-    PROF_INFO_GENERO = "prof_info_genero"  # Ask for gender
-    PROF_INFO_PREPAGA = "prof_info_prepaga"  # Ask for prepaga
-    PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"  # Ask for specialty
+    # Option 5: Cargar información - EXTENDIDO PARA PSIVALE
+    PROF_INFO_MENU = "prof_info_menu"
+    PROF_INFO_NAME = "prof_info_name"
+    PROF_INFO_EMAIL = "prof_info_email"
+    PROF_INFO_ZONA = "prof_info_zona"
+    PROF_INFO_GENERO = "prof_info_genero"
+    PROF_INFO_PREPAGA = "prof_info_prepaga"
+    # PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"  # DEPRECADO - usar ENFOQUE
     PROF_INFO_QUICK = "prof_info_quick"
     PROF_INFO_BIO = "prof_info_bio"
     PROF_INFO_FEE_RANGE = "prof_info_fee_range"
 
-    # Professional - Manage free slots
+    PROF_INFO_ENFOQUE = "prof_info_enfoque"              # Enfoque terapéutico
+    # Segundo enfoque (opcional)
+    PROF_INFO_ENFOQUE_SECOND = "prof_info_enfoque_second"
+    PROF_INFO_POBLACION = "prof_info_poblacion"          # Población que atiende
+    PROF_INFO_MODALIDAD = "prof_info_modalidad"          # Online/Presencial/Ambas
+    PROF_INFO_HORARIOS = "prof_info_horarios"            # Horarios disponibles
+
+    # Manage free slots
     PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"
     PROF_DELETE_FREE_SLOT = "prof_delete_free_slot"
 
-    # Client states - Multi-filter
-    CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
+    # ==========================================
+    # CLIENT STATES - PSIVALE
+    # ==========================================
+
+    # Main menu
+    CLIENT_MAIN_MENU = "client_main_menu"
+
+    CLIENT_ASESORADO_WELCOME = "client_asesorado_welcome"        # Bienvenida Vale
+    # CLIENT_ASESORADO_INTENCION = "client_asesorado_intencion"    # Confirmar intención
+    CLIENT_ASESORADO_ENFOQUE = "client_asesorado_enfoque"        # Tipo terapia
+    CLIENT_ASESORADO_POBLACION = "client_asesorado_poblacion"    # A quién va dirigida
+    CLIENT_ASESORADO_MODALIDAD = "client_asesorado_modalidad"    # Online/Presencial
+    # Zona (si presencial)
+    CLIENT_ASESORADO_ZONA = "client_asesorado_zona"
+    CLIENT_ASESORADO_HORARIOS = "client_asesorado_horarios"      # Disponibilidad
+    CLIENT_ASESORADO_HONORARIOS = "client_asesorado_honorarios"  # Rango honorarios
+    CLIENT_ASESORADO_RESUMEN = "client_asesorado_resumen"        # Resumen y búsqueda
+    CLIENT_ASESORADO_BUSCANDO = "client_asesorado_buscando"
+
+    # Filtrado rápido (ya existía, mantener)
+    CLIENT_SEARCH_QUICK = "client_search_quick"
+
+    # Multi-filter (mantener para compatibilidad)
+    CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"
     CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"
     CLIENT_MULTIFILTER_FECHA = "client_multifilter_fecha"
     CLIENT_MULTIFILTER_HORA = "client_multifilter_hora"
     CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
     CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
     CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
-    # Quick search (all filters at once)
-    CLIENT_SEARCH_QUICK = "client_search_quick"
-
-    # ==========================================
-    # CLIENT STATES
-    # ==========================================
-
-    # Main menu
-    CLIENT_MAIN_MENU = "client_main_menu"  # Show search options
-    CLIENT_SELECT_MODALITY = "client_select_modality"  # Virtual or Presencial
-
-    # Filter selection
-    CLIENT_SELECT_FILTERS = "client_select_filters"  # Which filters to apply?
-
-    # Zona filter
-    CLIENT_FILTER_ZONA = "client_filter_zona"  # Ask for zone (Sur/Norte)
-
-    # Disponibilidad filter
-    CLIENT_FILTER_FECHA = "client_filter_fecha"  # Ask for date
-    CLIENT_FILTER_HORA = "client_filter_hora"  # Ask for time
-
-    # Prepaga filter
-    CLIENT_FILTER_PREPAGA = "client_filter_prepaga"  # Ask yes/no
-
-    # Sexo filter
-    CLIENT_FILTER_SEXO = "client_filter_sexo"  # Ask M/F/Otro
 
     # Results
-    CLIENT_SHOW_RESULTS = "client_show_results"  # Display search results
-    CLIENT_VIEW_DETAIL = "client_view_detail"  # Show professional detail
+    CLIENT_SHOW_RESULTS = "client_show_results"
+    CLIENT_VIEW_DETAIL = "client_view_detail"
 
     # ==========================================
     # COMMON STATES
     # ==========================================
-    ERROR = "error"  # Error state, show error message
-    CANCELLED = "cancelled"  # User cancelled operation
+    ERROR = "error"
+    CANCELLED = "cancelled"
 
 
 class SessionData:
