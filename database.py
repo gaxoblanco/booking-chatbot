@@ -59,20 +59,28 @@ class Database:
             cursor = conn.cursor()
 
             # ==========================================
-            # TABLE: professionals
+            # TABLE: professionals (PSIVALE VERSION)
             # ==========================================
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS professionals (
                     phone TEXT PRIMARY KEY,
                     name TEXT,
                     email TEXT,
-                    zone TEXT CHECK(zone IN ('norte', 'sur')),
+                    zone TEXT CHECK(zone IN ('norte', 'sur', 'nueva_cordoba')),
                     certificate_path TEXT,
                     gender TEXT CHECK(gender IN ('m', 'f', 'otro')),
                     accept_prepaga BOOLEAN DEFAULT 0,
-                    category TEXT,
+                    
+                    -- CAMPOS PSIVALE (NUEVOS)
+                    enfoque_terapeutico TEXT,  -- JSON array: ["tcc", "gestaltica"]
+                    poblacion TEXT,            -- JSON array: ["adultos", "parejas"]
+                    modalidad TEXT CHECK(modalidad IN ('online', 'presencial', 'ambas')),
+                    horarios_disponibles TEXT, -- JSON array: ["manana", "tarde"]
+                    
+                    -- Campos descriptivos
+                    category TEXT,  -- DEPRECADO en Psivale, usar enfoque_terapeutico
                     bio TEXT,
-                    fee_range TEXT,  
+                    fee_range TEXT,
                     
                     -- Metrics
                     total_views INTEGER DEFAULT 0,
@@ -135,22 +143,17 @@ class Database:
             """)
 
             # ==========================================
-            # TABLE: client_searches
+            # TABLE: client_searches (ANALYTICS)
             # ==========================================
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS client_searches (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     client_phone TEXT NOT NULL,
-                    search_type TEXT NOT NULL,
+                    search_type TEXT,
                     search_params TEXT,
-                    result_count INTEGER DEFAULT 0,
-                    professional_contacted TEXT,
+                    result_count INTEGER,
                     session_id TEXT,
-                    search_abandoned BOOLEAN DEFAULT 0,
-                    result_position_clicked INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
-                    FOREIGN KEY (professional_contacted) REFERENCES professionals(phone)
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -160,33 +163,77 @@ class Database:
                 ON client_searches(client_phone)
             """)
 
+            # ==========================================
+            # TABLE: contact_logs (ANALYTICS)
+            # ==========================================
             cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_searches_professional 
-                ON client_searches(professional_contacted)
+                CREATE TABLE IF NOT EXISTS contact_logs (
+                    contact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id INTEGER,
+                    client_phone TEXT NOT NULL,
+                    professional_phone TEXT NOT NULL,
+                    result_position INTEGER,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (search_id) REFERENCES client_searches(search_id),
+                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone)
+                )
             """)
 
+            # Index for contact logs
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_contact_logs_professional 
+                ON contact_logs(professional_phone)
+            """)
+
+            # ==========================================
+            # TABLE: profile_views (ANALYTICS)
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS profile_views (
+                    view_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    professional_phone TEXT NOT NULL,
+                    client_phone TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone)
+                )
+            """)
+
+            # Index for profile views
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_profile_views_professional 
+                ON profile_views(professional_phone)
+            """)
+
+            # Commit all changes
             conn.commit()
             print("✅ Database initialized successfully")
-
     # ==========================================
     # PROFESSIONAL CRUD OPERATIONS
     # ==========================================
 
-    def add_professional(self, phone: str, name: str, email: str = None,
+    def add_professional(self, phone: str, name: str = None, email: str = None,
                          zone: str = None, gender: str = None,
                          accept_prepaga: bool = False,
-                         category: str = None) -> bool:  # ⭐ Agregar parámetro
+                         category: str = None,
+                         enfoque_terapeutico: List[str] = None,
+                         poblacion: List[str] = None,
+                         modalidad: str = None,
+                         horarios_disponibles: List[str] = None) -> bool:
         """
-        Add or update a professional.
+        Add or update a professional (Psivale version).
 
         Args:
             phone: Professional's phone number (unique identifier)
             name: Professional's name
             email: Email address
-            zone: Zone ('norte' or 'sur')
+            zone: Zone ('norte', 'sur', 'nueva_cordoba')
             gender: Gender ('m', 'f', 'otro')
             accept_prepaga: Whether accepts prepaga
-            category: Professional specialty  # ⭐ Agregar doc
+            category: DEPRECADO - usar enfoque_terapeutico
+            enfoque_terapeutico: List of therapeutic approaches (up to 2)
+            poblacion: List of populations served
+            modalidad: Modality ('online', 'presencial', 'ambas')
+            horarios_disponibles: List of available schedules
 
         Returns:
             True if successful, False otherwise
@@ -194,9 +241,20 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+
+                # Convert lists to JSON
+                enfoque_json = json.dumps(
+                    enfoque_terapeutico) if enfoque_terapeutico else None
+                poblacion_json = json.dumps(poblacion) if poblacion else None
+                horarios_json = json.dumps(
+                    horarios_disponibles) if horarios_disponibles else None
+
                 cursor.execute("""
-                    INSERT INTO professionals (phone, name, email, zone, gender, accept_prepaga, category)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO professionals (
+                        phone, name, email, zone, gender, accept_prepaga, category,
+                        enfoque_terapeutico, poblacion, modalidad, horarios_disponibles
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(phone) DO UPDATE SET
                         name = excluded.name,
                         email = excluded.email,
@@ -204,13 +262,20 @@ class Database:
                         gender = excluded.gender,
                         accept_prepaga = excluded.accept_prepaga,
                         category = excluded.category,
+                        enfoque_terapeutico = excluded.enfoque_terapeutico,
+                        poblacion = excluded.poblacion,
+                        modalidad = excluded.modalidad,
+                        horarios_disponibles = excluded.horarios_disponibles,
                         updated_at = CURRENT_TIMESTAMP
-                """, (phone, name, email, zone, gender, accept_prepaga, category))
+                """, (phone, name, email, zone, gender, accept_prepaga, category,
+                      enfoque_json, poblacion_json, modalidad, horarios_json))
 
             print(f"[DB] ✅ Professional added/updated: {phone}")
             return True
         except Exception as e:
             print(f"[DB] ❌ Error adding professional: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def update_certificate(self, phone: str, certificate_path: str) -> bool:
@@ -284,15 +349,102 @@ class Database:
             print(f"[DB] ❌ Error updating fee range: {e}")
             return False
 
+    def update_professional_enfoque(self, phone: str, enfoque_list: List[str]) -> bool:
+        """
+        Update professional's therapeutic approaches (Psivale).
+
+        Args:
+            phone: Professional's phone
+            enfoque_list: List of approaches (max 2): ["tcc", "gestaltica"]
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                enfoque_json = json.dumps(enfoque_list[:2])  # Max 2
+                cursor.execute("""
+                    UPDATE professionals 
+                    SET enfoque_terapeutico = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (enfoque_json, phone))
+            print(f"[DB] ✅ Enfoque updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating enfoque: {e}")
+            return False
+
+    def update_professional_poblacion(self, phone: str, poblacion_list: List[str]) -> bool:
+        """
+        Update professional's population served (Psivale).
+
+        Args:
+            phone: Professional's phone
+            poblacion_list: List: ["ninos", "adultos", "parejas"]
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                poblacion_json = json.dumps(poblacion_list)
+                cursor.execute("""
+                    UPDATE professionals 
+                    SET poblacion = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (poblacion_json, phone))
+            print(f"[DB] ✅ Población updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating población: {e}")
+            return False
+
+    def update_professional_modalidad(self, phone: str, modalidad: str) -> bool:
+        """
+        Update professional's modality (Psivale).
+
+        Args:
+            phone: Professional's phone
+            modalidad: 'online', 'presencial', or 'ambas'
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE professionals 
+                    SET modalidad = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (modalidad, phone))
+            print(f"[DB] ✅ Modalidad updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating modalidad: {e}")
+            return False
+
+    def update_professional_horarios(self, phone: str, horarios_list: List[str]) -> bool:
+        """
+        Update professional's available schedules (Psivale).
+
+        Args:
+            phone: Professional's phone
+            horarios_list: List: ["manana", "tarde", "noche", "sabado"]
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                horarios_json = json.dumps(horarios_list)
+                cursor.execute("""
+                    UPDATE professionals 
+                    SET horarios_disponibles = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (horarios_json, phone))
+            print(f"[DB] ✅ Horarios updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating horarios: {e}")
+            return False
+
     def get_professional(self, phone: str) -> Optional[Dict]:
         """
         Get professional data by phone.
 
-        Args:
-            phone: Professional's phone
-
-        Returns:
-            Dictionary with professional data or None
+        Returns dict with JSON fields parsed.
         """
         try:
             with self.get_connection() as conn:
@@ -302,7 +454,31 @@ class Database:
                 row = cursor.fetchone()
 
                 if row:
-                    return dict(row)
+                    prof_dict = dict(row)
+
+                    # Parse JSON fields
+                    if prof_dict.get('enfoque_terapeutico'):
+                        try:
+                            prof_dict['enfoque_terapeutico'] = json.loads(
+                                prof_dict['enfoque_terapeutico'])
+                        except:
+                            prof_dict['enfoque_terapeutico'] = []
+
+                    if prof_dict.get('poblacion'):
+                        try:
+                            prof_dict['poblacion'] = json.loads(
+                                prof_dict['poblacion'])
+                        except:
+                            prof_dict['poblacion'] = []
+
+                    if prof_dict.get('horarios_disponibles'):
+                        try:
+                            prof_dict['horarios_disponibles'] = json.loads(
+                                prof_dict['horarios_disponibles'])
+                        except:
+                            prof_dict['horarios_disponibles'] = []
+
+                    return prof_dict
                 return None
         except Exception as e:
             print(f"[DB] ❌ Error getting professional: {e}")
@@ -564,6 +740,107 @@ class Database:
         except Exception as e:
             print(f"[DB] ❌ Error searching professionals: {e}")
             return []
+
+    def search_professionals_psivale(
+        self,
+        enfoque: str = None,
+        poblacion: str = None,
+        modalidad: str = None,
+        zone: str = None,
+        horarios: str = None,
+        fee_range: str = None,
+        gender: str = None
+    ) -> List[Dict]:
+        """
+        Search professionals with Psivale filters.
+
+        Args:
+            enfoque: Therapeutic approach to search (e.g., "tcc")
+            poblacion: Population to search (e.g., "adultos")
+            modalidad: Modality filter
+            zone: Zone filter
+            horarios: Schedule filter (e.g., "manana")
+            fee_range: Fee range filter
+            gender: Gender filter
+
+        Returns:
+            List of matching professionals
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Base query - only certified professionals
+                query = "SELECT * FROM professionals WHERE certificate_path IS NOT NULL"
+                params = []
+
+                # Add filters
+                if enfoque:
+                    query += " AND enfoque_terapeutico LIKE ?"
+                    params.append(f'%"{enfoque}"%')
+
+                if poblacion:
+                    query += " AND poblacion LIKE ?"
+                    params.append(f'%"{poblacion}"%')
+
+                if modalidad:
+                    query += " AND (modalidad = ? OR modalidad = 'ambas')"
+                    params.append(modalidad)
+
+                if zone:
+                    query += " AND zone = ?"
+                    params.append(zone)
+
+                if horarios:
+                    query += " AND horarios_disponibles LIKE ?"
+                    params.append(f'%"{horarios}"%')
+
+                if fee_range:
+                    query += " AND fee_range = ?"
+                    params.append(fee_range)
+
+                if gender:
+                    query += " AND gender = ?"
+                    params.append(gender)
+
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+                results = []
+                for row in rows:
+                    prof_dict = dict(row)
+
+                    # Parse JSON fields
+                    if prof_dict.get('enfoque_terapeutico'):
+                        try:
+                            prof_dict['enfoque_terapeutico'] = json.loads(
+                                prof_dict['enfoque_terapeutico'])
+                        except:
+                            prof_dict['enfoque_terapeutico'] = []
+
+                    if prof_dict.get('poblacion'):
+                        try:
+                            prof_dict['poblacion'] = json.loads(
+                                prof_dict['poblacion'])
+                        except:
+                            prof_dict['poblacion'] = []
+
+                    if prof_dict.get('horarios_disponibles'):
+                        try:
+                            prof_dict['horarios_disponibles'] = json.loads(
+                                prof_dict['horarios_disponibles'])
+                        except:
+                            prof_dict['horarios_disponibles'] = []
+
+                    results.append(prof_dict)
+
+                return results
+
+        except Exception as e:
+            print(f"[DB] ❌ Error searching professionals: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     # ==========================================
     # CLIENT SEARCH ANALYTICS
     # ==========================================
@@ -726,39 +1003,39 @@ class Database:
             return []
 
     def get_stats(self) -> Dict:
-        """
-        Get general database statistics.
-
-        Returns:
-            Dictionary with statistics
-        """
+        """Get database statistics."""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # Count professionals
-                cursor.execute(
-                    "SELECT COUNT(*) as count FROM professionals WHERE certificate_path IS NOT NULL")
-                prof_count = cursor.fetchone()['count']
+                # Total professionals
+                cursor.execute("SELECT COUNT(*) FROM professionals")
+                total_professionals = cursor.fetchone()[0]
 
-                # Count searches
-                cursor.execute("SELECT COUNT(*) as count FROM client_searches")
-                search_count = cursor.fetchone()['count']
+                # Total searches
+                cursor.execute("SELECT COUNT(*) FROM client_searches")
+                total_searches = cursor.fetchone()[0]
 
-                # Count contacts
-                cursor.execute(
-                    "SELECT COUNT(*) as count FROM client_searches WHERE professional_contacted IS NOT NULL")
-                contact_count = cursor.fetchone()['count']
+                # Total contacts (usando contact_logs, no professional_contacted)
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM contact_logs")
+                    total_contacts = cursor.fetchone()[0]
+                except:
+                    total_contacts = 0
 
                 return {
-                    'total_professionals': prof_count,
-                    'total_searches': search_count,
-                    'total_contacts': contact_count,
-                    'conversion_rate': (contact_count / search_count * 100) if search_count > 0 else 0
+                    'total_professionals': total_professionals,
+                    'total_searches': total_searches,
+                    'total_contacts': total_contacts
                 }
+
         except Exception as e:
             print(f"[DB] ❌ Error getting stats: {e}")
-            return {}
+            return {
+                'total_professionals': 0,
+                'total_searches': 0,
+                'total_contacts': 0
+            }
 
 
 # Global database instance
