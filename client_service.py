@@ -764,6 +764,406 @@ class ClientService:
         }
         return genders.get(gender, 'No especificado')
 
+    # ==========================================
+    # CAMBIOS EN client_service.py PARA PSIVALE
+    # ==========================================
+
+    # Nuevo método principal de búsqueda Psivale:
+
+    def search_professionals_psivale(
+        self,
+        enfoque: str = None,
+        poblacion: str = None,
+        modalidad: str = None,
+        zone: str = None,
+        horarios: str = None,
+        fee_range: str = None,
+        gender: str = None,
+        limit: int = 10
+    ) -> List[Dict]:
+        """
+        Search professionals with Psivale-specific filters.
+
+        Args:
+            enfoque: Therapeutic approach (e.g., "tcc", "gestaltica")
+            poblacion: Population served (e.g., "adultos", "ninos")
+            modalidad: Modality ('online', 'presencial', 'ambas')
+            zone: Zone ('norte', 'sur', 'nueva_cordoba')
+            horarios: Schedule preference (e.g., "manana", "tarde")
+            fee_range: Fee range (e.g., "0-15000", "25000-35000")
+            gender: Gender preference ('m', 'f', 'otro')
+            limit: Maximum number of results
+
+        Returns:
+            List of matching professionals with formatted data
+        """
+        try:
+            print(f"[CLIENT_SERVICE] 🔍 Psivale search with filters:")
+            print(f"         Enfoque: {enfoque}, Población: {poblacion}")
+            print(f"         Modalidad: {modalidad}, Zone: {zone}")
+            print(
+                f"         Horarios: {horarios}, Fee: {fee_range}, Gender: {gender}")
+
+            # Use database search method
+            professionals = self.db.search_professionals_psivale(
+                enfoque=enfoque,
+                poblacion=poblacion,
+                modalidad=modalidad,
+                zone=zone,
+                horarios=horarios,
+                fee_range=fee_range,
+                gender=gender
+            )
+
+            print(f"[CLIENT_SERVICE] Found {len(professionals)} professionals")
+
+            if not professionals:
+                return []
+
+            # Limit results
+            professionals = professionals[:limit]
+
+            # Enrich with formatted data
+            enriched_results = []
+            for prof in professionals:
+                enriched = self._enrich_professional_data_psivale(prof)
+                enriched_results.append(enriched)
+
+            return enriched_results
+
+        except Exception as e:
+            print(f"[CLIENT_SERVICE] ❌ Error in Psivale search: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _enrich_professional_data_psivale(self, prof: Dict) -> Dict:
+        """
+        Enrich professional data with formatted fields for display.
+
+        Args:
+            prof: Raw professional data from database
+
+        Returns:
+            Enriched professional data with display-friendly formats
+        """
+        enriched = prof.copy()
+
+        # Format enfoque for display
+        if prof.get('enfoque_terapeutico'):
+            enriched['enfoque_display'] = self._format_enfoques_display(
+                prof['enfoque_terapeutico']
+            )
+        else:
+            enriched['enfoque_display'] = 'No especificado'
+
+        # Format población for display
+        if prof.get('poblacion'):
+            enriched['poblacion_display'] = self._format_poblacion_display(
+                prof['poblacion']
+            )
+        else:
+            enriched['poblacion_display'] = 'No especificado'
+
+        # Format modalidad for display
+        if prof.get('modalidad'):
+            modalidad_map = {
+                'online': '💻 Online',
+                'presencial': '🏢 Presencial',
+                'ambas': '🔀 Online y Presencial'
+            }
+            enriched['modalidad_display'] = modalidad_map.get(
+                prof['modalidad'],
+                prof['modalidad'].capitalize()
+            )
+        else:
+            enriched['modalidad_display'] = 'No especificado'
+
+        # Format horarios for display
+        if prof.get('horarios_disponibles'):
+            enriched['horarios_display'] = self._format_horarios_display(
+                prof['horarios_disponibles']
+            )
+        else:
+            enriched['horarios_display'] = 'No especificado'
+
+        # Format zone for display
+        if prof.get('zone'):
+            zone_map = {
+                'norte': 'Zona Norte',
+                'sur': 'Zona Sur',
+                'nueva_cordoba': 'Nueva Córdoba'
+            }
+            enriched['zone_display'] = zone_map.get(
+                prof['zone'], prof['zone'].capitalize())
+        else:
+            enriched['zone_display'] = 'No especificado'
+
+        # Format fee_range for display
+        if prof.get('fee_range'):
+            enriched['fee_display'] = self._format_fee_display(
+                prof['fee_range'])
+        else:
+            enriched['fee_display'] = 'A consultar'
+
+        # Format gender for display
+        if prof.get('gender'):
+            gender_map = {'m': 'Masculino', 'f': 'Femenino', 'otro': 'Otro'}
+            enriched['gender_display'] = gender_map.get(
+                prof['gender'], 'No especificado')
+        else:
+            enriched['gender_display'] = 'No especificado'
+
+        return enriched
+
+    def _format_enfoques_display(self, enfoques: List[str]) -> str:
+        """Format therapeutic approaches for display."""
+        if not enfoques:
+            return 'No especificado'
+
+        enfoque_map = {
+            'tcc': 'TCC',
+            'contextual': 'Contextuales (ACT, DBT, FAP)',
+            'sistemica': 'Sistémica',
+            'gestaltica': 'Gestáltica',
+            'psicoanalisis': 'Psicoanálisis',
+            'neuropsicologia': 'Neuropsicología'
+        }
+
+        formatted = [enfoque_map.get(e, e.capitalize()) for e in enfoques]
+        return ', '.join(formatted)
+
+    def _format_poblacion_display(self, poblaciones: List[str]) -> str:
+        """Format populations for display."""
+        if not poblaciones:
+            return 'No especificado'
+
+        poblacion_map = {
+            'ninos': 'Niños/as',
+            'adolescentes': 'Adolescentes',
+            'adultos': 'Adultos',
+            'parejas': 'Parejas/Familias'
+        }
+
+        formatted = [poblacion_map.get(p, p.capitalize()) for p in poblaciones]
+        return ', '.join(formatted)
+
+    def _format_horarios_display(self, horarios: List[str]) -> str:
+        """Format schedules for display."""
+        if not horarios:
+            return 'No especificado'
+
+        horario_map = {
+            'manana': 'Mañana',
+            'tarde': 'Tarde',
+            'noche': 'Noche',
+            'sabado': 'Sábados'
+        }
+
+        formatted = [horario_map.get(h, h.capitalize()) for h in horarios]
+        return ', '.join(formatted)
+
+    def _format_fee_display(self, fee_range: str) -> str:
+        """Format fee range for display."""
+        if not fee_range:
+            return 'A consultar'
+
+        # If it's a range like "0-15000"
+        if '-' in fee_range:
+            try:
+                parts = fee_range.split('-')
+                min_val = int(parts[0])
+                max_val = int(parts[1])
+
+                if min_val == 0:
+                    return f"Hasta ${max_val:,}"
+                elif max_val > 90000000:  # Very high number = "Más de"
+                    return f"Más de ${min_val:,}"
+                else:
+                    return f"${min_val:,} – ${max_val:,}"
+            except:
+                return fee_range
+
+        return fee_range
+
+    def format_results_list_psivale(self, professionals: List[Dict]) -> str:
+        """
+        Format list of professionals for display (Psivale version).
+
+        Args:
+            professionals: List of professional data
+
+        Returns:
+            Formatted string with numbered list
+        """
+        if not professionals:
+            return """🌿 No encontré psicólogos con exactamente esos filtros.
+
+    Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+    ¿Qué querés hacer?
+    1️⃣ Ampliar la búsqueda (menos filtros)
+    2️⃣ Ver todos los profesionales disponibles
+    3️⃣ Empezar de nuevo
+
+    Responde con el número."""
+
+        lines = []
+        lines.append(
+            f"💚 Encontré {len(professionals)} psicólogo(s) que se ajustan a tu búsqueda:\n")
+
+        for i, prof in enumerate(professionals, 1):
+            name = prof.get('name', 'Sin nombre')
+            enfoque = prof.get('enfoque_display', 'No especificado')
+            modalidad = prof.get('modalidad_display', 'No especificado')
+            zone = prof.get('zone_display', 'No especificado')
+
+            lines.append(f"{i}️⃣ {name}")
+            lines.append(f"   🧠 {enfoque}")
+            lines.append(f"   {modalidad} - {zone}")
+            lines.append("")  # Blank line
+
+        lines.append(
+            "🌿 Cada uno de estos profesionales puede acompañarte en tu proceso.\n")
+        lines.append("Responde con el número para ver más detalles.")
+        lines.append("O escribí '0' para hacer una nueva búsqueda.")
+
+        return "\n".join(lines)
+
+    def format_professional_detail_psivale(self, prof: Dict) -> str:
+        """
+        Format professional detail view (Psivale version).
+
+        Args:
+            prof: Professional data
+
+        Returns:
+            Formatted detail string
+        """
+        lines = []
+
+        # Header with name
+        name = prof.get('name', 'Sin nombre')
+        lines.append(f"🧠 {name}\n")
+
+        # Main info
+        enfoque = prof.get('enfoque_display', 'No especificado')
+        lines.append(f"🎯 Enfoque: {enfoque}")
+
+        poblacion = prof.get('poblacion_display', 'No especificado')
+        lines.append(f"👥 Trabaja con: {poblacion}")
+
+        modalidad = prof.get('modalidad_display', 'No especificado')
+        lines.append(f"💻 Modalidad: {modalidad}")
+
+        zone = prof.get('zone_display', 'No especificado')
+        lines.append(f"📍 Zona: {zone}")
+
+        horarios = prof.get('horarios_display', 'No especificado')
+        lines.append(f"📅 Horarios: {horarios}")
+
+        fee = prof.get('fee_display', 'A consultar')
+        lines.append(f"💰 Honorarios: {fee}")
+
+        # Bio if exists
+        if prof.get('bio'):
+            lines.append(f"\n📝 Sobre el profesional:")
+            lines.append(prof['bio'])
+
+        # Footer with options
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━\n")
+        lines.append("¿Qué querés hacer?")
+        lines.append("1️⃣ Ver contacto")
+        lines.append("2️⃣ Volver a resultados")
+        lines.append("3️⃣ Nueva búsqueda")
+        lines.append("\nResponde con el número.")
+
+        return "\n".join(lines)
+
+    def format_contact_info_psivale(self, prof: Dict) -> str:
+        """
+        Format contact information (Psivale version).
+
+        Args:
+            prof: Professional data
+
+        Returns:
+            Formatted contact string
+        """
+        phone = prof.get('phone', 'No disponible')
+        email = prof.get('email', 'No disponible')
+        name = prof.get('name', 'el profesional')
+
+        return f"""💚 Perfecto, acá está el contacto de {name}:
+
+    📱 WhatsApp: {phone}
+    📧 Email: {email}
+
+    🌿 Recordá que dar el primer paso vale.
+    Mucha suerte en tu proceso.
+
+    ¿Qué querés hacer ahora?
+    1️⃣ Ver otros profesionales
+    2️⃣ Nueva búsqueda
+    0️⃣ Volver al menú"""
+
+    def build_search_summary_psivale(self, filters: Dict) -> str:
+        """
+        Build search summary text from filters (Psivale version).
+
+        Args:
+            filters: Dictionary of applied filters
+
+        Returns:
+            Formatted summary string
+        """
+        lines = []
+        lines.append("🌿 Estás buscando:")
+        lines.append("")
+
+        if filters.get('enfoque'):
+            enfoque_display = self._format_enfoques_display(
+                [filters['enfoque']])
+            lines.append(f"🧠 Enfoque: {enfoque_display}")
+
+        if filters.get('poblacion'):
+            poblacion_display = self._format_poblacion_display(
+                [filters['poblacion']])
+            lines.append(f"👥 Para: {poblacion_display}")
+
+        if filters.get('modalidad'):
+            modalidad_map = {
+                'online': '💻 Sesiones online',
+                'presencial': '🏢 Sesiones presenciales',
+                'ambas': '🔀 Cualquier modalidad'
+            }
+            lines.append(modalidad_map.get(
+                filters['modalidad'], filters['modalidad']))
+
+        if filters.get('zone'):
+            zone_map = {
+                'norte': '📍 Zona Norte',
+                'sur': '📍 Zona Sur',
+                'nueva_cordoba': '📍 Nueva Córdoba'
+            }
+            lines.append(zone_map.get(filters['zone'], f"📍 {filters['zone']}"))
+
+        if filters.get('horarios'):
+            horarios_display = self._format_horarios_display(
+                [filters['horarios']])
+            lines.append(f"📅 Horarios: {horarios_display}")
+
+        if filters.get('fee_range'):
+            fee_display = self._format_fee_display(filters['fee_range'])
+            lines.append(f"💰 Presupuesto: {fee_display}")
+
+        lines.append("")
+        lines.append("Buscando psicólogos que se ajusten a tu perfil...")
+        lines.append("")
+        lines.append("💚 Gracias por compartir. Este paso vale.")
+
+        return "\n".join(lines)
+
 
 # Global client service instance
 client_service = ClientService()
