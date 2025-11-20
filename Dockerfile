@@ -49,7 +49,8 @@ COPY domain_config.py .
 COPY setup_domain.py .
 COPY client_service.py .
 COPY professional_service.py .
-COPY analytics_service.py .   
+COPY analytics_service.py .
+COPY messaging_utils.py .
 
 COPY docker-setup.sh .
 RUN chmod +x docker-setup.sh
@@ -63,8 +64,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FLASK_APP=whatsapp_handler.py
 
+# Copy application files
+COPY *.py /app/
+COPY *.sh /app/
+
+# ⭐ AGREGAR: Hacer script ejecutable
+RUN chmod +x /app/init_and_run.sh
+
+# Create directories
+RUN mkdir -p /app/data /app/certificates
+
 # Expose port
 EXPOSE 5000
+
+# ⭐ CAMBIAR CMD:
+CMD ["/app/init_and_run.sh"]
 
 
 # ==================================================

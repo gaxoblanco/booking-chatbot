@@ -30,9 +30,6 @@ services:
     env_file:
       - .env
 
-    environment:
-      - DOMAIN_PRESET=${DOMAIN_PRESET:-SALUD} # Default: SALUD
-
     # Volume mounts
     volumes:
       # Mount certificates directory (persistent storage)
@@ -50,6 +47,7 @@ services:
       - ./client_service.py:/app/client_service.py
       - ./professional_service.py:/app/professional_service.py
       - ./analytics_service.py:/app/analytics_service.py
+      - ./messaging_utils.py:/app/messaging_utils.py
 
     # Health check
     healthcheck:
@@ -69,6 +67,10 @@ services:
     # Network mode
     networks:
       - whatsapp-network
+    # Initial command to create test professionals and start the bot
+    command: >
+      sh -c "python create_test_professionals_simple.py && 
+             python whatsapp_handler.py"
 
 # ==================================================
 # NETWORKS
