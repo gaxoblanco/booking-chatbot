@@ -1910,105 +1910,79 @@ class Bot:
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.format_multifilter_menu(session)
 
-    # handle_client_show_results para usar formato Psivale:
+    # ==========================================
+    # Paciente - VER DETALLE PROFESIONAL
+    # ==========================================
+
     def handle_client_show_results(self, session: SessionData, message: str) -> str:
-        """Handle client viewing search results (PSIVALE VERSION)."""
+        """Handle results list - user selecting a professional or going back."""
 
-        # Get stored results
-        results = session.get_temp('search_results', [])
-
-        # Check if no results and user is choosing an option
-        if len(results) == 0:
-            if message == '1':
-                # Ampliar búsqueda - volver al flujo asesorado pero con menos filtros
-                session.clear_temp()
-                session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
-                return "🌿 Perfecto, intentemos con menos filtros.\n\n" + self.messages.CLIENT_SEARCH_QUICK_FORMAT
-
-            elif message == '2':
-                # Ver todos los profesionales
-                all_results = client_service.search_professionals_psivale(
-                    limit=10)
-
-                # Log search
-                search_id = analytics_service.log_search(
-                    client_phone=session.phone_number,
-                    search_type='psivale_all',
-                    search_params={},
-                    result_count=len(all_results),
-                    session_id=session.phone_number
-                )
-                session.store_temp('current_search_id', search_id)
-                session.store_temp('search_results', all_results)
-
-                # Format and return
-                formatted = client_service.format_results_list_psivale(
-                    all_results)
-                return formatted
-
-            elif message == '3' or message == '0':
-                # Empezar de nuevo
-                session.clear_temp()
-                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-                return self.messages.CLIENT_WELCOME_PSIVALE
-
-            else:
-                return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_ASESORADO_SIN_RESULTADOS
-
-        # Normal flow - has results
         if message == '0':
-            # Volver al menú
+            # ✅ Volver al inicio (bienvenida Vale)
             session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_WELCOME_PSIVALE
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.WELCOME
 
-        # Check if user selected a number
+        # Try to parse as professional selection
         try:
-            selection = int(message)
+            choice = int(message)
+            results = session.get_temp('search_results', [])
 
-            if 1 <= selection <= len(results):
+            if 1 <= choice <= len(results):
                 # Valid selection - show professional detail
-                selected_prof = results[selection - 1]
+                selected_prof = results[choice - 1]
 
-                # Store selected professional and position
+                # Store selected professional
                 session.store_temp('selected_professional', selected_prof)
-                session.store_temp('selected_position', selection)
+                session.store_temp('selected_position', choice)
 
-                # Log analytics: profile view
+                # Log profile view
+                from analytics_service import analytics_service
                 analytics_service.log_profile_view(selected_prof['phone'])
 
-                # Format and show detail (Psivale version)
-                formatted = client_service.format_professional_detail_psivale(
+                # Format and show detail
+                detail = client_service.format_professional_detail_psivale(
                     selected_prof)
+                contact = client_service.format_contact_info_psivale(
+                    selected_prof)
+
                 session.transition_to(ConversationState.CLIENT_VIEW_DETAIL)
 
-                return formatted
+                return f"""{detail}
+
+    {contact}
+
+    ¿Qué querés hacer ahora?
+    1️⃣ Ver otros profesionales
+    2️⃣ Nueva búsqueda
+    0️⃣ Volver al menú
+
+    Responde con el número."""
+
             else:
-                return f"❌ Opción inválida. Selecciona un número entre 1 y {len(results)}, o '0' para volver."
+                return f"❌ Opción inválida. Elegí un número entre 1 y {len(results)}, o '0' para volver."
 
         except ValueError:
-            return "❌ Por favor, ingresa el número del profesional que deseas ver.\nO '0' para volver al menú."
+            return "❌ Por favor, elegí un número de la lista o '0' para volver."
 
     def parse_client_search_quick(self, message: str) -> tuple:
         """
-        Parse client search filters from message (PSIVALE VERSION).
-        Supports two formats:
+        Parse client search filters from message (PSIVALE VERSION - SMART PARSER).
 
-        Format 1 (with labels):
+        Supports multiple formats:
+
+        Format 1 (with colons):
             enfoque: tcc
             poblacion: adultos
-            modalidad: online
-            zona: norte
-            horarios: tarde
-            honorarios: 2
 
-        Format 2 (without labels, order matters):
+        Format 2 (without colons):
+            enfoque tcc
+            poblacion adultos
+
+        Format 3 (just values):
             tcc
             adultos
             online
-            norte
-            tarde
-            2
 
         All fields are optional.
 
@@ -2024,77 +1998,98 @@ class Bot:
 
         filters = {}
         errors = []
+        unassigned_values = []
 
-        # Check if using labels (contains ':')
-        has_labels = any(':' in line for line in lines)
+        # First pass: Parse each line
+        for line in lines:
+            filter_type, filter_value = self.parse_filter_line_smart(line)
 
-        if has_labels:
-            # Format 1: With labels
-            for line in lines:
-                if ':' not in line:
-                    continue
-
-                key, value = line.split(':', 1)
-                key = key.strip().lower()
-                value = value.strip().lower()
-
-                if key == 'enfoque':
-                    if validate_enfoque(value):
-                        filters['enfoque'] = normalize_enfoque(value)
+            if filter_type:
+                # We know the filter type - validate and store
+                if filter_type == 'enfoque':
+                    if validate_enfoque(filter_value):
+                        filters['enfoque'] = normalize_enfoque(filter_value)
                     else:
-                        errors.append(f"❌ Enfoque inválido: {value}")
+                        errors.append(f"❌ Enfoque inválido: {filter_value}")
 
-                elif key == 'poblacion' or key == 'población':
-                    if validate_poblacion(value):
-                        filters['poblacion'] = normalize_poblacion(value)
+                elif filter_type in ['poblacion', 'población']:
+                    if validate_poblacion(filter_value):
+                        filters['poblacion'] = normalize_poblacion(
+                            filter_value)
                     else:
-                        errors.append(f"❌ Población inválida: {value}")
+                        errors.append(f"❌ Población inválida: {filter_value}")
 
-                elif key == 'modalidad':
-                    if validate_modalidad(value):
-                        filters['modalidad'] = normalize_modalidad(value)
+                elif filter_type == 'modalidad':
+                    if validate_modalidad(filter_value):
+                        filters['modalidad'] = normalize_modalidad(
+                            filter_value)
                     else:
-                        errors.append(f"❌ Modalidad inválida: {value}")
+                        errors.append(f"❌ Modalidad inválida: {filter_value}")
 
-                elif key == 'zona':
-                    if validate_zona_psivale(value):
-                        filters['zone'] = normalize_zona_psivale(value)
+                elif filter_type == 'zona':
+                    if validate_zona_psivale(filter_value):
+                        filters['zone'] = normalize_zona_psivale(filter_value)
                     else:
-                        errors.append(f"❌ Zona inválida: {value}")
+                        errors.append(f"❌ Zona inválida: {filter_value}")
 
-                elif key == 'horarios':
-                    if validate_horarios(value):
-                        filters['horarios'] = normalize_horario(value)
+                elif filter_type == 'horarios':
+                    if validate_horarios(filter_value):
+                        filters['horarios'] = normalize_horario(filter_value)
                     else:
-                        errors.append(f"❌ Horario inválido: {value}")
+                        errors.append(f"❌ Horario inválido: {filter_value}")
 
-                elif key == 'honorarios':
-                    if validate_fee_range(value):
-                        filters['fee_range'] = normalize_fee_range(value)
+                elif filter_type == 'honorarios':
+                    if validate_fee_range(filter_value):
+                        filters['fee_range'] = normalize_fee_range(
+                            filter_value)
                     else:
-                        errors.append(f"❌ Honorarios inválidos: {value}")
+                        errors.append(
+                            f"❌ Honorarios inválidos: {filter_value}")
 
-        else:
-            # Format 2: Without labels (order matters)
-            # Order: enfoque, poblacion, modalidad, zona, horarios, honorarios
+            else:
+                # No filter type specified - try to detect from value
+                detected_type = self.detect_value_type(filter_value)
 
-            if len(lines) >= 1 and validate_enfoque(lines[0]):
-                filters['enfoque'] = normalize_enfoque(lines[0])
+                if detected_type:
+                    # Auto-detected the type
+                    if detected_type == 'enfoque' and 'enfoque' not in filters:
+                        if validate_enfoque(filter_value):
+                            filters['enfoque'] = normalize_enfoque(
+                                filter_value)
 
-            if len(lines) >= 2 and validate_poblacion(lines[1]):
-                filters['poblacion'] = normalize_poblacion(lines[1])
+                    elif detected_type == 'poblacion' and 'poblacion' not in filters:
+                        if validate_poblacion(filter_value):
+                            filters['poblacion'] = normalize_poblacion(
+                                filter_value)
 
-            if len(lines) >= 3 and validate_modalidad(lines[2]):
-                filters['modalidad'] = normalize_modalidad(lines[2])
+                    elif detected_type == 'modalidad' and 'modalidad' not in filters:
+                        if validate_modalidad(filter_value):
+                            filters['modalidad'] = normalize_modalidad(
+                                filter_value)
 
-            if len(lines) >= 4 and validate_zona_psivale(lines[3]):
-                filters['zone'] = normalize_zona_psivale(lines[3])
+                    elif detected_type == 'zona' and 'zone' not in filters:
+                        if validate_zona_psivale(filter_value):
+                            filters['zone'] = normalize_zona_psivale(
+                                filter_value)
 
-            if len(lines) >= 5 and validate_horarios(lines[4]):
-                filters['horarios'] = normalize_horario(lines[4])
+                    elif detected_type == 'horarios' and 'horarios' not in filters:
+                        if validate_horarios(filter_value):
+                            filters['horarios'] = normalize_horario(
+                                filter_value)
 
-            if len(lines) >= 6 and validate_fee_range(lines[5]):
-                filters['fee_range'] = normalize_fee_range(lines[5])
+                    elif detected_type == 'honorarios' and 'fee_range' not in filters:
+                        if validate_fee_range(filter_value):
+                            filters['fee_range'] = normalize_fee_range(
+                                filter_value)
+
+                else:
+                    # Could not detect type
+                    unassigned_values.append(filter_value)
+
+        # Report unassigned values
+        if unassigned_values and not filters:
+            errors.append(
+                f"❌ No pude identificar estos valores: {', '.join(unassigned_values)}")
 
         return filters, errors
 
@@ -2240,52 +2235,56 @@ class Bot:
 
     # handle_client_view_detail para usar formato Psivale:
 
+    # ==========================================
+    # Detalle de profesional + return o restart - PSIVALE VERSION
+    # ==========================================
+
     def handle_client_view_detail(self, session: SessionData, message: str) -> str:
-        """Handle client viewing professional detail (PSIVALE VERSION)."""
+        """Handle professional detail view and contact actions."""
 
-        selected_prof = session.get_temp('selected_professional')
-
-        if not selected_prof:
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return "❌ Error. Volviendo al menú...\n\n" + self.messages.CLIENT_WELCOME_PSIVALE
+        results = session.get_temp('search_results', [])
 
         if message == '1':
-            # Ver contacto
+            # ✅ Ver otros profesionales → Volver a la lista
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
-            # Log contact in analytics
-            search_id = session.get_temp('current_search_id')
-            selection = session.get_temp('selected_position')
-            analytics_service.log_contact(
-                search_id=search_id,
-                professional_phone=selected_prof['phone'],
-                result_position=selection
-            )
+            if not results:
+                return """🌿 No hay más profesionales para mostrar.
 
-            # Show contact info (Psivale format)
-            contact_msg = client_service.format_contact_info_psivale(
-                selected_prof)
+    ¿Qué querés hacer?
+    1️⃣ Nueva búsqueda
+    0️⃣ Volver al menú
 
-            # Stay in same state so user can navigate after
-            return contact_msg
+    Responde con el número."""
+
+            # Volver a mostrar la lista
+            formatted = client_service.format_results_list_psivale(results)
+            return f"""💚 Acá están los profesionales disponibles:
+
+    {formatted}"""
 
         elif message == '2':
-            # Volver a resultados
-            results = session.get_temp('search_results', [])
-            formatted = client_service.format_results_list_psivale(results)
-            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-            return formatted
-
-        elif message == '3' or message == '0':
-            # Nueva búsqueda
+            # ✅ Nueva búsqueda → Volver al inicio (bienvenida Vale)
             session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return self.messages.CLIENT_WELCOME_PSIVALE
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.WELCOME
+
+        elif message == '0':
+            # Volver al menú principal
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.WELCOME
 
         else:
-            # Invalid option - show detail again
-            formatted = client_service.format_professional_detail_psivale(
-                selected_prof)
-            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + formatted
+            # Opción inválida
+            return """❌ Opción inválida.
+
+    ¿Qué querés hacer ahora?
+    1️⃣ Ver otros profesionales
+    2️⃣ Nueva búsqueda
+    0️⃣ Volver al menú
+
+    Responde con el número."""
     # ==========================================
     # ⭐ NUEVOS HANDLERS - CLIENTE ASESORADO PSIVALE
     # ==========================================
@@ -2701,6 +2700,98 @@ class Bot:
         """Handle unknown/unimplemented state."""
         print(f"⚠️ Unknown state: {session.state}")
         return self.messages.ERROR_GENERIC
+
+    # ==========================================
+    # Filtro flexible - parser inteligente
+    # ==========================================
+
+    def parse_filter_line_smart(self, line: str) -> tuple:
+        """
+        Parse a single filter line intelligently.
+        Supports both formats:
+        - "zona: norte" (with colon)
+        - "zona norte" (without colon)
+
+        Args:
+            line: Single line from user input
+
+        Returns:
+            (filter_type, filter_value) or (None, None) if not recognized
+        """
+        line = line.strip().lower()
+
+        # Try format with colon first
+        if ':' in line:
+            parts = line.split(':', 1)
+            key = parts[0].strip()
+            value = parts[1].strip()
+            return (key, value)
+
+        # Try format without colon - split by space
+        words = line.split()
+        if len(words) < 2:
+            # Single word - might be a direct value
+            return (None, words[0])
+
+        # Check if first word(s) match a filter keyword
+        filter_keywords = {
+            'enfoque': ['enfoque', 'terapia', 'tipo'],
+            'poblacion': ['poblacion', 'población', 'para', 'paciente'],
+            'modalidad': ['modalidad', 'modo', 'formato'],
+            'zona': ['zona', 'barrio', 'lugar', 'ubicacion', 'ubicación'],
+            'horarios': ['horarios', 'horario', 'disponibilidad', 'cuando'],
+            'honorarios': ['honorarios', 'honorario', 'precio', 'costo', 'presupuesto']
+        }
+
+        # Try to match first word(s) to a filter type
+        for filter_type, keywords in filter_keywords.items():
+            for keyword in keywords:
+                if line.startswith(keyword + ' '):
+                    # Found match - rest is the value
+                    value = line[len(keyword):].strip()
+                    return (filter_type, value)
+
+        # No filter keyword found - treat as direct value
+        return (None, line)
+
+    # ==========================================
+    # Utilidad para detectar tipo de valor
+    # ==========================================
+
+    def detect_value_type(self, value: str) -> str:
+        """
+        Detect which filter type a value belongs to.
+
+        Args:
+            value: Value to classify
+
+        Returns:
+            Filter type ('enfoque', 'poblacion', etc.) or None
+        """
+        value = value.lower().strip()
+
+        # Define value patterns for each filter
+        value_patterns = {
+            'enfoque': ['tcc', 'contextual', 'sistemica', 'sistémica', 'gestaltica',
+                        'gestáltica', 'psicoanalisis', 'psicoanálisis', 'neuropsicologia',
+                        'neuropsicología'],
+            'poblacion': ['ninos', 'niños', 'adolescentes', 'adultos', 'parejas',
+                          'pareja', 'familia', 'familias'],
+            'modalidad': ['online', 'presencial', 'ambas', 'virtual', 'remoto',
+                          'casa', 'videollamada'],
+            'zona': ['norte', 'sur', 'nueva_cordoba', 'nueva cordoba', 'centro',
+                     'nueva córdoba'],
+            'horarios': ['manana', 'mañana', 'tarde', 'noche', 'sabado', 'sábado',
+                         'finde', 'fines de semana'],
+            'honorarios': ['1', '2', '3', '4']
+        }
+
+        # Check each filter type
+        for filter_type, patterns in value_patterns.items():
+            if value in patterns:
+                return filter_type
+
+        return None
 
 
 # Global bot instance
