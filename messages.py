@@ -29,7 +29,7 @@ class Messages:
     WELCOME = """🌿 Hola, soy Vale, tu asistente de PSIVALE.
 
 Sé que dar el primer paso no siempre es fácil, así que gracias por animarte.
-Estoy acá para ayudarte a encontrar el psicólogo que mejor se adapte a vos. 💚
+Estoy acá para ayudarte a encontrar el psicólogo que mejor se adapte a vos. 💜
 
 ¿Querés que te ayudemos a encontrar un profesional para comenzar terapia?
 
@@ -216,14 +216,16 @@ Configura tu perfil profesional:
 
 1️⃣ Nombre
 2️⃣ Email
-3️⃣ Zona (Norte/Sur)
+3️⃣ Zona (Norte/Sur/Nueva Córdoba)
 4️⃣ Género
-5️⃣ Prepaga (Sí/No)
-6️⃣ Especialidad
-7️⃣ Campo abierto
-8️⃣ Rango de Honorarios
+5️⃣ Enfoque Terapéutico
+6️⃣ Población que atendés
+7️⃣ Modalidad (Online/Presencial/Ambas)
+8️⃣ Horarios disponibles
+9️⃣ Biografía
+🔟 Rango de Honorarios
 
-9️⃣ Guardar Información
+💾 Escribí 'guardar' para guardar la información
 0️⃣ Volver al menú
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -247,12 +249,11 @@ Ejemplo: juan.perez@email.com
 
 💡 Escribe '0' para volver"""
 
-    PROF_INFO_ASK_ZONA = """📍 Zona
-
-¿En qué zona trabajas?
+    PROF_INFO_ASK_ZONA = """📍 ¿En qué zona trabajás?
 
 1️⃣ Zona Norte
 2️⃣ Zona Sur
+3️⃣ Nueva Córdoba
 
 Responde con el número."""
 
@@ -266,22 +267,22 @@ Selecciona tu género:
 
 Responde con el número."""
 
-    PROF_INFO_ASK_PREPAGA = """💳 Prepaga
+#     PROF_INFO_ASK_PREPAGA = """💳 Prepaga
 
-¿Aceptas obras sociales/prepagas?
+# ¿Aceptas obras sociales/prepagas?
 
-1️⃣ Sí
-2️⃣ No
+# 1️⃣ Sí
+# 2️⃣ No
 
-Responde con el número."""
+# Responde con el número."""
 
-    PROF_INFO_ASK_ESPECIALIDAD = f"""{DomainConfig.EMOJI_CATEGORY} {DomainConfig.CATEGORY_LABEL}
+#     PROF_INFO_ASK_ESPECIALIDAD = f"""{DomainConfig.EMOJI_CATEGORY} {DomainConfig.CATEGORY_LABEL}
 
-{DomainConfig.CATEGORY_PROMPT}
+# {DomainConfig.CATEGORY_PROMPT}
 
-{_format_categories_list()}
+# {_format_categories_list()}
 
-Responde con el número o escribe tu {DomainConfig.CATEGORY_LABEL_LOWER}."""
+# Responde con el número o escribe tu {DomainConfig.CATEGORY_LABEL_LOWER}."""
 
     PROF_INFO_ASK_BIO = f"""📝 Descripción Personal
 
@@ -319,44 +320,47 @@ Antes de guardar."""
 
     PROF_INFO_QUICK_FORMAT = """📋 Carga Rápida de Información
 
-Envía tu información en cualquiera de estos formatos:
+Envía toda la información en cualquiera de estos formatos:
 
 ━━━━━━━━━━━━━━━━━━━━
-OPCIÓN 1 - Con etiquetas:
+Con etiquetas:
 ━━━━━━━━━━━━━━━━━━━━
 
-nombre: Dr. Juan Pérez
-email: juan@email.com
+nombre: Dra. María González
+email: maria@psivale.com
 zona: norte
-genero: masculino
-prepaga: si
-especialidad: dentista
-bio: Especialista con 10 años de experiencia
-honorarios: 100-150
-
-━━━━━━━━━━━━━━━━━━━━
-OPCIÓN 2 - Sin etiquetas (orden importante):
-━━━━━━━━━━━━━━━━━━━━
-
-Dr. Juan Pérez
-juan@email.com
-norte
-masculino
-si
-dentista
-Especialista con 10 años de experiencia
-100-150
+genero: femenino
+enfoque: tcc, contextual
+poblacion: adultos, parejas
+modalidad: ambas
+horarios: tarde, noche
+bio: Psicóloga con enfoque cognitivo-conductual
+honorarios: 25000-35000
 
 ━━━━━━━━━━━━━━━━━━━━
 Valores aceptados:
 ━━━━━━━━━━━━━━━━━━━━
 
-- zona: norte, sur (o n, s)
-- genero: masculino, femenino, otro (o m, f, o)
-- prepaga: si, no (o s, n)
-- especialidad: texto libre
-- bio: texto libre (opcional)
-- honorarios: MÍNIMO-MÁXIMO (opcional, ej: 100-150)
+📍 zona: norte, sur, nueva_cordoba
+
+👤 genero: masculino, femenino, otro (o m, f, o)
+
+🧠 enfoque: tcc, contextual, sistemica, gestaltica, psicoanalisis, neuropsicologia, aptos
+   (separar con comas si elegís múltiples enfoques)
+
+👥 poblacion: ninos, adolescentes, adultos, parejas
+   (separar con comas si atendés múltiples poblaciones)
+
+💻 modalidad: online, presencial, ambas
+
+📅 horarios: manana, tarde, noche, sabado
+   (separar con comas)
+
+📝 bio: texto libre (opcional)
+
+💰 honorarios: MÍNIMO-MÁXIMO (opcional, ej: 15000-25000)
+
+━━━━━━━━━━━━━━━━━━━━
 
 💡 Los campos bio y honorarios son opcionales
 💡 Escribe '0' para volver"""
@@ -582,7 +586,7 @@ online
 🎯 Opciones disponibles:
 ━━━━━━━━━━━━━━━━━━━━
 
-🧠 Enfoque: tcc, contextual, sistemica, gestaltica, psicoanalisis, neuropsicologia
+🧠 Enfoque: tcc, contextual, sistemica, gestaltica, psicoanalisis, neuropsicologia, aptos
 
 👥 Población: ninos, adolescentes, adultos, parejas
 
@@ -754,7 +758,7 @@ PSIVALE es una plataforma que conecta psicólogos con pacientes que buscan terap
 - Matrícula profesional activa
 - Título habilitante
 
-💚 ¿Querés registrarte?
+💜 ¿Querés registrarte?
 
 1️⃣ Sí, quiero unirme
 0️⃣ Volver al inicio
@@ -816,6 +820,9 @@ Responde con el número."""
 6️⃣ Neuropsicología / Neurorehabilitación
    → Enfoque en funciones cognitivas y cerebrales
 
+7️⃣ Aptos psicológicos generales 
+    → Evaluaciones y certificados
+
 Responde con el número (o números separados por coma para elegir 2).
 💡 Ejemplo: 1,3"""
 
@@ -831,6 +838,7 @@ Ya seleccionaste: {first_enfoque}
 4️⃣ Terapia Gestáltica
 5️⃣ Psicoanálisis / Psicodinámica
 6️⃣ Neuropsicología / Neurorehabilitación
+7️⃣ Aptos psicológicos generales 
 
 0️⃣ No, solo uno
 
@@ -895,7 +903,7 @@ Responde con el número (o números separados por coma).
     CLIENT_ASESORADO_WELCOME = """🌿 Hola, soy Vale, tu asistente de PSIVALE.
 
 Sé que dar el primer paso no siempre es fácil, así que gracias por animarte.
-Estoy acá para ayudarte a encontrar el psicólogo que mejor se adapte a vos. 💚
+Estoy acá para ayudarte a encontrar el psicólogo que mejor se adapte a vos. 💜
 
 Te voy a hacer algunas preguntas para entender qué necesitás.
 Podés escribir '0' en cualquier momento para volver al menú.
@@ -905,7 +913,7 @@ Podés escribir '0' en cualquier momento para volver al menú.
 2️⃣ Solo estoy explorando"""
 
     # Confirmación de intención
-    CLIENT_ASESORADO_CONFIRMA = """💚 Perfecto, vamos paso a paso.
+    CLIENT_ASESORADO_CONFIRMA = """💜 Perfecto, vamos paso a paso.
 
 Te voy a hacer algunas preguntas para encontrar el profesional ideal.
 No te preocupes, es muy simple y rápido.
@@ -935,7 +943,10 @@ Presioná cualquier tecla para continuar..."""
 6️⃣ Neuropsicología / Neurorehabilitación
    🧠 Funciones cognitivas
 
-7️⃣ Me da igual / No sé bien
+7️⃣ Aptos psicológicos generales 
+    📄 Evaluaciones y certificados
+
+8️⃣ Me da igual / No sé bien
    🤷 Te mostramos todas las opciones
 
 Responde con el número."""
@@ -998,20 +1009,20 @@ Responde con el número."""
     # Mensaje 1 - Resumen
     CLIENT_ASESORADO_RESUMEN = """✨ Perfecto, ya tengo toda la información.
 
-🌿 Estás buscando:
+    🌿 Estás buscando:
 {resumen}
 
 Buscando psicólogos que se ajusten a tu perfil...
 
-💚 Gracias por compartir. Este paso vale."""
+💜 Gracias por compartir. Este paso vale."""
 
     # Mensaje 2 - Con resultados
-    CLIENT_ASESORADO_RESULTADOS_INTRO = """💚 Encontré {count} psicólogo(s) que se ajustan a tu búsqueda.
+    CLIENT_ASESORADO_RESULTADOS_INTRO = """💜 Encontré {count} psicólogo(s) que se ajustan a tu búsqueda.
 
 {resultados}"""
 
     # Mensaje 2 - Sin resultados
-    CLIENT_ASESORADO_SIN_RESULTADOS = """💚 Gracias por compartir. Este paso vale.
+    CLIENT_ASESORADO_SIN_RESULTADOS = """💜 Gracias por compartir. Este paso vale.
 
 🌿 No encontré psicólogos con exactamente esos filtros.
 
@@ -1025,7 +1036,7 @@ Pero no te preocupes, esto no significa que no haya profesionales para vos.
 Responde con el número."""
 
     # Cierre con resultados
-    CLIENT_ASESORADO_RESULTADOS = """💚 Encontré {count} psicólogo(s) que se ajustan a tu búsqueda.
+    CLIENT_ASESORADO_RESULTADOS = """💜 Encontré {count} psicólogo(s) que se ajustan a tu búsqueda.
 
 {results_list}
 
@@ -1068,7 +1079,7 @@ Responde con el número."""
 
 Responde con el número."""
 
-    CLIENT_CONTACTO_PSIVALE = """💚 Perfecto, acá está el contacto:
+    CLIENT_CONTACTO_PSIVALE = """💜 Perfecto, acá está el contacto:
 
 📱 WhatsApp: {phone}
 📧 Email: {email}
@@ -1091,9 +1102,9 @@ PSIVALE conecta pacientes con psicólogos según su enfoque, disponibilidad y pr
 
 Cuando estés list@ para buscar, escribí 'hola' y te ayudo.
 
-💚 Dar el primer paso vale en cualquier momento."""
+💜 Dar el primer paso vale en cualquier momento."""
 
-    PSIVALE_CUALQUIER_MOMENTO = """💚 Sin problema, volvé cuando quieras.
+    PSIVALE_CUALQUIER_MOMENTO = """💜 Sin problema, volvé cuando quieras.
 
 Acá vamos a estar para ayudarte cuando decidas dar ese primer paso.
 
@@ -1109,7 +1120,7 @@ Por favor, elegí uno de los números del menú.
 
 Si tenés dudas, escribí '0' para volver al inicio."""
 
-    PSIVALE_ERROR_GENERICO = """💚 Ups, algo salió mal.
+    PSIVALE_ERROR_GENERICO = """💜 Ups, algo salió mal.
 
 No te preocupes, intentemos de nuevo.
 
