@@ -104,6 +104,7 @@ class ConversationState(Enum):
 
     # Results
     CLIENT_SHOW_RESULTS = "client_show_results"
+    CLIENT_NO_RESULTS = "client_no_results"
     CLIENT_VIEW_DETAIL = "client_view_detail"
 
     # ==========================================
