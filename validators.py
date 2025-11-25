@@ -561,13 +561,14 @@ def validate_enfoque(enfoque: str) -> bool:
         >>> validate_enfoque("tcc")
         True
         >>> validate_enfoque("7")
-        False
+        True
     """
     valid_values = [
-        '1', '2', '3', '4', '5', '6',  # Numeric options
+        '1', '2', '3', '4', '5', '6', '7',  # Numeric options
         'tcc', 'contextual', 'sistemica', 'gestaltica',
-        'psicoanalisis', 'neuropsicologia',  # Text values
-        'cognitivo', 'act', 'dbt', 'psicodinamica'  # Aliases
+        'psicoanalisis', 'neuropsicologia', 'aptos',  # Text values
+        'cognitivo', 'act', 'dbt', 'psicodinamica',  # Aliases
+        'apto', 'evaluaciones', 'certificados'  # Aliases para aptos
     ]
     return enfoque.lower() in valid_values
 
@@ -629,6 +630,16 @@ def normalize_enfoque(enfoque: str) -> str:
         'neuropsicología': 'neuropsicologia',
         'neuro': 'neuropsicologia',
         'neurorehabilitacion': 'neuropsicologia',
+
+        '7': 'aptos',
+        'aptos': 'aptos',
+        'apto': 'aptos',
+        'aptos psicologicos': 'aptos',
+        'aptos psicológicos': 'aptos',
+        'evaluaciones': 'aptos',
+        'certificados': 'aptos',
+        'evaluacion': 'aptos',
+        'certificado': 'aptos',
     }
 
     return enfoque_map.get(enfoque_lower, enfoque_lower)
@@ -661,7 +672,7 @@ def parse_enfoque_list(input_text: str) -> list:
 
     # Normalize each and filter valid
     normalized = []
-    for part in parts[:2]:  # Max 2
+    for part in parts:  # sin limites
         if validate_enfoque(part):
             norm = normalize_enfoque(part)
             if norm not in normalized:  # Avoid duplicates
@@ -1141,3 +1152,62 @@ def normalize_zona_psivale(zona: str) -> str:
     }
 
     return zona_map.get(zona_lower, zona_lower)
+
+
+# ==========================================
+# VALIDACIONES DE LONGITUD DE TEXTO
+# ==========================================
+
+def validate_name_length(name: str) -> bool:
+    """
+    Validate name length (3-100 characters).
+
+    Args:
+        name: Name to validate
+
+    Returns:
+        True if valid length, False otherwise
+    """
+    name = name.strip()
+    return 3 <= len(name) <= 100
+
+
+def validate_email_length(email: str) -> bool:
+    """
+    Validate email length (5-100 characters).
+
+    Args:
+        email: Email to validate
+
+    Returns:
+        True if valid length, False otherwise
+    """
+    email = email.strip()
+    return 5 <= len(email) <= 100
+
+
+def validate_bio_length(bio: str) -> bool:
+    """
+    Validate bio length (10-500 characters).
+
+    Args:
+        bio: Bio to validate
+
+    Returns:
+        True if valid length, False otherwise
+    """
+    bio = bio.strip()
+    return 10 <= len(bio) <= 500
+
+
+def validate_text_not_empty(text: str) -> bool:
+    """
+    Validate that text is not empty or only whitespace.
+
+    Args:
+        text: Text to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    return bool(text and text.strip())
