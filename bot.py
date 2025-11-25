@@ -174,7 +174,7 @@ class Bot:
             ConversationState.PROF_INFO_EMAIL: self.handle_prof_info_email,
             ConversationState.PROF_INFO_ZONA: self.handle_prof_info_zona,
             ConversationState.PROF_INFO_GENERO: self.handle_prof_info_genero,
-            ConversationState.PROF_INFO_PREPAGA: self.handle_prof_info_prepaga,
+            # ConversationState.PROF_INFO_PREPAGA: self.handle_prof_info_prepaga,
             # ConversationState.PROF_INFO_ESPECIALIDAD: self.handle_prof_info_especialidad,
             ConversationState.PROF_INFO_QUICK: self.handle_prof_info_quick,
             ConversationState.PROF_INFO_BIO: self.handle_prof_info_bio,
@@ -333,9 +333,29 @@ class Bot:
         elif message == '4':
             # Cargar información
             session.clear_temp()
-            # Initialize info dict if not exists
-            if not session.get_temp('prof_info'):
+            from database import db
+
+            # ✅ Pre-cargar información existente de la DB
+            existing_prof = db.get_professional(session.phone_number)
+            if existing_prof:
+                # Convertir los datos de DB a formato de prof_info
+                prof_info = {
+                    'name': existing_prof.get('name'),
+                    'email': existing_prof.get('email'),
+                    'zone': existing_prof.get('zone'),
+                    'gender': existing_prof.get('gender'),
+                    'enfoque_terapeutico': existing_prof.get('enfoque_terapeutico', []),
+                    'poblacion': existing_prof.get('poblacion', []),
+                    'modalidad': existing_prof.get('modalidad'),
+                    'horarios_disponibles': existing_prof.get('horarios_disponibles', []),
+                    'bio': existing_prof.get('bio'),
+                    'fee_range': existing_prof.get('fee_range')
+                }
+                session.store_temp('prof_info', prof_info)
+            else:
+                # Si no existe, inicializar vacío
                 session.store_temp('prof_info', {})
+
             session.transition_to(ConversationState.PROF_INFO_MENU)
             return self.format_prof_info_menu(session)
 
@@ -388,185 +408,146 @@ class Bot:
 
     # handle_prof_info_menu para incluir opciones Psivale:
     def handle_prof_info_menu(self, session: SessionData, message: str) -> str:
-        """Handle professional info menu (PSIVALE VERSION)."""
+        """Handle professional info menu selection."""
 
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+        # Comando especial: guardar
+        if message.lower() == 'guardar':
+            return self._save_professional_info(session)
 
+        # Opciones del menú
         if message == '1':
-            # Nombre
             session.transition_to(ConversationState.PROF_INFO_NAME)
             return self.messages.PROF_INFO_ASK_NAME
 
         elif message == '2':
-            # Email
             session.transition_to(ConversationState.PROF_INFO_EMAIL)
             return self.messages.PROF_INFO_ASK_EMAIL
 
         elif message == '3':
-            # Zona
             session.transition_to(ConversationState.PROF_INFO_ZONA)
             return self.messages.PROF_INFO_ASK_ZONA
 
         elif message == '4':
-            # Género
             session.transition_to(ConversationState.PROF_INFO_GENERO)
             return self.messages.PROF_INFO_ASK_GENERO
 
         elif message == '5':
-            # Prepaga
-            session.transition_to(ConversationState.PROF_INFO_PREPAGA)
-            return self.messages.PROF_INFO_ASK_PREPAGA
-
-        # ⭐ NUEVAS OPCIONES PSIVALE
-        elif message == '6':
-            # Enfoque terapéutico
+            # ⭐ ENFOQUE (antes era prepaga)
             session.transition_to(ConversationState.PROF_INFO_ENFOQUE)
             return self.messages.PROF_INFO_ASK_ENFOQUE
 
-        elif message == '7':
-            # Población
+        elif message == '6':
+            # ⭐ POBLACIÓN (antes era especialidad)
             session.transition_to(ConversationState.PROF_INFO_POBLACION)
             return self.messages.PROF_INFO_ASK_POBLACION
 
-        elif message == '8':
-            # Modalidad
+        elif message == '7':
+            # ⭐ MODALIDAD (antes era campo abierto/bio)
             session.transition_to(ConversationState.PROF_INFO_MODALIDAD)
             return self.messages.PROF_INFO_ASK_MODALIDAD
 
-        elif message == '9':
-            # Horarios disponibles
+        elif message == '8':
+            # ⭐ HORARIOS (antes era honorarios)
             session.transition_to(ConversationState.PROF_INFO_HORARIOS)
             return self.messages.PROF_INFO_ASK_HORARIOS
 
-        elif message == '10':
-            # Bio
+        elif message == '9':
+            # ⭐ BIO (campo abierto)
             session.transition_to(ConversationState.PROF_INFO_BIO)
             return self.messages.PROF_INFO_ASK_BIO
 
-        elif message == '11':
-            # Honorarios
+        elif message == '10':
+            # ⭐ HONORARIOS
             session.transition_to(ConversationState.PROF_INFO_FEE_RANGE)
             return self.messages.PROF_INFO_ASK_FEE_RANGE
 
-        elif message.lower() in ['guardar', 'save', 's']:
-            # Guardar información
-            prof_info = session.get_temp('prof_info', {})
-
-            if not isinstance(prof_info, dict):
-                prof_info = {}
-
-            # Validate required fields Psivale
-            required = ['name', 'zona', 'enfoque_terapeutico',
-                        'poblacion', 'modalidad']
-            missing = []
-            for field in required:
-                if field not in prof_info or not prof_info[field]:
-                    missing.append(field)
-
-            if missing:
-                s
-                missing_display = {
-                    'name': 'Nombre',
-                    'zona': 'Zona',
-                    'enfoque_terapeutico': 'Enfoque Terapéutico',
-                    'poblacion': 'Población',
-                    'modalidad': 'Modalidad'
-                }
-                missing_text = ", ".join(
-                    [missing_display.get(m, m) for m in missing])
-                return f"⚠️ Faltan campos obligatorios: {missing_text}\n\n" + self.format_prof_info_menu_psivale(session)
-
-            # Save to database
-            professional_service.register_or_update_professional(
-                phone=session.phone_number,
-                name=prof_info.get('name'),
-                email=prof_info.get('email'),
-                zone=prof_info.get('zona'),
-                gender=prof_info.get('genero'),
-                accept_prepaga=prof_info.get('prepaga', False),
-                enfoque_terapeutico=prof_info.get('enfoque_terapeutico', []),
-                poblacion=prof_info.get('poblacion', []),
-                modalidad=prof_info.get('modalidad'),
-                horarios_disponibles=prof_info.get('horarios_disponibles', []),
-                bio=prof_info.get('bio'),
-                fee_range=prof_info.get('fee_range')
-            )
-
-            # Format summary
-            profile_summary = professional_service.format_professional_profile_psivale(
-                session.phone_number
-            )
-
-            session.clear_temp()
+        elif message == '0':
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-
-            return f"✅ ¡Información guardada!\n\n{profile_summary}\n\n" + self.messages.PROF_MAIN_MENU
+            return self.messages.PROF_MAIN_MENU
 
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.format_prof_info_menu_psivale(session)
+            return "❌ Opción inválida.\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_name(self, session: SessionData, message: str) -> str:
         """Handle name input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
+
+        # Validar longitud
+        from validators import validate_name_length, validate_text_not_empty
+
+        if not validate_text_not_empty(message):
+            return "❌ El nombre no puede estar vacío.\n\n💡 Escribe '0' para volver"
+
+        if not validate_name_length(message):
+            return "❌ El nombre debe tener entre 3 y 100 caracteres.\n\n💡 Escribe '0' para volver"
 
         # Store name
         prof_info = session.get_temp('prof_info', {})
-        prof_info['name'] = message
+        prof_info['name'] = message.strip()
         session.store_temp('prof_info', prof_info)
 
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Nombre guardado: {message}\n\n" + self.format_prof_info_menu(session)
+        return f"✅ Nombre guardado: {message.strip()}\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_email(self, session: SessionData, message: str) -> str:
         """Handle email input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
 
-        # Validate email format
-        from validators import validate_email
-        if not validate_email(message):
+        # Validar formato de email
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+        from validators import validate_email_length, validate_text_not_empty
+
+        if not validate_text_not_empty(message):
+            return "❌ El email no puede estar vacío.\n\n💡 Escribe '0' para volver"
+
+        if not validate_email_length(message):
+            return "❌ El email debe tener entre 5 y 100 caracteres.\n\n💡 Escribe '0' para volver"
+
+        if not re.match(email_pattern, message.strip()):
             return "❌ Email inválido. Intenta nuevamente:\nEjemplo: juan@email.com"
 
         # Store email
         prof_info = session.get_temp('prof_info', {})
-        prof_info['email'] = message
+        prof_info['email'] = message.strip()
         session.store_temp('prof_info', prof_info)
 
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Email guardado: {message}\n\n" + self.format_prof_info_menu(session)
+        return f"✅ Email guardado: {message.strip()}\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_zona(self, session: SessionData, message: str) -> str:
         """Handle zona input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
 
         if message == '1':
             zona = 'norte'
         elif message == '2':
             zona = 'sur'
+        elif message == '3':
+            zona = 'nueva_cordoba'
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_ZONA
 
         # Store zona
         prof_info = session.get_temp('prof_info', {})
-        prof_info['zona'] = zona
+        prof_info['zone'] = zona
         session.store_temp('prof_info', prof_info)
 
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Zona guardada: {zona.capitalize()}\n\n" + self.format_prof_info_menu(session)
+        return f"✅ Zona guardada: {zona.capitalize()}\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_genero(self, session: SessionData, message: str) -> str:
         """Handle genero input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
 
         if message == '1':
             genero = 'm'
@@ -579,39 +560,18 @@ class Bot:
 
         # Store genero
         prof_info = session.get_temp('prof_info', {})
-        prof_info['genero'] = genero
+        prof_info['gender'] = genero
         session.store_temp('prof_info', prof_info)
 
         genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Género guardado: {genero_map[genero]}\n\n" + self.format_prof_info_menu(session)
-
-    def handle_prof_info_prepaga(self, session: SessionData, message: str) -> str:
-        """Handle prepaga input."""
-        if message == '0':
-            session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
-
-        if message == '1':
-            prepaga = True
-        elif message == '2':
-            prepaga = False
-        else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_PREPAGA
-
-        # Store prepaga
-        prof_info = session.get_temp('prof_info', {})
-        prof_info['prepaga'] = prepaga
-        session.store_temp('prof_info', prof_info)
-
-        session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Prepaga: {'Sí' if prepaga else 'No'}\n\n" + self.format_prof_info_menu(session)
+        return f"✅ Género guardado: {genero_map[genero]}\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_especialidad(self, session: SessionData, message: str) -> str:
         """Handle especialidad input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
 
         # Map number to specialty or use custom text
         especialidades = {
@@ -638,26 +598,40 @@ class Bot:
         session.store_temp('prof_info', prof_info)
 
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Especialidad guardada: {especialidad}\n\n" + self.format_prof_info_menu(session)
+        return f"✅ Especialidad guardada: {especialidad}\n\n" + self.format_prof_info_menu_psivale(session)
 
     def handle_prof_info_bio(self, session: SessionData, message: str) -> str:
         """Handle bio input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
 
-        # Guardar bio en temp
-        session.store_temp('bio', message)
+        # Validar longitud
+        from validators import validate_bio_length, validate_text_not_empty
 
-        # Volver al menú
+        if not validate_text_not_empty(message):
+            return "❌ La biografía no puede estar vacía.\n\n💡 Escribe '0' para volver"
+
+        if not validate_bio_length(message):
+            char_count = len(message.strip())
+            if char_count < 10:
+                return f"❌ La biografía es muy corta ({char_count} caracteres).\nMínimo: 10 caracteres\n\n💡 Escribe '0' para volver"
+            else:
+                return f"❌ La biografía es muy larga ({char_count} caracteres).\nMáximo: 500 caracteres\n\n💡 Escribe '0' para volver"
+
+        # Guardar bio en prof_info
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['bio'] = message.strip()
+        session.store_temp('prof_info', prof_info)
+
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Descripción guardada.\n\n{self.format_prof_info_menu(session)}"
+        return f"✅ Descripción guardada.\n\n{self.format_prof_info_menu_psivale(session)}"
 
     def handle_prof_info_fee_range(self, session: SessionData, message: str) -> str:
         """Handle fee range input."""
         if message == '0':
             session.transition_to(ConversationState.PROF_INFO_MENU)
-            return self.format_prof_info_menu(session)
+            return self.format_prof_info_menu_psivale(session)
 
         # Validar formato: XXX-YYY
         import re
@@ -672,41 +646,39 @@ class Bot:
             return "❌ El mínimo debe ser menor que el máximo.\n\n💡 Escribe '0' para volver"
 
         # Guardar en temp
-        session.store_temp('fee_range', message)
+        prof_info = session.get_temp('prof_info', {})
+        prof_info['fee_range'] = message
+        session.store_temp('prof_info', prof_info)
 
         # Volver al menú
         session.transition_to(ConversationState.PROF_INFO_MENU)
-        return f"✅ Honorarios guardados: ${min_fee} - ${max_fee}\n\n{self.format_prof_info_menu(session)}"
+        return f"✅ Honorarios guardados: ${min_fee} - ${max_fee}\n\n{self.format_prof_info_menu_psivale(session)}"
 
     def parse_prof_info_quick(self, message: str) -> dict:
         """
-        Parse professional info from message.
-        Supports two formats:
+        Parse professional info from message (PSIVALE VERSION).
 
-        Format 1 (with labels):
-            nombre: Juan Pérez
-            email: juan@email.com
+        Format (with labels):
+            nombre: Dra. María González
+            email: maria@psivale.com
             zona: norte
-            genero: masculino
-            prepaga: si
-            especialidad: dentista
-            bio: Descripción (opcional)
-            honorarios: 100-150 (opcional)
-
-        Format 2 (without labels, order matters):
-            Juan Pérez
-            juan@email.com
-            norte
-            masculino
-            si
-            dentista
-            Descripción (opcional - línea 7)
-            100-150 (opcional - línea 8)
+            genero: femenino
+            enfoque: tcc, contextual
+            poblacion: adultos, parejas
+            modalidad: ambas
+            horarios: tarde, noche
+            bio: Psicóloga con enfoque cognitivo-conductual (opcional)
+            honorarios: 25000-35000 (opcional)
 
         Returns:
             (dict with parsed info, list of errors)
         """
         import re
+        from validators import (
+            validate_email, normalize_zona_psivale, normalize_sexo,
+            parse_enfoque_list, parse_poblacion_list, normalize_modalidad,
+            parse_horarios_list, validate_fee_range, normalize_fee_range
+        )
 
         lines = [line.strip()
                  for line in message.strip().split('\n') if line.strip()]
@@ -714,117 +686,126 @@ class Bot:
         # Check if using labeled format (has ':')
         has_labels = any(':' in line for line in lines)
 
+        if not has_labels:
+            return None, ["❌ Por favor usa el formato con etiquetas (nombre:, email:, etc.)"]
+
         result = {}
         errors = []
 
-        if has_labels:
-            # Parse labeled format
-            for line in lines:
-                if ':' not in line:
-                    continue
+        # Parse labeled format
+        for line in lines:
+            if ':' not in line:
+                continue
 
-                key, value = line.split(':', 1)
-                key = key.strip().lower()
-                value = value.strip()
+            key, value = line.split(':', 1)
+            key = key.strip().lower()
+            value = value.strip()
 
-                # Map variations to standard keys
-                if key in ['nombre', 'name', 'nom']:
-                    result['name'] = value
-                elif key in ['email', 'correo', 'mail']:
-                    result['email'] = value
-                elif key in ['zona', 'zone', 'area']:
-                    result['zona'] = value.lower()
-                elif key in ['genero', 'género', 'sexo', 'gender']:
-                    result['genero'] = value.lower()
-                elif key in ['prepaga', 'obra social', 'os']:
-                    result['prepaga'] = value.lower()
-                elif key in ['especialidad', 'specialty', 'profesion', 'profesión', 'category']:
-                    result['especialidad'] = value
-                elif key in ['bio', 'descripcion', 'descripción', 'about']:  # ← AGREGAR
-                    result['bio'] = value
-                elif key in ['honorarios', 'fee', 'precio', 'costo']:  # ← AGREGAR
-                    result['fee_range'] = value
-        else:
-            # Parse order-based format
-            if len(lines) < 6:
-                return None, [f"❌ Esperaba al menos 6 líneas, recibí {len(lines)}"]
+            # Map variations to standard keys
+            if key in ['nombre', 'name', 'nom']:
+                result['name'] = value
+            elif key in ['email', 'correo', 'mail']:
+                result['email'] = value
+            elif key in ['zona', 'zone', 'area']:
+                result['zone'] = value.lower()
+            elif key in ['genero', 'género', 'sexo', 'gender']:
+                result['gender'] = value.lower()
+            elif key in ['enfoque', 'enfoques', 'approach']:
+                result['enfoque'] = value.lower()
+            elif key in ['poblacion', 'población', 'population']:
+                result['poblacion'] = value.lower()
+            elif key in ['modalidad', 'modality', 'modo']:
+                result['modalidad'] = value.lower()
+            elif key in ['horarios', 'horario', 'schedule']:
+                result['horarios'] = value.lower()
+            elif key in ['bio', 'descripcion', 'descripción', 'about']:
+                result['bio'] = value
+            elif key in ['honorarios', 'fee', 'precio', 'costo']:
+                result['fee_range'] = value
 
-            result = {
-                'name': lines[0],
-                'email': lines[1],
-                'zona': lines[2].lower(),
-                'genero': lines[3].lower(),
-                'prepaga': lines[4].lower(),
-                'especialidad': lines[5]
-            }
-
-            # Optional fields (líneas 7 y 8)
-            if len(lines) >= 7 and lines[6]:  # ← AGREGAR
-                result['bio'] = lines[6]
-            if len(lines) >= 8 and lines[7]:  # ← AGREGAR
-                result['fee_range'] = lines[7]
-
-        # Validate required fields
-        required = ['name', 'email', 'zona',
-                    'genero', 'prepaga', 'especialidad']
+        # ✅ VALIDAR CAMPOS OBLIGATORIOS PSIVALE
+        required = ['name', 'email', 'zone', 'gender',
+                    'enfoque', 'poblacion', 'modalidad']
         missing = [f for f in required if f not in result or not result[f]]
 
         if missing:
-            errors.append(f"❌ Faltan campos: {', '.join(missing)}")
+            missing_map = {
+                'name': 'nombre',
+                'email': 'email',
+                'zone': 'zona',
+                'gender': 'genero',
+                'enfoque': 'enfoque',
+                'poblacion': 'poblacion',
+                'modalidad': 'modalidad'
+            }
+            missing_labels = [missing_map.get(f, f) for f in missing]
+            errors.append(
+                f"❌ Faltan campos obligatorios: {', '.join(missing_labels)}")
             return None, errors
 
-        # Validate and normalize each field
-        from validators import validate_email
+        # ✅ VALIDAR Y NORMALIZAR CADA CAMPO
 
         # Email
         if not validate_email(result['email']):
             errors.append(f"❌ Email inválido: {result['email']}")
 
-        # Zona
-        zona_map = {
-            'norte': 'norte', 'n': 'norte', 'north': 'norte',
-            'sur': 'sur', 's': 'sur', 'south': 'sur'
-        }
-        if result['zona'] not in zona_map:
+        # Zona (PSIVALE: incluye nueva_cordoba)
+        normalized_zone = normalize_zona_psivale(result['zone'])
+        if normalized_zone not in ['norte', 'sur', 'nueva_cordoba']:
             errors.append(
-                f"❌ Zona inválida: {result['zona']} (usa: norte o sur)")
+                f"❌ Zona inválida: {result['zone']} (usa: norte, sur, nueva_cordoba)")
         else:
-            result['zona'] = zona_map[result['zona']]
+            result['zone'] = normalized_zone
 
         # Género
-        genero_map = {
-            'm': 'm', 'masculino': 'm', 'male': 'm', 'hombre': 'm',
-            'f': 'f', 'femenino': 'f', 'female': 'f', 'mujer': 'f',
-            'o': 'o', 'otro': 'o', 'other': 'o', 'nobinario': 'o', 'no binario': 'o'
-        }
-        if result['genero'] not in genero_map:
+        normalized_gender = normalize_sexo(result['gender'])
+        if not normalized_gender:
             errors.append(
-                f"❌ Género inválido: {result['genero']} (usa: masculino, femenino, otro)")
+                f"❌ Género inválido: {result['gender']} (usa: masculino, femenino, otro)")
         else:
-            result['genero'] = genero_map[result['genero']]
+            result['gender'] = normalized_gender
 
-        # Prepaga
-        prepaga_map = {
-            'si': True, 'sí': True, 's': True, 'yes': True, 'y': True,
-            'no': False, 'n': False
-        }
-        if result['prepaga'] not in prepaga_map:
+        # Enfoque terapéutico (máximo 2)
+        enfoque_list = parse_enfoque_list(result['enfoque'])
+        if not enfoque_list:
+            errors.append(f"❌ Enfoque inválido: {result['enfoque']}")
+        else:
+            result['enfoque_terapeutico'] = enfoque_list
+
+        # Población
+        poblacion_list = parse_poblacion_list(result['poblacion'])
+        if not poblacion_list:
+            errors.append(f"❌ Población inválida: {result['poblacion']}")
+        else:
+            result['poblacion'] = poblacion_list
+
+        # Modalidad
+        normalized_modalidad = normalize_modalidad(result['modalidad'])
+        if normalized_modalidad not in ['online', 'presencial', 'ambas']:
             errors.append(
-                f"❌ Prepaga inválida: {result['prepaga']} (usa: si o no)")
+                f"❌ Modalidad inválida: {result['modalidad']} (usa: online, presencial, ambas)")
         else:
-            result['prepaga'] = prepaga_map[result['prepaga']]
+            result['modalidad'] = normalized_modalidad
 
-        # Validar fee_range si existe (opcional)  # ← AGREGAR
-        if 'fee_range' in result:
-            match = re.match(r'^(\d+)-(\d+)$', result['fee_range'].strip())
-            if not match:
-                errors.append(
-                    f"❌ Honorarios inválidos: {result['fee_range']} (usa formato: 100-150)")
+        # Horarios (opcional, pero si viene validar)
+        if 'horarios' in result and result['horarios']:
+            horarios_list = parse_horarios_list(result['horarios'])
+            if not horarios_list:
+                errors.append(f"❌ Horarios inválidos: {result['horarios']}")
             else:
-                min_fee, max_fee = match.groups()
-                if int(min_fee) >= int(max_fee):
-                    errors.append(
-                        f"❌ Honorarios: el mínimo debe ser menor que el máximo")
+                result['horarios_disponibles'] = horarios_list
+        else:
+            result['horarios_disponibles'] = []
+
+        # Validar honorarios si existe (opcional)
+        if 'fee_range' in result and result['fee_range']:
+            if not validate_fee_range(result['fee_range']):
+                errors.append(
+                    f"❌ Honorarios inválidos: {result['fee_range']} (usa formato: 15000-25000)")
+            else:
+                normalized_fee = normalize_fee_range(result['fee_range'])
+                if normalized_fee:
+                    result['fee_range'] = normalized_fee
 
         if errors:
             return None, errors
@@ -883,6 +864,78 @@ class Bot:
         session.transition_to(ConversationState.PROF_MAIN_MENU)
 
         return f"✅ ¡Información guardada!\n\n{summary}\n\n" + self.messages.PROF_MAIN_MENU
+
+    def _save_professional_info(self, session: SessionData) -> str:
+        """
+        Save professional information (PSIVALE VERSION).
+        Validates required fields before saving.
+        """
+        prof_info = session.get_temp('prof_info', {})
+        phone = session.phone_number
+
+        # ⭐ VALIDAR CAMPOS OBLIGATORIOS PSIVALE
+        required_fields = {
+            'name': 'Nombre',
+            'email': 'Email',
+            'zone': 'Zona',
+            'gender': 'Género',
+            'enfoque_terapeutico': 'Enfoque Terapéutico',
+            'poblacion': 'Población',
+            'modalidad': 'Modalidad'
+        }
+
+        missing = []
+        for field, label in required_fields.items():
+            if field not in prof_info or not prof_info[field]:
+                missing.append(label)
+
+        if missing:
+            missing_str = ", ".join(missing)
+            return f"""❌ Faltan campos obligatorios:
+
+    {missing_str}
+
+    Por favor, completá toda la información antes de guardar.
+
+    Escribí el número de la opción para completar los campos faltantes."""
+
+        # ⭐ GUARDAR CON CAMPOS PSIVALE
+        success = professional_service.register_or_update_professional(
+            phone=phone,
+            name=prof_info.get('name'),
+            email=prof_info.get('email'),
+            zone=prof_info.get('zone'),
+            gender=prof_info.get('gender'),
+            enfoque_terapeutico=prof_info.get('enfoque_terapeutico'),
+            poblacion=prof_info.get('poblacion'),
+            modalidad=prof_info.get('modalidad'),
+            horarios_disponibles=prof_info.get('horarios_disponibles'),
+            bio=prof_info.get('bio'),
+            fee_range=prof_info.get('fee_range')
+        )
+
+        if success:
+            # Clear temp data
+            session.clear_temp()
+
+            # Show formatted profile
+            formatted_profile = professional_service.format_professional_profile_psivale(
+                phone)
+
+            # ✅ Cambiar al menú principal después de guardar exitosamente
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+
+            return f"""✅ Información guardada exitosamente!
+
+    {formatted_profile}
+
+    {self.messages.PROF_MAIN_MENU}"""
+        else:
+            return """❌ Error al guardar la información.
+
+    Por favor, intentá nuevamente o contactá soporte.
+
+    Escribí '0' para volver al menú."""
 
     def parse_week_schedule_quick(self, message: str) -> tuple:
         """
@@ -1435,56 +1488,113 @@ class Bot:
         session.transition_to(ConversationState.PROF_INFO_MENU)
         return f"✅ Horarios guardados: {horarios_display}\n\n" + self.format_prof_info_menu_psivale(session)
 
+    # ==========================================
+    # FORMATTING - PROFESIONAL PSIVALE
+    # ==========================================
+
     def format_prof_info_menu_psivale(self, session: SessionData) -> str:
-        """Format professional info menu with current data (Psivale version)."""
-        prof_info = session.get_temp('prof_info', {})
+        """
+        Format professional info menu with current data (PSIVALE VERSION).
+        Shows ONLY the fields that have been filled in (incremental display).
 
-        # Build current info display
-        info_lines = []
-        if prof_info.get('name'):
-            info_lines.append(f"👤 {prof_info['name']}")
-        if prof_info.get('email'):
-            info_lines.append(f"📧 {prof_info['email']}")
-        if prof_info.get('zona'):
-            info_lines.append(f"📍 {prof_info['zona'].capitalize()}")
-        if prof_info.get('genero'):
-            gender_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
-            info_lines.append(f"👥 {gender_map.get(prof_info['genero'])}")
-        if prof_info.get('prepaga') is not None:
-            info_lines.append(f"💳 {'Sí' if prof_info['prepaga'] else 'No'}")
+        IMPORTANTE: Prioriza datos temporales (temp_data) sobre datos de BD
+        para mostrar cambios mientras el usuario está editando.
+        """
+        from database import db
+        phone = session.phone_number
 
-        # Psivale fields
-        if prof_info.get('enfoque_terapeutico'):
-            from professional_service import professional_service
-            enfoque_display = professional_service._format_enfoques(
-                prof_info['enfoque_terapeutico'])
-            info_lines.append(f"🧠 {enfoque_display}")
+        # Primero obtener datos temp (lo que está editando ahora)
+        prof_temp = session.get_temp('prof_info', {})
 
-        if prof_info.get('poblacion'):
-            from professional_service import professional_service
-            poblacion_display = professional_service._format_poblaciones(
-                prof_info['poblacion'])
-            info_lines.append(f"👥 {poblacion_display}")
+        # Luego obtener datos de BD (lo ya guardado)
+        prof_db = db.get_professional(phone) or {}
 
-        if prof_info.get('modalidad'):
-            info_lines.append(f"💻 {prof_info['modalidad'].capitalize()}")
+        # Merge: temp_data tiene prioridad sobre BD
+        prof = {**prof_db, **prof_temp}
 
-        if prof_info.get('horarios_disponibles'):
-            from professional_service import professional_service
-            horarios_display = professional_service._format_horarios(
-                prof_info['horarios_disponibles'])
-            info_lines.append(f"📅 {horarios_display}")
+        if not prof:
+            current_info = "(ninguno)"
+        else:
+            # Format current information - SOLO mostrar campos con datos
+            info_lines = []
 
-        if prof_info.get('bio'):
-            info_lines.append(f"📝 Bio: {prof_info['bio'][:50]}...")
+            # Nombre
+            if prof.get('name'):
+                info_lines.append(f"👤 {prof['name']}")
 
-        if prof_info.get('fee_range'):
-            info_lines.append(f"💰 ${prof_info['fee_range']}")
+            # Email
+            if prof.get('email'):
+                info_lines.append(f"📧 {prof['email']}")
 
-        current_info = "\n".join(
-            info_lines) if info_lines else "Sin información cargada"
+            # Zona
+            zona = prof.get('zone')
+            if zona:
+                zona_map = {
+                    'norte': 'Zona Norte',
+                    'sur': 'Zona Sur',
+                    'nueva_cordoba': 'Nueva Córdoba'
+                }
+                info_lines.append(f"📍 {zona_map.get(zona, zona)}")
 
-        return self.messages.PROF_INFO_MENU_PSIVALE.format(current_info=current_info)
+            # Género
+            gender = prof.get('gender')
+            if gender:
+                gender_map = {
+                    'm': 'Masculino',
+                    'f': 'Femenino',
+                    'otro': 'Otro'
+                }
+                info_lines.append(f"👥 {gender_map.get(gender, gender)}")
+
+            # Enfoque terapéutico
+            enfoque = prof.get('enfoque_terapeutico')
+            if enfoque:
+                from professional_service import professional_service
+                enfoque_display = professional_service._format_enfoques(
+                    enfoque)
+                info_lines.append(f"🧠 {enfoque_display}")
+
+            # Población
+            poblacion = prof.get('poblacion')
+            if poblacion:
+                from professional_service import professional_service
+                poblacion_display = professional_service._format_poblaciones(
+                    poblacion)
+                info_lines.append(f"👥 {poblacion_display}")
+
+            # Modalidad
+            modalidad = prof.get('modalidad')
+            if modalidad:
+                modalidad_map = {
+                    'online': '💻 Online',
+                    'presencial': '🏢 Presencial',
+                    'ambas': '🔀 Ambas modalidades'
+                }
+                info_lines.append(f"{modalidad_map.get(modalidad, modalidad)}")
+
+            # Horarios disponibles
+            horarios = prof.get('horarios_disponibles')
+            if horarios:
+                from professional_service import professional_service
+                horarios_display = professional_service._format_horarios(
+                    horarios)
+                info_lines.append(f"📅 {horarios_display}")
+
+            # Bio
+            bio = prof.get('bio')
+            if bio:
+                bio_short = bio[:50] + "..." if len(bio) > 50 else bio
+                info_lines.append(f"📝 {bio_short}")
+
+            # Honorarios
+            fee_range = prof.get('fee_range')
+            if fee_range:
+                from validators import get_fee_range_display
+                info_lines.append(f"💰 {get_fee_range_display(fee_range)}")
+
+            current_info = "\n".join(info_lines) if info_lines else "(ninguno)"
+
+        return self.messages.PROF_INFO_MENU.format(current_info=current_info)
     # ==========================================
     # CLIENT HANDLERS
     # ==========================================
@@ -1525,6 +1635,8 @@ class Bot:
             zona = 'norte'
         elif message == '2':
             zona = 'sur'
+        elif message == '3':
+            zona = 'nueva_cordoba'
         else:
             return self.messages.INVALID_OPTION + "\n\n" + self.messages.CLIENT_ASK_ZONA
 
@@ -2580,10 +2692,6 @@ class Bot:
             callback=change_state_after_send  # ⭐ Cambiar estado después de enviar
         )
 
-        # ⭐ NO CAMBIAR ESTADO TODAVÍA - quedarse en estado actual
-        # El estado cambiará después de enviar el mensaje
-
-        # ⭐ RETORNAR MENSAJE 1 (resumen) INMEDIATAMENTE
         # Build summary
         resumen_lines = []
         if filters.get('enfoque_display'):
@@ -2601,12 +2709,8 @@ class Bot:
 
         resumen_text = "\n".join(resumen_lines)
 
-        return f"""✨ Perfecto, ya tengo toda la información.
-
-    🌿 Estás buscando:
-    {resumen_text}
-
-    Buscando psicólogos que se ajusten a tu perfil..."""
+        # Usar el mensaje de messages.py
+        return self.messages.CLIENT_ASESORADO_RESUMEN.format(resumen=resumen_text)
 
     def handle_client_asesorado_resumen(self, session: SessionData, message: str) -> str:
         """
@@ -2774,7 +2878,7 @@ class Bot:
         value_patterns = {
             'enfoque': ['tcc', 'contextual', 'sistemica', 'sistémica', 'gestaltica',
                         'gestáltica', 'psicoanalisis', 'psicoanálisis', 'neuropsicologia',
-                        'neuropsicología'],
+                        'neuropsicología', 'aptos', 'apto', 'evaluaciones', 'certificados'],
             'poblacion': ['ninos', 'niños', 'adolescentes', 'adultos', 'parejas',
                           'pareja', 'familia', 'familias'],
             'modalidad': ['online', 'presencial', 'ambas', 'virtual', 'remoto',
