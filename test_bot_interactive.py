@@ -12,10 +12,12 @@ Usage:
 
 import argparse
 from datetime import datetime
-from states import session_manager
+from states import session_manager, ConversationState
 from bot import bot
 import sys
 import os
+from professional_service import professional_service
+from database import db
 
 # Add parent directory to path to import bot modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -93,31 +95,64 @@ class BotTester:
         """
         Simulate sending an image (for certificate upload).
 
+        Esta función simula la carga de una imagen creando:
+        1. Un archivo físico simulado en el sistema
+        2. La actualización en la base de datos
+        3. El procesamiento del bot como si hubiera recibido una imagen real
+
         Args:
-            filename: Filename to simulate
+            filename: Filename to simulate (default: test_certificate.jpg)
         """
         print(
             f"\n{Colors.WARNING}📎 Simulating image upload: {filename}{Colors.ENDC}")
 
-        # Simulate file upload by calling the bot's image handler
-        from professional_service import professional_service
+        # Paso 1: Crear el directorio de certificados si no existe
+        cert_dir = f"certificates/{self.test_phone}"
+        os.makedirs(cert_dir, exist_ok=True)
 
-        # Create a fake file path for testing
-        fake_path = f"certificates/{self.test_phone}/{filename}"
+        # Paso 2: Crear un archivo simulado
+        fake_path = f"{cert_dir}/{filename}"
+        with open(fake_path, 'w') as f:
+            f.write(
+                f"MOCK CERTIFICATE FOR TESTING\nPhone: {self.test_phone}\nTimestamp: {datetime.now()}")
 
-        # Update certificate in database
-        success = professional_service.update_certificate(
+        print(f"{Colors.OKCYAN}  📁 Created mock file: {fake_path}{Colors.ENDC}")
+
+        # Paso 3: Verificar el estado actual
+        current_state = self.session.state
+        print(f"{Colors.OKCYAN}  📊 Current state: {current_state}{Colors.ENDC}")
+
+        # Paso 4: Actualizar certificado en la base de datos
+        success = professional_service.save_certificate(
             self.test_phone, fake_path)
 
         if success:
             print(
-                f"{Colors.OKGREEN}✅ Certificate uploaded successfully!{Colors.ENDC}")
-            # Get response after upload
-            response = bot.process_message(
-                self.test_phone, "certificado subido")
-            self.print_bot_response(response)
+                f"{Colors.OKGREEN}  ✅ Certificate path saved to database{Colors.ENDC}")
+
+            # Paso 5: Si estamos en PROF_NEED_CERTIFICATE, cambiar estado manualmente
+            # y procesar el siguiente paso
+            if current_state == ConversationState.PROF_NEED_CERTIFICATE:
+                # Cambiar estado a PROF_INFO_NAME
+                self.session.state = ConversationState.PROF_INFO_NAME
+                print(
+                    f"{Colors.OKCYAN}  🔄 State changed: PROF_NEED_CERTIFICATE → PROF_INFO_NAME{Colors.ENDC}")
+
+                # Obtener el mensaje de bienvenida para el siguiente paso
+                from messages import Messages
+                response = Messages.PROF_INFO_ASK_NAME
+                self.print_bot_response(response)
+            else:
+                # Si no estamos en el estado esperado, mostrar advertencia
+                print(
+                    f"{Colors.WARNING}  ⚠️  Warning: Not in PROF_NEED_CERTIFICATE state{Colors.ENDC}")
+                # Intentar procesar un mensaje para ver qué pasa
+                response = bot.process_message(
+                    self.test_phone, "[imagen recibida]")
+                self.print_bot_response(response)
         else:
-            print(f"{Colors.FAIL}❌ Failed to upload certificate{Colors.ENDC}")
+            print(
+                f"{Colors.FAIL}❌ Failed to save certificate to database{Colors.ENDC}")
 
     def _get_input(self, prompt: str, default: str = None) -> str:
         """
@@ -486,6 +521,75 @@ class BotTester:
             print(
                 f"\n{Colors.OKCYAN}Switching to interactive mode...{Colors.ENDC}\n")
             self.run_interactive_continue()
+
+    def simulate_certificate_upload(phone_number):
+        """Simulate certificate upload for testing."""
+        from datetime import datetime
+
+        print(f"\n{'='*50}")
+        print(f"[MOCK] Simulating certificate upload...")
+        print(f"{'='*50}")
+
+        # Create mock certificate path
+        mock_cert_path = f"certificates/{phone_number}/mock_cert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+
+        # Create directory if doesn't exist
+        os.makedirs(os.path.dirname(mock_cert_path), exist_ok=True)
+
+        # Create empty mock file
+        with open(mock_cert_path, 'w') as f:
+            f.write("MOCK CERTIFICATE FOR TESTING")
+
+        # Save certificate path
+        professional_service.save_certificate(phone_number, mock_cert_path)
+
+        print(f"✅ Certificate uploaded successfully")
+        print(f"   Phone: {phone_number}")
+        print(f"   Path: {mock_cert_path}")
+        print(f"{'='*50}\n")
+
+        return mock_cert_path
+
+    def setup_test_professional(phone="+5491112345678"):
+        """Setup a complete test professional with certificate and data."""
+        print(f"\n{'='*50}")
+        print(f"[SETUP] Creating test professional...")
+        print(f"{'='*50}")
+
+        # Create mock certificate
+        mock_cert_path = f"certificates/{phone}/mock_cert.jpg"
+        os.makedirs(os.path.dirname(mock_cert_path), exist_ok=True)
+
+        with open(mock_cert_path, 'w') as f:
+            f.write("MOCK CERTIFICATE FOR TESTING")
+
+        # Save certificate
+        professional_service.save_certificate(phone, mock_cert_path)
+
+        # Add professional info
+        success = professional_service.register_or_update_professional(
+            phone=phone,
+            name="Dr. Test Professional",
+            email="test@psivale.com",
+            zone="norte",
+            gender="m",
+            enfoque_terapeutico=["tcc", "contextual"],
+            poblacion=["adultos", "parejas"],
+            modalidad="ambas",
+            horarios_disponibles=["tarde", "noche"],
+            bio="Psicólogo de prueba para testing",
+            fee_range="15000-25000"
+        )
+
+        if success:
+            print(f"✅ Test professional created successfully!")
+            print(f"   Phone: {phone}")
+            print(f"{'='*50}\n")
+            return True
+        else:
+            print(f"❌ Failed to create test professional")
+            print(f"{'='*50}\n")
+            return False
 
 
 def main():
