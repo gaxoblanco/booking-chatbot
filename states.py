@@ -89,6 +89,10 @@ class ConversationState(Enum):
     CLIENT_ASESORADO_HONORARIOS = "client_asesorado_honorarios"  # Rango honorarios
     CLIENT_ASESORADO_RESUMEN = "client_asesorado_resumen"        # Resumen y búsqueda
     CLIENT_ASESORADO_BUSCANDO = "client_asesorado_buscando"
+    # Sin resultados - modificar filtros
+    CLIENT_ASESORADO_NO_RESULTS = "client_asesorado_no_results"
+    # Eligiendo qué filtro modificar
+    CLIENT_ASESORADO_MODIFY_FILTER = "client_asesorado_modify_filter"
 
     # Filtrado rápido (ya existía, mantener)
     CLIENT_SEARCH_QUICK = "client_search_quick"

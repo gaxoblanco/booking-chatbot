@@ -570,12 +570,13 @@ Puedes contactarlo directamente:
     # REEMPLAZAR en messages.py
     # ==========================================
 
-    CLIENT_SEARCH_QUICK_FORMAT = """🔍 Búsqueda Rápida
+    CLIENT_SEARCH_QUICK_FORMAT = """🌿 Perfecto, te ayudo a buscar por tu cuenta.
 
-Escribí los filtros que necesites, uno por línea:
+Si ya sabés qué necesitás, escribí los filtros que quieras, uno por línea.
+Todos los campos son opcionales - solo escribí lo que te importa.
 
 ━━━━━━━━━━━━━━━━━━━━
-📝 Ejemplo simple:
+💜 Ejemplo:
 ━━━━━━━━━━━━━━━━━━━━
 
 tcc
@@ -1057,6 +1058,37 @@ Pero no te preocupes, esto no significa que no haya profesionales para vos.
 
 Responde con el número."""
 
+
+# Menú cuando no hay resultados
+    CLIENT_ASESORADO_NO_RESULTS_MENU = """🌿 No encontré psicólogos con exactamente esos filtros.
+
+Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+¿Qué querés hacer?
+1️⃣ Modificar un filtro específico
+2️⃣ Ver todos los profesionales disponibles
+3️⃣ Empezar de nuevo
+0️⃣ Volver al menú
+
+Responde con el número."""
+
+    # Menú para elegir qué filtro modificar
+    CLIENT_ASESORADO_MODIFY_FILTER_MENU = """🔧 ¿Qué filtro querés modificar o quitar?
+
+Tus filtros actuales:
+{filtros_actuales}
+
+Seleccioná el filtro a modificar:
+1️⃣ Enfoque terapéutico
+2️⃣ Población
+3️⃣ Modalidad
+4️⃣ Zona
+5️⃣ Horarios
+6️⃣ Honorarios
+0️⃣ Cancelar y volver
+
+Responde con el número."""
+
     # Detalle del profesional (formato Psivale)
     CLIENT_PROFESSIONAL_DETAIL_PSIVALE = """🧠 {name}
 
@@ -1089,8 +1121,7 @@ Mucha suerte en tu proceso.
 
 ¿Qué querés hacer ahora?
 1️⃣ Ver otros profesionales
-2️⃣ Nueva búsqueda
-0️⃣ Volver al menú"""
+2️⃣ Nueva búsqueda"""
 
     # ==========================================
     # MENSAJES DE TRANSICIÓN EMPÁTICOS

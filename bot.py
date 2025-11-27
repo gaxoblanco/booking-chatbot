@@ -194,6 +194,8 @@ class Bot:
             # ConversationState.CLIENT_FILTER_PREPAGA: self.handle_client_filter_prepaga,
             # ConversationState.CLIENT_FILTER_SEXO: self.handle_client_filter_sexo,
             ConversationState.CLIENT_SHOW_RESULTS: self.handle_client_show_results,
+            ConversationState.CLIENT_ASESORADO_NO_RESULTS: self.handle_client_asesorado_no_results,
+            ConversationState.CLIENT_ASESORADO_MODIFY_FILTER: self.handle_client_asesorado_modify_filter,
             ConversationState.CLIENT_VIEW_DETAIL: self.handle_client_view_detail,
 
             # Client multi-filter
@@ -2067,7 +2069,6 @@ class Bot:
     ¿Qué querés hacer ahora?
     1️⃣ Ver otros profesionales
     2️⃣ Nueva búsqueda
-    0️⃣ Volver al menú
 
     Responde con el número."""
 
@@ -2338,12 +2339,12 @@ class Bot:
         )
 
         # ⭐ RETORNAR MENSAJE 1 (confirmación) INMEDIATAMENTE
-        return f"""🔍 Búsqueda Rápida
+        return f"""🌿 Perfecto, entendí lo que necesitás.
 
-    Filtros aplicados:
-    {filters_text}
+Estoy buscando psicólogos que se ajusten a tu perfil:
+{filters_text}
 
-    Buscando psicólogos..."""
+Un momento..."""
 
     # handle_client_view_detail para usar formato Psivale:
 
@@ -2394,7 +2395,6 @@ class Bot:
     ¿Qué querés hacer ahora?
     1️⃣ Ver otros profesionales
     2️⃣ Nueva búsqueda
-    0️⃣ Volver al menú
 
     Responde con el número."""
     # ==========================================
@@ -2467,6 +2467,10 @@ class Bot:
         filters['enfoque_display'] = enfoque_display
         session.store_temp('filters', filters)
 
+        # ✅ Verificar si estamos en modo modificación
+        if session.get_temp('modification_mode', False):
+            return self._execute_search_with_filters(session)
+
         # Next: población
         session.transition_to(ConversationState.CLIENT_ASESORADO_POBLACION)
         return self.messages.CLIENT_ASESORADO_ASK_POBLACION
@@ -2497,7 +2501,11 @@ class Bot:
         filters['poblacion_display'] = poblacion_display
         session.store_temp('filters', filters)
 
-        # Next: modalidad
+        # ✅ Verificar si estamos en modo modificación
+        if session.get_temp('modification_mode', False):
+            return self._execute_search_with_filters(session)
+
+        # Next: modalidad (flujo normal)
         session.transition_to(ConversationState.CLIENT_ASESORADO_MODALIDAD)
         return self.messages.CLIENT_ASESORADO_ASK_MODALIDAD
 
@@ -2534,6 +2542,10 @@ class Bot:
         filters['modalidad_display'] = modalidad_display
         session.store_temp('filters', filters)
 
+        # ✅ Verificar si estamos en modo modificación
+        if session.get_temp('modification_mode', False):
+            return self._execute_search_with_filters(session)
+
         # Next: zona (solo si es presencial o ambas)
         if skip_zone:
             session.transition_to(ConversationState.CLIENT_ASESORADO_HORARIOS)
@@ -2566,6 +2578,10 @@ class Bot:
         filters['zone'] = zone
         filters['zone_display'] = zone_display
         session.store_temp('filters', filters)
+
+        # ✅ Verificar si estamos en modo modificación
+        if session.get_temp('modification_mode', False):
+            return self._execute_search_with_filters(session)
 
         # Next: horarios
         session.transition_to(ConversationState.CLIENT_ASESORADO_HORARIOS)
@@ -2602,6 +2618,10 @@ class Bot:
             filters['horarios'] = horarios
         filters['horarios_display'] = horarios_display
         session.store_temp('filters', filters)
+
+        # ✅ Verificar si estamos en modo modificación
+        if session.get_temp('modification_mode', False):
+            return self._execute_search_with_filters(session)
 
         # Next: honorarios
         session.transition_to(ConversationState.CLIENT_ASESORADO_HONORARIOS)
@@ -2677,12 +2697,17 @@ class Bot:
 
     Responde con el número."""
 
-        # ⭐ CREAR FUNCIÓN CALLBACK PARA CAMBIAR ESTADO
         def change_state_after_send():
             """Change session state after second message is sent."""
-            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-            print(
-                f"[BOT] ✅ State changed to CLIENT_SHOW_RESULTS after delayed message")
+            if len(results) > 0:
+                session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+                print(
+                    f"[BOT] ✅ State changed to CLIENT_SHOW_RESULTS after delayed message")
+            else:
+                session.transition_to(
+                    ConversationState.CLIENT_ASESORADO_NO_RESULTS)
+                print(
+                    f"[BOT] ✅ State changed to CLIENT_ASESORADO_NO_RESULTS after delayed message")
 
         from messaging_utils import send_delayed_message
         send_delayed_message(
@@ -2711,6 +2736,259 @@ class Bot:
 
         # Usar el mensaje de messages.py
         return self.messages.CLIENT_ASESORADO_RESUMEN.format(resumen=resumen_text)
+
+    def _execute_search_with_filters(self, session: SessionData) -> str:
+        """
+        Ejecutar búsqueda con los filtros actuales y retornar resultado.
+        Función auxiliar para reutilizar lógica de búsqueda cuando se modifica un filtro.
+        """
+        filters = session.get_temp('filters', {})
+
+        # Ejecutar búsqueda
+        results = client_service.search_professionals_psivale(
+            enfoque=filters.get('enfoque'),
+            poblacion=filters.get('poblacion'),
+            modalidad=filters.get('modalidad'),
+            zone=filters.get('zone'),
+            horarios=filters.get('horarios'),
+            fee_range=filters.get('fee_range'),
+            limit=5
+        )
+
+        # Log search
+        from analytics_service import analytics_service
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='psivale_asesorado_modified',
+            search_params=filters,
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+        session.store_temp('search_results', results)
+
+        # Limpiar modo modificación
+        session.store_temp('modification_mode', False)
+
+        # Preparar mensaje de resultados
+        if len(results) > 0:
+            formatted = client_service.format_results_list_psivale(results)
+            message_2 = f"""💜 Perfecto, busqué con tus nuevos filtros:
+
+{formatted}"""
+        else:
+            message_2 = """💜 Perfecto, busqué con tus nuevos filtros.
+
+🌿 No encontré psicólogos con exactamente esos filtros.
+
+Pero no te preocupes, esto no significa que no haya profesionales para vos.
+
+¿Qué querés hacer?
+1️⃣ Modificar un filtro específico
+2️⃣ Ver todos los profesionales disponibles
+3️⃣ Empezar de nuevo
+0️⃣ Volver al menú
+
+Responde con el número."""
+
+        # Callback para cambiar estado
+        def change_state_after_send():
+            if len(results) > 0:
+                session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+                print(
+                    f"[BOT] ✅ State changed to CLIENT_SHOW_RESULTS after delayed message")
+            else:
+                session.transition_to(
+                    ConversationState.CLIENT_ASESORADO_NO_RESULTS)
+                print(
+                    f"[BOT] ✅ State changed to CLIENT_ASESORADO_NO_RESULTS after delayed message")
+
+        from messaging_utils import send_delayed_message
+        send_delayed_message(
+            to_number=f'whatsapp:{session.phone_number}',
+            message=message_2,
+            delay_seconds=3,
+            callback=change_state_after_send
+        )
+
+        # Retornar mensaje inmediato
+        resumen_lines = []
+        if filters.get('enfoque_display'):
+            resumen_lines.append(f"🧠 {filters['enfoque_display']}")
+        if filters.get('poblacion_display'):
+            resumen_lines.append(f"👥 Para: {filters['poblacion_display']}")
+        if filters.get('modalidad_display'):
+            resumen_lines.append(f"💻 {filters['modalidad_display']}")
+        if filters.get('zone_display'):
+            resumen_lines.append(f"📍 {filters['zone_display']}")
+        if filters.get('horarios_display'):
+            resumen_lines.append(f"📅 {filters['horarios_display']}")
+        if filters.get('fee_display'):
+            resumen_lines.append(f"💰 {filters['fee_display']}")
+
+        resumen_text = "\n".join(resumen_lines)
+
+        return f"""✨ Filtro actualizado.
+
+🌿 Ahora estás buscando:
+{resumen_text}
+
+Buscando psicólogos que se ajusten a tu perfil..."""
+
+    def handle_client_asesorado_no_results(self, session: SessionData, message: str) -> str:
+        """Handle no results menu - modificar filtros, ver todos, o empezar de nuevo."""
+
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.WELCOME
+
+        if message == '1':
+            # Modificar un filtro específico
+            filters = session.get_temp('filters', {})
+
+            # Construir lista de filtros actuales
+            filtros_lines = []
+            if filters.get('enfoque_display'):
+                filtros_lines.append(
+                    f"🧠 Enfoque: {filters['enfoque_display']}")
+            if filters.get('poblacion_display'):
+                filtros_lines.append(
+                    f"👥 Población: {filters['poblacion_display']}")
+            if filters.get('modalidad_display'):
+                filtros_lines.append(
+                    f"💻 Modalidad: {filters['modalidad_display']}")
+            if filters.get('zone_display'):
+                filtros_lines.append(f"📍 Zona: {filters['zone_display']}")
+            if filters.get('horarios_display'):
+                filtros_lines.append(
+                    f"📅 Horarios: {filters['horarios_display']}")
+            if filters.get('fee_display'):
+                filtros_lines.append(f"💰 Honorarios: {filters['fee_display']}")
+
+            filtros_actuales = "\n".join(
+                filtros_lines) if filtros_lines else "(ninguno)"
+
+            session.transition_to(
+                ConversationState.CLIENT_ASESORADO_MODIFY_FILTER)
+            return self.messages.CLIENT_ASESORADO_MODIFY_FILTER_MENU.format(
+                filtros_actuales=filtros_actuales
+            )
+
+        elif message == '2':
+            # Ver todos los profesionales disponibles (sin filtros)
+            results = client_service.search_professionals_psivale(limit=10)
+
+            session.store_temp('search_results', results)
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+
+            if len(results) > 0:
+                formatted = client_service.format_results_list_psivale(results)
+                return f"""💜 Te muestro todos los profesionales disponibles:
+
+{formatted}"""
+            else:
+                return """🌿 No hay profesionales registrados en este momento.
+
+Por favor, intenta más tarde o contacta soporte.
+
+Escribe '0' para volver al menú."""
+
+        elif message == '3':
+            # Empezar de nuevo
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_ASESORADO_WELCOME)
+            return self.messages.CLIENT_ASESORADO_WELCOME
+
+        else:
+            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_NO_RESULTS_MENU
+
+    def handle_client_asesorado_modify_filter(self, session: SessionData, message: str) -> str:
+        """Handle filter modification selection."""
+
+        if message == '0':
+            # Volver al menú de no results
+            session.transition_to(
+                ConversationState.CLIENT_ASESORADO_NO_RESULTS)
+            return self.messages.CLIENT_ASESORADO_NO_RESULTS_MENU
+
+        filters = session.get_temp('filters', {})
+
+        if message == '1':
+            # Modificar enfoque
+            filters.pop('enfoque', None)
+            filters.pop('enfoque_display', None)
+            session.store_temp('filters', filters)
+            session.transition_to(ConversationState.CLIENT_ASESORADO_ENFOQUE)
+            return self.messages.CLIENT_ASESORADO_ASK_ENFOQUE
+
+        elif message == '2':
+            # Modificar población
+            filters.pop('poblacion', None)
+            filters.pop('poblacion_display', None)
+            session.store_temp('filters', filters)
+            session.transition_to(ConversationState.CLIENT_ASESORADO_POBLACION)
+            return self.messages.CLIENT_ASESORADO_ASK_POBLACION
+
+        elif message == '3':
+            # Modificar modalidad
+            filters.pop('modalidad', None)
+            filters.pop('modalidad_display', None)
+            session.store_temp('filters', filters)
+            session.transition_to(ConversationState.CLIENT_ASESORADO_MODALIDAD)
+            return self.messages.CLIENT_ASESORADO_ASK_MODALIDAD
+
+        elif message == '4':
+            # Modificar zona
+            filters.pop('zone', None)
+            filters.pop('zone_display', None)
+            session.store_temp('filters', filters)
+            session.transition_to(ConversationState.CLIENT_ASESORADO_ZONA)
+            return self.messages.CLIENT_ASESORADO_ASK_ZONA
+
+        elif message == '5':
+            # Modificar horarios
+            filters.pop('horarios', None)
+            filters.pop('horarios_display', None)
+            session.store_temp('filters', filters)
+            session.transition_to(ConversationState.CLIENT_ASESORADO_HORARIOS)
+            return self.messages.CLIENT_ASESORADO_ASK_HORARIOS
+
+        elif message == '6':
+            # Modificar honorarios
+            filters.pop('fee_range', None)
+            filters.pop('fee_display', None)
+            session.store_temp('filters', filters)
+            session.transition_to(
+                ConversationState.CLIENT_ASESORADO_HONORARIOS)
+            return self.messages.CLIENT_ASESORADO_ASK_HONORARIOS
+
+        else:
+            # Reconstruir mensaje con filtros actuales
+            filtros_lines = []
+            if filters.get('enfoque_display'):
+                filtros_lines.append(
+                    f"🧠 Enfoque: {filters['enfoque_display']}")
+            if filters.get('poblacion_display'):
+                filtros_lines.append(
+                    f"👥 Población: {filters['poblacion_display']}")
+            if filters.get('modalidad_display'):
+                filtros_lines.append(
+                    f"💻 Modalidad: {filters['modalidad_display']}")
+            if filters.get('zone_display'):
+                filtros_lines.append(f"📍 Zona: {filters['zone_display']}")
+            if filters.get('horarios_display'):
+                filtros_lines.append(
+                    f"📅 Horarios: {filters['horarios_display']}")
+            if filters.get('fee_display'):
+                filtros_lines.append(f"💰 Honorarios: {filters['fee_display']}")
+
+            filtros_actuales = "\n".join(
+                filtros_lines) if filtros_lines else "(ninguno)"
+
+            return self.messages.PSIVALE_OPCION_INVALIDA + "\n\n" + self.messages.CLIENT_ASESORADO_MODIFY_FILTER_MENU.format(
+                filtros_actuales=filtros_actuales
+            )
 
     def handle_client_asesorado_resumen(self, session: SessionData, message: str) -> str:
         """
