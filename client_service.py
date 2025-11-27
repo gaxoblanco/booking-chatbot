@@ -1100,12 +1100,7 @@ class ClientService:
     📧 Email: {email}
 
     🌿 Recordá que dar el primer paso vale.
-    Mucha suerte en tu proceso.
-
-    ¿Qué querés hacer ahora?
-    1️⃣ Ver otros profesionales
-    2️⃣ Nueva búsqueda
-    0️⃣ Volver al menú"""
+    Mucha suerte en tu proceso."""
 
     def build_search_summary_psivale(self, filters: Dict) -> str:
         """
@@ -1163,7 +1158,3 @@ class ClientService:
         lines.append("💚 Gracias por compartir. Este paso vale.")
 
         return "\n".join(lines)
-
-
-# Global client service instance
-client_service = ClientService()
