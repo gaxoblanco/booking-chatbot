@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Psivale - Centro de Psicología. Próximamente en línea.">
+    <title>Psivale - Sitio en Construcción</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #E8EAF6 0%, #C5CAE9 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            padding: 60px 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .logo {
+            width: 200px;
+            height: auto;
+            margin: 0 auto 40px;
+            animation: float 3s ease-in-out infinite;
+            border-radius: 24px;
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2C3E50;
+            margin-bottom: 20px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: #7986CB;
+            font-weight: 600;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;    
+        }
+
+        .description {
+            font-size: 1.1rem;
+            color: #546E7A;
+            line-height: 1.8;
+            margin-bottom: 40px;
+        }
+        .highlight {
+            color: #5C6BC0;
+            font-weight: 600;
+        }
+
+        .cta-section {
+            background: linear-gradient(135deg, #7986CB 0%, #5C6BC0 100%);
+            padding: 30px;
+            border-radius: 16px;
+            margin: 40px 0 30px 0;
+            color: white;
+        }
+
+        .cta-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .cta-text {
+            font-size: 1rem;
+            line-height: 1.6;
+            opacity: 0.95;
+        }
+
+        .divider {
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(90deg, #7986CB, #9FA8DA);
+            margin: 30px auto;
+            border-radius: 2px;
+        }
+
+        .contact-info {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid #E0E0E0;
+        }
+
+        .contact-title {
+            font-size: 1rem;
+            color: #78909C;
+            font-weight: 600;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 15px 0;
+            font-size: 1.1rem;
+            color: #37474F;
+            transition: all 0.3s ease;
+        }
+
+        .contact-item:hover {
+            color: #7986CB;
+            transform: translateX(5px);
+        }
+
+        .contact-item svg {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            fill: #7986CB;
+        }
+
+        .contact-item a {
+            color: inherit;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        .contact-item a:hover {
+            color: #5C6BC0;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #E0E0E0;
+            font-size: 0.9rem;
+            color: #90A4AE;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .container {
+                padding: 40px 25px;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .logo {
+                width: 150px;
+            }
+
+            .description {
+                font-size: 1rem;
+            }
+
+            .contact-item {
+                font-size: 1rem;
+            }
+        }
+
+        /* Loading animation */
+        .loading-dots {
+            display: inline-flex;
+            gap: 4px;
+            margin-left: 5px;
+        }
+
+        .loading-dots span {
+            width: 6px;
+            height: 6px;
+            background: #7986CB;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading-dots span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+            }
+            40% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Logo -->
+        <img src="logo.jpeg" alt="Psivale Logo" class="logo" onerror="this.style.display='none'">
+
+        <!-- Subtítulo -->
+        <div class="subtitle">
+            <!-- Título principal -->
+            <h1>Psivale</h1>
+            <h3>Sitio en construcción</h3>
+        </div>
+
+        <!-- Descripción -->
+        <p class="description">
+            Conectamos <span class="highlight">profesionales de la psicología</span> con personas que buscan apoyo emocional y bienestar mental.
+        </p>
+
+        <div class="divider"></div>
+
+        <!-- Call to Action para profesionales -->
+        <div class="cta-section">
+            <div class="cta-title">¿Eres profesional de la salud mental?</div>
+            <p class="cta-text">
+                Estamos dando los primeros pasos y nos encantaría contar con vos. 
+                Sumate como profesional pionero y ayudanos a hacer que la ayuda psicológica sea más accesible y cercana.
+            </p>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Información de contacto -->
+        <div class="contact-info">
+            <div class="contact-title">Contáctanos</div>
+
+            <!-- Email -->
+            <div class="contact-item">
+                <a href="mailto:contacto@psivale.com.ar">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                    </svg>
+                    contacto@psivale.com.ar
+                </a>
+            </div>
+
+            <!-- Teléfono -->
+            <div class="contact-item">
+                <a href="tel:+54XXXXXXXXX">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                    </svg>
+                    +54 XXX-XXXX-XXXX
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            © 2026 Psivale. Todos los derechos reservados.
+        </div>
+    </div>
+</body>
+</html>
