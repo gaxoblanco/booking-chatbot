@@ -5,7 +5,7 @@ All bot messages organized by conversation flow.
 Centralized message management for easy maintenance and translation.
 """
 
-from domain_config import DomainConfig
+from src.config.domain_config import DomainConfig
 
 
 def _format_categories_list():
@@ -364,7 +364,7 @@ Valores aceptados:
     @staticmethod
     def CLIENT_MULTIFILTER_MENU(active_filters: str = "") -> str:
         """Generate multifilter menu with active filters."""
-        from domain_config import DomainConfig
+        from src.config.domain_config import DomainConfig
 
         filters_section = ""
         if active_filters:

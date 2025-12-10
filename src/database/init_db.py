@@ -30,7 +30,7 @@ def init_database():
 
     # Show configured domain
     try:
-        from domain_config import DomainConfig
+        from src.config.domain_config import DomainConfig
         print(f"\n🎯 Configured Domain:")
         print(f"   Business: {DomainConfig.BUSINESS_NAME}")
         print(f"   Professional: {DomainConfig.PROFESSIONAL_TITLE}")
@@ -46,7 +46,7 @@ def add_test_data():
     Add test data for development.
     Creates sample professionals with different configurations.
     """
-    from domain_config import DomainConfig
+    from src.config.domain_config import DomainConfig
 
     print("📝 Adding test data...\n")
 

@@ -4,10 +4,10 @@ Services Tests
 Test business logic in service layers.
 """
 
-from analytics_service import AnalyticsService
-from client_service import ClientService
-from professional_service import ProfessionalService
-from database import Database
+from src.services.analytics_service import AnalyticsService
+from src.services.client_service import ClientService
+from src.services.professional_service import ProfessionalService
+from src.database.database import Database
 import sys
 import os
 from datetime import datetime, timedelta

@@ -72,7 +72,17 @@ class Database:
                     accept_prepaga BOOLEAN DEFAULT 0,
                     category TEXT,
                     bio TEXT,
-                    fee_range TEXT,  
+                    fee_range TEXT,
+                    
+                    -- Configuración de agenda
+                    session_duration_minutes INTEGER DEFAULT 50,
+                    buffer_time_minutes INTEGER DEFAULT 10,
+                    max_daily_sessions INTEGER DEFAULT 8,
+                    accepts_online BOOLEAN DEFAULT 1,
+                    accepts_in_person BOOLEAN DEFAULT 1,
+                    auto_confirm_appointments BOOLEAN DEFAULT 0,
+                    is_active BOOLEAN DEFAULT 1,
+                    is_accepting_new_patients BOOLEAN DEFAULT 1,
                     
                     -- Metrics
                     total_views INTEGER DEFAULT 0,
@@ -163,6 +173,207 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_searches_professional 
                 ON client_searches(professional_contacted)
+            """)
+
+            # ==========================================
+            # TABLE: clients
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS clients (
+                    phone TEXT PRIMARY KEY,
+                    name TEXT,
+                    email TEXT,
+                    
+                    -- Datos demográficos
+                    age INTEGER,
+                    gender TEXT CHECK(gender IN ('m', 'f', 'otro', 'prefiero_no_decir')),
+                    
+                    -- Preferencias de búsqueda
+                    preferred_zone TEXT CHECK(preferred_zone IN ('norte', 'sur', 'indistinto')),
+                    preferred_gender TEXT,
+                    has_prepaga BOOLEAN DEFAULT 0,
+                    prepaga_name TEXT,
+                    
+                    -- Comunicación
+                    preferred_contact TEXT CHECK(preferred_contact IN ('whatsapp', 'email', 'phone')) DEFAULT 'whatsapp',
+                    language TEXT DEFAULT 'es',
+                    
+                    -- Flags importantes
+                    first_time_patient BOOLEAN DEFAULT 1,
+                    is_active BOOLEAN DEFAULT 1,
+                    
+                    -- Timestamps
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_interaction_at TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_clients_active 
+                ON clients(is_active)
+            """)
+
+            # ==========================================
+            # TABLE: appointments
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS appointments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    
+                    -- Referencias
+                    client_phone TEXT NOT NULL,
+                    professional_phone TEXT NOT NULL,
+                    
+                    -- Detalles de la cita
+                    appointment_date DATE NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL,
+                    duration_minutes INTEGER DEFAULT 50,
+                    
+                    -- Tipo de sesión
+                    session_type TEXT CHECK(session_type IN ('primera_vez', 'seguimiento', 'evaluacion')) DEFAULT 'primera_vez',
+                    modality TEXT CHECK(modality IN ('presencial', 'virtual', 'ambas')) DEFAULT 'presencial',
+                    
+                    -- Estado de la cita
+                    status TEXT CHECK(status IN (
+                        'pendiente_confirmacion',
+                        'confirmada',
+                        'completada',
+                        'cancelada_cliente',
+                        'cancelada_profesional',
+                        'no_asistio',
+                        'reagendada'
+                    )) DEFAULT 'pendiente_confirmacion',
+                    
+                    -- Información adicional
+                    notes TEXT,
+                    cancellation_reason TEXT,
+                    reminder_sent BOOLEAN DEFAULT 0,
+                    reminder_sent_at TIMESTAMP,
+                    
+                    -- Timestamps
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    confirmed_at TIMESTAMP,
+                    cancelled_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    
+                    -- Foreign keys
+                    FOREIGN KEY (client_phone) REFERENCES clients(phone),
+                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone),
+                    
+                    -- Constraint: No solapamiento de citas del mismo profesional
+                    UNIQUE(professional_phone, appointment_date, start_time)
+                )
+            """)
+
+            # Índices para optimizar consultas de appointments
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_appointments_client 
+                ON appointments(client_phone)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_appointments_professional 
+                ON appointments(professional_phone)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_appointments_date 
+                ON appointments(appointment_date)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_appointments_status 
+                ON appointments(status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_appointments_date_professional 
+                ON appointments(professional_phone, appointment_date)
+            """)
+
+            # ==========================================
+            # TABLE: appointment_history
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS appointment_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    appointment_id INTEGER NOT NULL,
+                    
+                    -- Cambios
+                    previous_status TEXT,
+                    new_status TEXT,
+                    previous_date DATE,
+                    new_date DATE,
+                    previous_time TEXT,
+                    new_time TEXT,
+                    
+                    -- Quién hizo el cambio
+                    changed_by TEXT CHECK(changed_by IN ('client', 'professional', 'system', 'admin')),
+                    change_reason TEXT,
+                    
+                    -- Timestamp
+                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_history_appointment 
+                ON appointment_history(appointment_id)
+            """)
+
+            # ==========================================
+            # TABLE: notifications
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    
+                    -- Destinatario
+                    recipient_phone TEXT NOT NULL,
+                    recipient_type TEXT CHECK(recipient_type IN ('client', 'professional')) NOT NULL,
+                    
+                    -- Tipo de notificación
+                    notification_type TEXT CHECK(notification_type IN (
+                        'appointment_confirmation',
+                        'appointment_reminder_24h',
+                        'appointment_reminder_1h',
+                        'appointment_cancelled',
+                        'appointment_rescheduled',
+                        'no_show_followup',
+                        'feedback_request'
+                    )) NOT NULL,
+                    
+                    -- Contenido
+                    message_text TEXT NOT NULL,
+                    
+                    -- Estado
+                    status TEXT CHECK(status IN ('pending', 'sent', 'delivered', 'failed')) DEFAULT 'pending',
+                    channel TEXT CHECK(channel IN ('whatsapp', 'email', 'sms')) DEFAULT 'whatsapp',
+                    
+                    -- Relación con cita (opcional)
+                    appointment_id INTEGER,
+                    
+                    -- Timestamps
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    sent_at TIMESTAMP,
+                    delivered_at TIMESTAMP,
+                    
+                    FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_recipient 
+                ON notifications(recipient_phone)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_appointment 
+                ON notifications(appointment_id)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_status 
+                ON notifications(status)
             """)
 
             conn.commit()

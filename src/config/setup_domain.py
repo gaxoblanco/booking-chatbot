@@ -21,7 +21,7 @@ def print_header():
 
 def print_available_domains():
     """Show available domain presets."""
-    from domain_config import DomainPresets
+    from src.config.domain_config import DomainPresets
 
     domains = {
         "1": ("SALUD", "Profesionales de la Salud (médicos, dentistas, etc.)"),
@@ -63,7 +63,7 @@ def select_domain():
 
 def preview_domain(domain_id: str):
     """Show preview of selected domain configuration."""
-    from domain_config import DomainPresets
+    from src.config.domain_config import DomainPresets
 
     preset = getattr(DomainPresets, domain_id)
 

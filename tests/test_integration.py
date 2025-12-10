@@ -5,12 +5,12 @@ Test complete user flows simulating real WhatsApp conversations.
 Tests the entire stack: bot.py + services + database.
 """
 
-from analytics_service import AnalyticsService
-from client_service import ClientService
-from professional_service import ProfessionalService
-from states import session_manager, ConversationState, UserRole
-from bot import Bot
-from database import Database
+from src.services.analytics_service import AnalyticsService
+from src.services.client_service import ClientService
+from src.services.professional_service import ProfessionalService
+from src.core.states import session_manager, ConversationState, UserRole
+from src.bot.bot import Bot
+from src.database.database import Database
 import sys
 import os
 from datetime import datetime, timedelta
@@ -27,9 +27,9 @@ class IntegrationTest:
         self.bot = Bot()
 
         # Override services to use test database
-        from professional_service import professional_service
-        from client_service import client_service
-        from analytics_service import analytics_service
+        from src.services.professional_service import professional_service
+        from src.services.client_service import client_service
+        from src.services.analytics_service import analytics_service
 
         professional_service.db = self.db
         client_service.db = self.db
@@ -46,7 +46,7 @@ class IntegrationTest:
         """Create test professionals in database for client searches."""
         self.print_section("SETUP: Creating Test Professionals")
 
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
 
         # Professional 1 - Zona Norte, con prepaga
         prof1_phone = "+5491111111111"
@@ -168,7 +168,7 @@ class IntegrationTest:
 
         # Step 3: Simulate certificate upload (in real flow, this happens via media)
         # For testing, we'll manually save certificate
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
         professional_service.save_certificate(
             phone, f"certificates/{phone}/test_cert.jpg")
 
@@ -256,7 +256,7 @@ class IntegrationTest:
         self.print_message(phone, "9 (Guardar)", response)
 
         # Verify in database
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
         prof = professional_service.get_professional_info(phone)
         assert prof['name'] == "Dr. Juan Pérez", "Name not saved in DB"
         assert prof['email'] == "juan.perez@test.com", "Email not saved in DB"
@@ -313,7 +313,7 @@ class IntegrationTest:
         self.print_message(phone, "2 (Finalizar)", response)
 
         # Verify in database
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
         schedules = professional_service.get_weekly_schedule(phone)
         assert len(
             schedules) >= 2, f"Expected at least 2 schedules, got {len(schedules)}"
@@ -357,7 +357,7 @@ class IntegrationTest:
         self.print_message(phone, "1 (Confirmar)", response)
 
         # Verify in database
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
         free_slots = professional_service.get_free_slots(phone)
         assert len(free_slots) >= 1, "Free slot not saved"
 
@@ -395,7 +395,7 @@ class IntegrationTest:
         assert len(results) >= 1, "Should find at least 1 professional"
 
         # Check that search was logged in analytics
-        from analytics_service import analytics_service
+        from src.services.analytics_service import analytics_service
         search_id = session.get_temp('current_search_id')
         assert search_id is not None, "Search should be logged"
 
@@ -435,7 +435,7 @@ class IntegrationTest:
         self.print_message(phone, "1 (Contactar)", response)
 
         # Verify contact was logged
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
         prof = professional_service.get_professional_info(self.test_prof_phone)
         assert prof['total_contacts'] >= 1, "Contact should be logged"
 
@@ -495,7 +495,7 @@ class IntegrationTest:
         """Verify analytics data is being tracked correctly."""
         self.print_section("TEST 8: Analytics Verification")
 
-        from analytics_service import analytics_service
+        from src.services.analytics_service import analytics_service
 
         # Get stats
         stats = self.db.get_stats()

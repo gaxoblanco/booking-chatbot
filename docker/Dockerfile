@@ -36,36 +36,25 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # ==================================================
 FROM dependencies as application
 
+# Set working directory
+WORKDIR /app
+
 # Copy application files
-COPY config.py .
-COPY whatsapp_handler.py .
-COPY bot.py .
-COPY states.py .
-COPY messages.py .
-COPY validators.py .
-COPY database.py .
-COPY init_db.py .
-COPY domain_config.py .
-COPY setup_domain.py .
-COPY client_service.py .
-COPY professional_service.py .
-COPY analytics_service.py .   
+COPY src/ /app/src/
+COPY scripts/ /app/scripts/
+COPY .env.example /app/
 
-COPY docker-setup.sh .
-RUN chmod +x docker-setup.sh
-
-# Create directory for certificates (mounted volume in production)
-RUN mkdir -p certificates
+# Create directories
+RUN mkdir -p /app/data/certificates
 
 # Set environment variables
-# Python: Don't write .pyc files, unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    FLASK_APP=whatsapp_handler.py
+    PYTHONPATH=/app \
+    FLASK_APP=src.api.whatsapp_handler
 
 # Expose port
 EXPOSE 5000
-
 
 # ==================================================
 # HEALTH CHECK
@@ -77,12 +66,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # ==================================================
 # STARTUP COMMAND
 # ==================================================
-# Development mode: Flask development server
+# Development mode: Uses docker-entrypoint.sh for setup + Flask dev server
 # Production mode: Use gunicorn (uncomment below)
 
-# Development
-# CMD ["python", "whatsapp_handler.py"]
-CMD ["bash", "docker-setup.sh"]
+# Development (default)
+CMD ["bash", "docker/docker-entrypoint.sh"]
 
 # Production (uncomment for production use)
-# CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "whatsapp_handler:app"]
+# CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "src.api.whatsapp_handler:app"]

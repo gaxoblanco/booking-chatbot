@@ -8,7 +8,7 @@ Handles all client-side business logic including:
 - Analytics tracking
 """
 
-from database import db
+from src.database.database import db
 from datetime import datetime, timedelta, date, time
 from typing import List, Dict, Optional, Tuple
 import random
@@ -518,7 +518,7 @@ class ClientService:
         Returns:
             Formatted string for display
         """
-        from messages import Messages
+        from src.core.messages import Messages
         msg = Messages()
 
         # Basic info

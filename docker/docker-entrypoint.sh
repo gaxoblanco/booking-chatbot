@@ -1,0 +1,92 @@
+#!/bin/bash
+
+echo "🚀 Starting WhatsApp Bot Setup..."
+echo ""
+
+# Check if domain is configured via environment variable
+if [ -n "$DOMAIN_PRESET" ]; then
+    echo "📦 Configurando dominio desde variable de entorno: $DOMAIN_PRESET"
+    
+    # Apply preset using Python
+    python -c "from src.config.domain_config import load_preset; load_preset('$DOMAIN_PRESET')"
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Error: Preset '$DOMAIN_PRESET' no encontrado"
+        echo "   Presets disponibles: SALUD, PSICOLOGIA, BELLEZA, LEGAL, FITNESS, EDUCACION, HOGAR"
+        exit 1
+    fi
+    
+    echo "✅ Domain configured: $DOMAIN_PRESET"
+    
+elif grep -q "^load_preset(" src/config/domain_config.py; then
+    # Already configured in file
+    CONFIGURED_DOMAIN=$(grep "^load_preset(" src/config/domain_config.py | sed "s/load_preset('\(.*\)')/\1/")
+    echo "✅ Domain already configured: $CONFIGURED_DOMAIN"
+else
+    echo "❌ Error: Domain not configured"
+    echo ""
+    echo "Por favor configura el dominio de una de estas formas:"
+    echo ""
+    echo "1. Variable de entorno en .env:"
+    echo "   DOMAIN_PRESET=PSICOLOGIA"
+    echo ""
+    echo "2. O ejecuta manualmente:"
+    echo "   docker-compose exec whatsapp-bot python scripts/setup_domain.py"
+    echo ""
+    exit 1
+fi
+
+# Check if database exists
+if [ ! -f "data/database.db" ]; then
+    echo "🔄 Initializing database..."
+    python scripts/init_db.py
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Database initialization failed"
+        exit 1
+    fi
+    
+    echo ""
+    echo "📊 Database tables created:"
+    python -c "
+import sqlite3
+conn = sqlite3.connect('data/database.db')
+cursor = conn.cursor()
+cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name')
+tables = [row[0] for row in cursor.fetchall()]
+expected = ['professionals', 'weekly_schedule', 'specific_free_slots', 'client_searches', 'clients', 'appointments', 'appointment_history', 'notifications']
+print(f'  ✅ Total: {len(tables)} tablas')
+for table in expected:
+    if table in tables:
+        print(f'  ✅ {table}')
+    else:
+        print(f'  ❌ {table} - FALTA')
+conn.close()
+"
+    echo ""
+else
+    echo "✅ Database already exists"
+    echo ""
+    echo "📊 Database tables:"
+    python -c "
+import sqlite3
+conn = sqlite3.connect('data/database.db')
+cursor = conn.cursor()
+cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name')
+tables = [row[0] for row in cursor.fetchall()]
+for table in tables:
+    cursor.execute(f'SELECT COUNT(*) FROM {table}')
+    count = cursor.fetchone()[0]
+    print(f'  ✅ {table}: {count} registros')
+conn.close()
+"
+    echo ""
+fi
+
+echo ""
+echo "✅ Setup complete!"
+echo "🚀 Starting application..."
+echo ""
+
+# Start the application
+exec python -m src.api.whatsapp_handler

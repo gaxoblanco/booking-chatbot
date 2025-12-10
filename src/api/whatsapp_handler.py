@@ -12,8 +12,8 @@ import importlib
 import requests
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-from config import Config
-from domain_config import DomainConfig, load_preset
+from src.config.config import Config
+from src.config.domain_config import DomainConfig, load_preset
 
 # ==========================================
 # LOAD DOMAIN PRESET BEFORE IMPORTING BOT
@@ -198,7 +198,7 @@ def handle_certificate_upload_success(sender):
         return bot.handle_prof_certificate_uploaded(session)
 
     # Default certificate received message
-    from messages import Messages
+    from src.core.messages import Messages
     return Messages.PROF_CERTIFICATE_RECEIVED
 
 

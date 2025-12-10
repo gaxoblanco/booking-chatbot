@@ -4,27 +4,27 @@ Bot Logic
 Main conversation handler with state machine implementation.
 Processes incoming messages and manages conversation flow.
 """
-from domain_config import DomainConfig
-from states import (
+from src.config.domain_config import DomainConfig
+from src.core.states import (
     ConversationState,
     UserRole,
     session_manager,
     SessionData
 )
-from messages import Messages
-from validators import (
+from src.core.messages import Messages
+from src.core.validators import (
     validate_date,
     validate_time_range,
     validate_option,
     parse_date,
     parse_time_range
 )
-from client_service import client_service
-from professional_service import professional_service
-from analytics_service import analytics_service
-from client_service import client_service
-from analytics_service import analytics_service
-import validators
+from src.services.client_service import client_service
+from src.services.professional_service import professional_service
+from src.services.analytics_service import analytics_service
+from src.services.client_service import client_service
+from src.services.analytics_service import analytics_service
+import src.core.validators as validators
 
 
 class Bot:
@@ -446,7 +446,7 @@ class Bot:
             return self.format_prof_info_menu(session)
 
         # Validate email format
-        from validators import validate_email
+        from src.core.validators import validate_email
         if not validate_email(message):
             return "❌ Email inválido. Intenta nuevamente:\nEjemplo: juan@email.com"
 
@@ -691,7 +691,7 @@ class Bot:
             return None, errors
 
         # Validate and normalize each field
-        from validators import validate_email
+        from src.core.validators import validate_email
 
         # Email
         if not validate_email(result['email']):
@@ -917,7 +917,7 @@ class Bot:
             return "❌ No se encontraron horarios válidos.\n\n" + self.messages.PROF_WEEK_QUICK_FORMAT
 
         # Save to database
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
 
         schedules_list = [
             {
@@ -1064,7 +1064,7 @@ class Bot:
 
     def handle_prof_manage_free_slots(self, session: SessionData, message: str) -> str:
         """Show menu to manage free slots."""
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
 
         if message == '1':
             # Add new free slot
@@ -1113,7 +1113,7 @@ class Bot:
             if 1 <= selection <= len(free_slots):
                 slot = free_slots[selection - 1]
 
-                from professional_service import professional_service
+                from src.services.professional_service import professional_service
                 success = professional_service.remove_free_slot(
                     session.phone_number,
                     slot['date'],
@@ -1789,7 +1789,7 @@ class Bot:
                 session.store_temp('selected_position', selection)
 
                 # Log analytics: profile view + contact intent
-                from analytics_service import analytics_service
+                from src.services.analytics_service import analytics_service
 
                 # Increment profile views
                 analytics_service.log_profile_view(selected_prof['phone'])
@@ -1803,7 +1803,7 @@ class Bot:
                 )
 
                 # Get detailed info
-                from client_service import client_service
+                from src.services.client_service import client_service
                 prof_detail = client_service.get_professional_detail(
                     selected_prof['phone'])
 
@@ -1844,7 +1844,7 @@ class Bot:
             dict with parsed filters and list of errors
         """
         import re
-        from validators import validate_email, parse_date, validate_time
+        from src.core.validators import validate_email, parse_date, validate_time
 
         lines = [line.strip()
                  for line in message.strip().split('\n') if line.strip()]
