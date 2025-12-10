@@ -19,6 +19,13 @@ Responsabilidades:
 - Integración con filter_config (NUEVO)
 """
 
+import sys
+from pathlib import Path
+
+# Agregar raíz del proyecto al path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from states import (
     ConversationState,
     UserRole,
@@ -26,13 +33,12 @@ from states import (
     SessionData
 )
 from messages import Messages
-from src.services.user_service import user_service
+from user_service import user_service
 from src.config.filter_config import FilterConfig, FeatureFlags
 
-# Imports de handlers (se crearán después)
-# from src.bot.client_handler import ClientHandler
-# from src.bot.professional_handler import ProfessionalHandler
-# from src.bot.shared_handlers import SharedHandlers
+# Imports de handlers
+from src.bot.client_handler import ClientHandler
+from src.bot.professional_handler import ProfessionalHandler
 
 
 class BotController:
@@ -47,10 +53,9 @@ class BotController:
         """Inicializar controlador del bot."""
         self.messages = Messages()
         
-        # Handlers específicos (por ahora placeholders)
-        # self.client_handler = ClientHandler(self.messages)
-        # self.professional_handler = ProfessionalHandler(self.messages)
-        # self.shared_handler = SharedHandlers(self.messages)
+        # Handlers específicos
+        self.client_handler = ClientHandler(self.messages)
+        self.professional_handler = ProfessionalHandler(self.messages)
     
     def process_message(self, phone_number: str, message: str) -> str:
         """
@@ -331,141 +336,146 @@ class BotController:
         return self.messages.ERROR_GENERIC
     
     # ==========================================
-    # PLACEHOLDERS (TEMPORALES)
+    # DELEGACIÓN A HANDLERS
     # ==========================================
-    # Estos métodos se moverán a client_handler.py y professional_handler.py
+    # Los siguientes métodos delegan a los handlers específicos
+    
+    # === PROFESIONAL ===
     
     def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Necesitas subir certificado"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_need_certificate(session, message)
     
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Menú profesional"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_main_menu(session, message)
     
     def handle_prof_free_slot_date(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Ingresa fecha"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_free_slot_date(session, message)
     
     def handle_prof_free_slot_time(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Ingresa horario"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_free_slot_time(session, message)
     
     def handle_prof_free_slot_confirm(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Confirmar slot"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_free_slot_confirm(session, message)
     
     def handle_prof_week_schedule_quick(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Horario semanal"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_week_schedule_quick(session, message)
     
     def handle_prof_manage_free_slots(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Gestionar slots"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_manage_free_slots(session, message)
     
     def handle_prof_delete_free_slot(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Eliminar slot"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_delete_free_slot(session, message)
     
     def handle_prof_info_menu(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Menú de información"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_menu(session, message)
     
     def handle_prof_info_name(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Nombre"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_name(session, message)
     
     def handle_prof_info_email(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Email"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_email(session, message)
     
     def handle_prof_info_zona(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Zona"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_zona(session, message)
     
     def handle_prof_info_genero(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Género"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_genero(session, message)
     
     def handle_prof_info_prepaga(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Prepaga"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_prepaga(session, message)
     
     def handle_prof_info_especialidad(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Especialidad"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_especialidad(session, message)
     
     def handle_prof_info_quick(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Info rápida"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_quick(session, message)
     
     def handle_prof_info_bio(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Biografía"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_bio(session, message)
     
     def handle_prof_info_fee_range(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a professional_handler.py"""
-        return "PLACEHOLDER: Honorarios"
+        """Delega a professional_handler"""
+        return self.professional_handler.handle_prof_info_fee_range(session, message)
+    
+    # === CLIENTE ===
+    # === CLIENTE ===
     
     def handle_client_main_menu(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Menú cliente"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_main_menu(session, message)
     
     def handle_client_filter_zona(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Filtro zona"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_filter_zona(session, message)
     
     def handle_client_filter_fecha(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Filtro fecha"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_filter_fecha(session, message)
     
     def handle_client_filter_hora(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Filtro hora"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_filter_hora(session, message)
     
     def handle_client_filter_prepaga(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Filtro prepaga"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_filter_prepaga(session, message)
     
     def handle_client_filter_sexo(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Filtro género"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_filter_sexo(session, message)
     
     def handle_client_show_results(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Mostrar resultados"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_show_results(session, message)
     
     def handle_client_view_detail(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Ver detalle"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_view_detail(session, message)
     
     def handle_client_multifilter_menu(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Menú multi-filtro"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_multifilter_menu(session, message)
     
     def handle_client_multifilter_zona(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Multi-filtro zona"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_multifilter_zona(session, message)
     
     def handle_client_multifilter_fecha(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Multi-filtro fecha"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_multifilter_fecha(session, message)
     
     def handle_client_multifilter_hora(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Multi-filtro hora"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_multifilter_hora(session, message)
     
     def handle_client_multifilter_prepaga(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Multi-filtro prepaga"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_multifilter_prepaga(session, message)
     
     def handle_client_multifilter_sexo(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Multi-filtro género"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_multifilter_sexo(session, message)
     
     def handle_client_search_quick(self, session: SessionData, message: str) -> str:
-        """PLACEHOLDER - Se moverá a client_handler.py"""
-        return "PLACEHOLDER: Búsqueda rápida"
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_search_quick(session, message)
 
 
 # ==========================================
