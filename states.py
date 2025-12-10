@@ -36,6 +36,7 @@ class ConversationState(Enum):
     # Certificate upload
     PROF_NEED_CERTIFICATE = "prof_need_certificate"
     PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"
+    ROLE_SELECTION = "role_selection"
 
     # Main menu
     PROF_MAIN_MENU = "prof_main_menu"

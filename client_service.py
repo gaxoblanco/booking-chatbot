@@ -1158,3 +1158,6 @@ class ClientService:
         lines.append("💚 Gracias por compartir. Este paso vale.")
 
         return "\n".join(lines)
+
+
+client_service = ClientService()

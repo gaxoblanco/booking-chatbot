@@ -38,7 +38,6 @@ from validators import (
 from client_service import client_service
 from professional_service import professional_service
 from analytics_service import analytics_service
-from client_service import client_service
 from analytics_service import analytics_service
 import validators
 
