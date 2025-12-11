@@ -8,7 +8,7 @@ Handles all professional-side business logic including:
 - Availability calculations
 """
 
-from database import db
+from src.database.database import db
 from datetime import datetime, timedelta, date, time
 from typing import List, Dict, Optional, Tuple
 import os

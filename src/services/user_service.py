@@ -8,7 +8,8 @@ Core del sistema de reconocimiento inteligente.
 import json
 from datetime import datetime
 from typing import Dict, Optional, List
-from ..database.database import db
+from src.database.database import db
+from src.messages.messages_professional import professional_messages
 
 
 class UserService:
@@ -222,40 +223,28 @@ class UserService:
                 message += "4️⃣ Editar perfil\n"
                 return message
             else:
-                message = f"{greeting}\n\n"
-                message += "Todo tranquilo por ahora.\n\n"
-                message += "¿Qué querés hacer?\n"
-                message += "1️⃣ Gestionar horarios\n"
-                message += "2️⃣ Ver estadísticas\n"
-                message += "3️⃣ Editar perfil\n"
-                return message
+                # Usar el menú completo de professional_messages
+                return f"{greeting}\n\nTodo tranquilo por ahora.\n\n" + professional_messages.PROF_MAIN_MENU
 
         # === CLIENTE REGISTRADO ===
         elif user_type == 'client':
+            from src.messages.messages_client import client_messages
             greeting = f"¡Hola {name}! 👋" if name else "¡Hola! 👋"
 
             if has_appointments:
                 appointments = user_info['pending_appointments']
-                next_appointment = appointments[0]  # La más próxima
+                next_appointment = appointments[0]
 
                 message = f"{greeting}\n\n"
                 message += "Tenés una cita próxima:\n"
                 message += f"📅 {next_appointment['date']}\n"
                 message += f"⏰ {next_appointment['time']} hs\n"
                 message += f"👨‍⚕️ Con {next_appointment['professional_name']}\n\n"
-                message += "¿Qué querés hacer?\n"
-                message += "1️⃣ Confirmar cita\n"
-                message += "2️⃣ Reprogramar\n"
-                message += "3️⃣ Cancelar\n"
-                message += "4️⃣ Agendar otra cita\n"
+                message += client_messages.CLIENT_MAIN_MENU
                 return message
             else:
-                message = f"{greeting}\n\n"
-                message += "¿En qué puedo ayudarte?\n"
-                message += "1️⃣ Agendar una cita\n"
-                message += "2️⃣ Consultar disponibilidad\n"
-                message += "3️⃣ Mis datos\n"
-                return message
+                # Usar el menú completo de client_messages
+                return f"{greeting}\n\nTodo tranquilo por ahora.\n\n" + client_messages.CLIENT_MAIN_MENU
 
         # === USUARIO NUEVO ===
         else:

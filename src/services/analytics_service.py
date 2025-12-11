@@ -8,7 +8,7 @@ Handles all analytics and metrics tracking:
 - Reporting and statistics
 """
 
-from database import db
+from src.database.database import db
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import json
