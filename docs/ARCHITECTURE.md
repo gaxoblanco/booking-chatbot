@@ -97,6 +97,12 @@ booking-chatbot/
 │   │   ├── domain_config.py             # Configuración de dominios/presets
 |   |   ├── filter_config.py             # Configuración de filtros de búsqueda
 │   │   └── setup_domain.py              # Script de configuración de dominio
+│   ├── messages/
+│   │   ├── __init__.py            # Exporta todo
+│   │   ├── messages_common.py              # Mensajes comunes
+│   │   ├── messages_client.py              # Flujo cliente
+│   │   ├── messages_professional.py        # Flujo profesional
+│   │   └── messages_appointments.py        # Sistema de citas
 │   │
 │   └── 📁 core/                         # Componentes core compartidos
 │       ├── __init__.py
