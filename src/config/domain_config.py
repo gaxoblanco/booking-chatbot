@@ -158,6 +158,79 @@ class DomainConfig:
     CATEGORY_CUSTOM_EXAMPLE1 = "Traumatología deportiva"
     CATEGORY_CUSTOM_EXAMPLE2 = "Medicina general con enfoque preventivo"
 
+    # ==========================================
+    # APPOINTMENT CONFIGURATION (Sistema de Citas)
+    # ==========================================
+
+    # Terminología de citas
+    APPOINTMENT_NAME = "cita"
+    APPOINTMENT_NAME_PLURAL = "citas"
+    APPOINTMENT_NAME_UPPER = "Cita"
+    APPOINTMENT_EMOJI = "📅"
+
+    # Duración de sesiones
+    DEFAULT_DURATION_MINUTES = 50  # Duración por defecto
+    ALLOW_VARIABLE_DURATION = False  # ¿Permitir diferentes duraciones?
+    DURATION_OPTIONS = None  # [30, 45, 60, 90] o None si no aplica
+
+    # Modalidad de atención
+    MODALITY_OPTIONS = ['presencial', 'virtual']  # Opciones disponibles
+    DEFAULT_MODALITY = 'presencial'
+    ALLOW_CLIENT_CHOOSE_MODALITY = True  # ¿Cliente puede elegir?
+    MODALITY_LABELS = {
+        'presencial': '🏢 Presencial',
+        'virtual': '💻 Virtual',
+        'ambas': '🔄 Ambas'
+    }
+
+    # Restricciones de tiempo
+    MIN_HOURS_ADVANCE = 24  # Mínimo anticipación para agendar (horas)
+    MAX_DAYS_ADVANCE = 60   # Máximo días hacia adelante que se puede agendar
+    CANCELLATION_HOURS_LIMIT = 24  # Horas mínimas de anticipación para cancelar
+    RESCHEDULE_HOURS_LIMIT = 24  # Horas mínimas de anticipación para reprogramar
+
+    # Agendamiento para terceros
+    ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?
+    REQUIRE_PATIENT_DATA = True  # Si es para terceros, ¿pedir datos del paciente?
+    PATIENT_LABEL = "paciente"  # Cómo llamar a quien recibe el servicio
+    PATIENT_LABEL_UPPER = "Paciente"
+
+    # Recopilación de datos del cliente
+    COLLECT_CLIENT_DATA = True  # ¿Pedir datos al cliente?
+    REQUIRED_CLIENT_FIELDS = ['name']  # Campos obligatorios
+    # Campos opcionales (pueden saltarse)
+    OPTIONAL_CLIENT_FIELDS = ['email', 'age']
+    CLIENT_FIELDS_LABELS = {
+        'name': 'Nombre completo',
+        'email': 'Email',
+        'age': 'Edad',
+        'gender': 'Género'
+    }
+
+    # Información adicional de la cita
+    ASK_APPOINTMENT_REASON = False  # ¿Preguntar motivo de la cita?
+    REASON_PROMPT = "¿Cuál es el motivo de la consulta? (opcional)"
+    REASON_LABEL = "Motivo"
+    REASON_REQUIRED = False  # Si True, el motivo es obligatorio
+
+    # Confirmación de citas
+    AUTO_CONFIRM_APPOINTMENTS = False  # Si True, citas se confirman automáticamente
+    REQUIRE_PROFESSIONAL_APPROVAL = True  # Profesional debe confirmar manualmente
+
+    # Mensajes de confirmación
+    APPOINTMENT_PENDING_MESSAGE = "El profesional recibirá tu solicitud y la confirmará pronto."
+    APPOINTMENT_CONFIRMED_MESSAGE = "Tu cita está confirmada. Te enviaremos un recordatorio."
+    APPOINTMENT_CANCELLED_MESSAGE = "Tu cita ha sido cancelada exitosamente."
+
+    # Recordatorios
+    SEND_REMINDERS = True  # ¿Enviar recordatorios automáticos?
+    REMINDER_24H_BEFORE = True  # Recordatorio 24 horas antes
+    REMINDER_1H_BEFORE = True   # Recordatorio 1 hora antes
+
+    # Políticas
+    NO_SHOW_POLICY = "Si no asistes sin avisar, podrías perder futuros turnos."
+    CANCELLATION_POLICY = f"Puedes cancelar hasta {CANCELLATION_HOURS_LIMIT} horas antes sin costo."
+
 
 # ==========================================
 # DOMAIN PRESETS
@@ -299,6 +372,70 @@ class DomainPresets:
         # Mensaje para especialidad personalizada (paso 7)
         "CATEGORY_CUSTOM_EXAMPLE1": "- Trabajo infailt +10",
         "CATEGORY_CUSTOM_EXAMPLE2": "- Terapia de parejas",
+
+        # ==========================================
+        # CONFIGURACIÓN DE CITAS (Específico Psicología)
+        # ==========================================
+        "APPOINTMENT_NAME": "sesión",
+        "APPOINTMENT_NAME_PLURAL": "sesiones",
+        "APPOINTMENT_NAME_UPPER": "Sesión",
+        "APPOINTMENT_EMOJI": "🧠",
+
+        # Duración de sesiones (fija en psicología)
+        "DEFAULT_DURATION_MINUTES": 50,
+        "ALLOW_VARIABLE_DURATION": False,
+        "DURATION_OPTIONS": None,
+
+        # Modalidad (presencial o virtual)
+        "MODALITY_OPTIONS": ['presencial', 'virtual'],
+        "DEFAULT_MODALITY": 'presencial',
+        "ALLOW_CLIENT_CHOOSE_MODALITY": True,
+        "MODALITY_LABELS": {
+            'presencial': '🏢 Presencial',
+            'virtual': '💻 Virtual (Videollamada)',
+            'ambas': '🔄 Ambas modalidades'
+        },
+
+        # Restricciones (24hs anticipación típico en psicología)
+        "MIN_HOURS_ADVANCE": 24,
+        "MAX_DAYS_ADVANCE": 45,
+        "CANCELLATION_HOURS_LIMIT": 24,
+        "RESCHEDULE_HOURS_LIMIT": 24,
+
+        # Común agendar para hijos/familiares
+        "ALLOW_BOOKING_FOR_OTHERS": True,
+        "REQUIRE_PATIENT_DATA": True,
+        "PATIENT_LABEL": "paciente",
+        "PATIENT_LABEL_UPPER": "Paciente",
+
+        # Datos del cliente
+        "COLLECT_CLIENT_DATA": True,
+        "REQUIRED_CLIENT_FIELDS": ['name'],
+        "OPTIONAL_CLIENT_FIELDS": ['email', 'age'],
+
+        # Motivo de consulta (útil en psicología)
+        "ASK_APPOINTMENT_REASON": True,
+        "REASON_PROMPT": "¿Cuál es el motivo de la consulta? Esto ayuda al profesional a prepararse mejor. (opcional)",
+        "REASON_LABEL": "Motivo de consulta",
+        "REASON_REQUIRED": False,
+
+        # Confirmación manual
+        "AUTO_CONFIRM_APPOINTMENTS": False,
+        "REQUIRE_PROFESSIONAL_APPROVAL": True,
+
+        # Mensajes
+        "APPOINTMENT_PENDING_MESSAGE": "El psicólogo recibirá tu solicitud y la confirmará en breve.",
+        "APPOINTMENT_CONFIRMED_MESSAGE": "Tu sesión está confirmada. Te recordaremos antes del turno.",
+        "APPOINTMENT_CANCELLED_MESSAGE": "Tu sesión ha sido cancelada.",
+
+        # Recordatorios
+        "SEND_REMINDERS": True,
+        "REMINDER_24H_BEFORE": True,
+        "REMINDER_1H_BEFORE": True,
+
+        # Políticas
+        "NO_SHOW_POLICY": "Si no asistes sin avisar, se considerará como sesión tomada.",
+        "CANCELLATION_POLICY": "Puedes cancelar hasta 24 horas antes. Cancelaciones con menos anticipación pueden tener cargo.",
     }
 
     SALUD = {
@@ -328,27 +465,91 @@ class DomainPresets:
 
     BELLEZA = {
         "DOMAIN_ID": "belleza",
-        "BUSINESS_NAME": "Belleza Connect",
+        "BUSINESS_NAME": "Beauty Connect",
+
+        # Terminología
         "PROFESSIONAL_TITLE": "Profesional",
-        "CERTIFICATE_NAME": "credencial profesional",
+        "PROFESSIONAL_TITLE_PLURAL": "Profesionales",
+        "PROFESSIONAL_TITLE_LOWER": "profesional",
+        "PROFESSIONAL_TITLE_PLURAL_LOWER": "profesionales",
+
+        "CERTIFICATE_NAME": "certificado profesional",
         "CERTIFICATE_EXAMPLES": [
-            "Certificado de capacitación",
-            "Credencial profesional",
-            "Documento que acredite tu experiencia"
+            "Certificado de cosmetología",
+            "Título de estilista",
+            "Licencia de manicura"
         ],
+
+        # Categorías (servicios)
         "CATEGORY_LABEL": "Servicio",
+        "CATEGORY_LABEL_LOWER": "servicio",
         "CATEGORIES": {
-            "1": "Peluquería",
-            "2": "Manicura",
-            "3": "Maquillaje",
-            "4": "Masajes",
-            "5": "Depilación",
-            "6": "Otro"
+            "1": "Corte de cabello",
+            "2": "Coloración",
+            "3": "Tratamiento capilar",
+            "4": "Manicura",
+            "5": "Pedicura",
+            "6": "Maquillaje",
+            "7": "Depilación",
+            "8": "Tratamiento facial",
+            "9": "Otro"
         },
-        "CUSTOM_FIELD_1_LABEL": "Acepta Tarjetas",
-        "EMOJI_PROFESSIONAL": "💇‍♀️",
-        "EMOJI_CATEGORY": "💅",
-        "WELCOME_TAGLINE": "Conectamos profesionales de belleza con clientes"
+
+        # Filtros
+        "ZONE_ENABLED": True,
+        "GENDER_ENABLED": True,
+        "CUSTOM_FIELD_1_ENABLED": False,
+
+        # ===== CONFIGURACIÓN DE CITAS (BELLEZA) =====
+        "APPOINTMENT_NAME": "turno",
+        "APPOINTMENT_NAME_PLURAL": "turnos",
+        "APPOINTMENT_NAME_UPPER": "Turno",
+        "APPOINTMENT_EMOJI": "💇",
+
+        # Duración VARIABLE (cada servicio dura diferente)
+        "DEFAULT_DURATION_MINUTES": 60,
+        "ALLOW_VARIABLE_DURATION": True,
+        "DURATION_OPTIONS": [30, 45, 60, 90, 120, 180],  # Según servicio
+
+        # Solo presencial
+        "MODALITY_OPTIONS": ['presencial'],
+        "DEFAULT_MODALITY": 'presencial',
+        "ALLOW_CLIENT_CHOOSE_MODALITY": False,
+        "MODALITY_LABELS": {
+            'presencial': '🏢 En el local'
+        },
+
+        # Menos anticipación requerida (2 horas)
+        "MIN_HOURS_ADVANCE": 2,
+        "MAX_DAYS_ADVANCE": 30,
+        "CANCELLATION_HOURS_LIMIT": 2,
+        "RESCHEDULE_HOURS_LIMIT": 2,
+
+        # Raro agendar para otros
+        "ALLOW_BOOKING_FOR_OTHERS": False,
+        "REQUIRE_PATIENT_DATA": False,
+        "PATIENT_LABEL": "cliente",
+
+        # Datos mínimos
+        "COLLECT_CLIENT_DATA": True,
+        "REQUIRED_CLIENT_FIELDS": ['name'],
+        "OPTIONAL_CLIENT_FIELDS": ['email'],
+
+        # No preguntar motivo (es obvio: el servicio elegido)
+        "ASK_APPOINTMENT_REASON": False,
+
+        # Auto-confirmar (común en belleza)
+        "AUTO_CONFIRM_APPOINTMENTS": True,
+        "REQUIRE_PROFESSIONAL_APPROVAL": False,
+
+        "APPOINTMENT_PENDING_MESSAGE": "Tu turno ha sido agendado.",
+        "APPOINTMENT_CONFIRMED_MESSAGE": "Tu turno está confirmado. Te esperamos!",
+
+        "SEND_REMINDERS": True,
+        "REMINDER_24H_BEFORE": True,
+        "REMINDER_1H_BEFORE": False,
+
+        "CANCELLATION_POLICY": "Puedes cancelar hasta 2 horas antes.",
     }
 
     LEGAL = {
@@ -378,27 +579,67 @@ class DomainPresets:
 
     FITNESS = {
         "DOMAIN_ID": "fitness",
-        "BUSINESS_NAME": "Fitness Connect",
-        "PROFESSIONAL_TITLE": "Instructor",
+        "BUSINESS_NAME": "Fit Connect",
+
+        "PROFESSIONAL_TITLE": "Entrenador",
+        "PROFESSIONAL_TITLE_PLURAL": "Entrenadores",
+        "PROFESSIONAL_TITLE_LOWER": "entrenador",
+        "PROFESSIONAL_TITLE_PLURAL_LOWER": "entrenadores",
+
         "CERTIFICATE_NAME": "certificación",
         "CERTIFICATE_EXAMPLES": [
-            "Certificación de instructor",
-            "Título de entrenador",
-            "Credencial profesional"
+            "Certificación de entrenador personal",
+            "Título de profesor de educación física"
         ],
+
         "CATEGORY_LABEL": "Especialidad",
         "CATEGORIES": {
-            "1": "Personal Trainer",
-            "2": "Yoga",
-            "3": "Pilates",
-            "4": "Crossfit",
-            "5": "Nutrición Deportiva",
-            "6": "Otro"
+            "1": "Entrenamiento funcional",
+            "2": "Musculación",
+            "3": "CrossFit",
+            "4": "Yoga",
+            "5": "Pilates",
+            "6": "Running",
+            "7": "Otro"
         },
-        "CUSTOM_FIELD_1_LABEL": "Entrenamiento Online",
-        "EMOJI_PROFESSIONAL": "💪",
-        "EMOJI_CATEGORY": "🏋️",
-        "WELCOME_TAGLINE": "Conectamos instructores con deportistas"
+
+        # ===== CONFIGURACIÓN DE CITAS (FITNESS) =====
+        "APPOINTMENT_NAME": "clase",
+        "APPOINTMENT_NAME_PLURAL": "clases",
+        "APPOINTMENT_NAME_UPPER": "Clase",
+        "APPOINTMENT_EMOJI": "💪",
+
+        "DEFAULT_DURATION_MINUTES": 60,
+        "ALLOW_VARIABLE_DURATION": True,
+        "DURATION_OPTIONS": [45, 60, 90],
+
+        "MODALITY_OPTIONS": ['presencial', 'virtual'],
+        "ALLOW_CLIENT_CHOOSE_MODALITY": True,
+
+        # Menos anticipación (1 hora)
+        "MIN_HOURS_ADVANCE": 1,
+        "MAX_DAYS_ADVANCE": 30,
+        "CANCELLATION_HOURS_LIMIT": 1,
+        "RESCHEDULE_HOURS_LIMIT": 2,
+
+        # Personal (raro para otros)
+        "ALLOW_BOOKING_FOR_OTHERS": False,
+
+        "COLLECT_CLIENT_DATA": True,
+        "REQUIRED_CLIENT_FIELDS": ['name', 'age'],  # Edad importante
+        "OPTIONAL_CLIENT_FIELDS": ['email'],
+
+        "ASK_APPOINTMENT_REASON": False,
+
+        # Auto-confirmar
+        "AUTO_CONFIRM_APPOINTMENTS": True,
+        "REQUIRE_PROFESSIONAL_APPROVAL": False,
+
+        "SEND_REMINDERS": True,
+        "REMINDER_24H_BEFORE": False,
+        "REMINDER_1H_BEFORE": True,  # Solo 1h antes
+
+        "CANCELLATION_POLICY": "Puedes cancelar hasta 1 hora antes.",
     }
 
     EDUCACION = {
