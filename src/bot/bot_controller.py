@@ -281,6 +281,7 @@ class BotController:
             ConversationState.CLIENT_APPOINTMENT_DETAIL: self.handle_client_appointment_detail,
             ConversationState.CLIENT_CANCEL_APPOINTMENT: self.handle_client_cancel_appointment,
             ConversationState.CLIENT_CANCEL_REASON: self.handle_client_cancel_reason,
+            ConversationState.CLIENT_CANCEL_SUCCESS: self.handle_client_cancel_success,
 
         }
 
@@ -506,6 +507,10 @@ class BotController:
     def handle_client_cancel_reason(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
         return self.client_handler.handle_client_cancel_reason(session, message)
+
+    def handle_client_cancel_success(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_cancel_success(session, message)
 
 
 # ==========================================

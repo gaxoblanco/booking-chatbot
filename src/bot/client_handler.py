@@ -16,6 +16,7 @@ Este archivo contiene ~800 líneas de lógica específica del cliente.
 """
 
 from datetime import date
+from src.config.domain_config import DomainConfig
 from src.core.states import ConversationState, SessionData
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
@@ -23,6 +24,7 @@ from src.messages.messages_appointments import appointment_messages
 from src.core.validators import parse_date, validate_time
 from src.services.client_service import client_service
 from src.services.analytics_service import analytics_service
+from src.database.database import db
 
 
 class ClientHandler:
@@ -64,6 +66,12 @@ class ClientHandler:
         5. Presencial (por zona)
         0. Volver
         """
+        # Detectar si viene de cancelación exitosa
+        just_cancelled = session.get_temp('just_cancelled_appointment')
+        if just_cancelled:
+            # Limpiar flag
+            session.store_temp('just_cancelled_appointment', False)
+
         if message == '1':
             # Buscar para hoy
             today = date.today()
@@ -90,10 +98,9 @@ class ClientHandler:
             return client_messages.CLIENT_SEARCH_QUICK_FORMAT
 
         elif message == '4':
-            # Mis Citas
+            # Mis Citas - transicionar y cargar lista (sin pasar el mensaje)
             session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
-            # TODO: Implementar handler completo
-            return "🚧 Mis Citas - Handler en construcción\n\n" + client_messages.CLIENT_MAIN_MENU
+            return self.handle_client_view_appointments(session, '')
 
         elif message == '5':
             # Presencial - PREGUNTAR ZONA
@@ -168,6 +175,19 @@ class ClientHandler:
         if not date_obj:
             return common_messages.INVALID_DATE + "\n\n" + client_messages.CLIENT_ASK_FECHA
 
+        # Validate date is not in the past
+        from datetime import date
+        today = date.today()
+
+        if date_obj < today:
+            return f"""❌ *Fecha inválida*
+
+    La fecha ingresada ({message}) ya pasó.
+
+    Por favor, ingresa una fecha de hoy en adelante.
+
+    {client_messages.CLIENT_ASK_FECHA}"""
+
         session.store_temp('fecha', date_obj)
         session.store_temp('fecha_str', message)
         session.transition_to(ConversationState.CLIENT_FILTER_HORA)
@@ -190,6 +210,11 @@ class ClientHandler:
         elif message == '2' or message.lower() in ['tarde', 'afternoon']:
             # Afternoon: 13:00 - 20:00
             time_start = "13:00"
+            time_end = "20:00"
+            time_range = True
+        elif message == '3' or message.lower() in ['cualquier', 'cualquiera', 'any', 'todo']:
+            # Any time: 8:00 - 20:00 (full day)
+            time_start = "08:00"
             time_end = "20:00"
             time_range = True
         else:
@@ -433,33 +458,56 @@ class ClientHandler:
 
     def handle_client_multifilter_zona(self, session: SessionData, message: str) -> str:
         """Maneja filtro de zona en modo multi-filtro."""
+        # Check for back command
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+
+        filters = session.get_temp('filters', {})
+
         if message == '1':
-            filters = session.get_temp('filters', {})
             filters['zona'] = 'norte'
-            session.store_temp('filters', filters)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Zona Norte",
-                menu=self.format_multifilter_menu(session)
-            )
+            filter_display = "Zona: Norte"
         elif message == '2':
-            filters = session.get_temp('filters', {})
             filters['zona'] = 'sur'
-            session.store_temp('filters', filters)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Zona Sur",
-                menu=self.format_multifilter_menu(session)
-            )
+            filter_display = "Zona: Sur"
         else:
-            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_ZONA
+            zone_options = client_messages.format_zone_options()
+            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_ZONA.format(
+                zone_options=zone_options
+            )
+
+        session.store_temp('filters', filters)
+        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
+            filter_name=filter_display,
+            menu=self.format_multifilter_menu(session)
+        )
 
     def handle_client_multifilter_fecha(self, session: SessionData, message: str) -> str:
         """Maneja filtro de fecha en modo multi-filtro."""
+        # Check for back command FIRST
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+
         date_obj = parse_date(message)
 
         if not date_obj:
             return common_messages.INVALID_DATE + "\n\n" + client_messages.CLIENT_ASK_FECHA
+
+        # Validate date is not in the past
+        from datetime import date
+        today = date.today()
+
+        if date_obj < today:
+            return f"""❌ *Fecha inválida*
+
+    La fecha ingresada ({message}) ya pasó.
+
+    Por favor, ingresa una fecha de hoy en adelante.
+
+    {client_messages.CLIENT_ASK_FECHA}"""
 
         filters = session.get_temp('filters', {})
         filters['fecha'] = message
@@ -469,6 +517,10 @@ class ClientHandler:
 
     def handle_client_multifilter_hora(self, session: SessionData, message: str) -> str:
         """Maneja filtro de hora en modo multi-filtro."""
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+
         # Simple time validation (HH:MM)
         if not validate_time(message) and message not in ['1', '2']:
             return common_messages.INVALID_TIME + "\n\n" + client_messages.CLIENT_ASK_HORA
@@ -493,74 +545,257 @@ class ClientHandler:
 
     def handle_client_multifilter_prepaga(self, session: SessionData, message: str) -> str:
         """Maneja filtro de prepaga en modo multi-filtro."""
+        # Check for back command FIRST
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+
+        filters = session.get_temp('filters', {})
+
         if message == '1':
-            filters = session.get_temp('filters', {})
             filters['prepaga'] = True
-            session.store_temp('filters', filters)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Acepta Prepaga: Sí",
-                menu=self.format_multifilter_menu(session)
-            )
+            filter_display = "Acepta Prepaga: Sí"
         elif message == '2':
-            filters = session.get_temp('filters', {})
             filters['prepaga'] = False
+            filter_display = "Acepta Prepaga: No"
+        elif message == '3':
+            # No importa = no aplicar filtro de prepaga
+            # Si ya existía el filtro, lo removemos
+            if 'prepaga' in filters:
+                del filters['prepaga']
             session.store_temp('filters', filters)
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Acepta Prepaga: No",
+                filter_name="Prepaga: Cualquiera (filtro removido)",
                 menu=self.format_multifilter_menu(session)
             )
         else:
             return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_PREPAGA
 
+        session.store_temp('filters', filters)
+        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
+            filter_name=filter_display,
+            menu=self.format_multifilter_menu(session)
+        )
+
     def handle_client_multifilter_sexo(self, session: SessionData, message: str) -> str:
         """Maneja filtro de sexo en modo multi-filtro."""
+        # Check for back command FIRST
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+
+        filters = session.get_temp('filters', {})
+
         if message == '1':
-            filters = session.get_temp('filters', {})
             filters['sexo'] = 'm'
-            session.store_temp('filters', filters)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Sexo: Masculino",
-                menu=self.format_multifilter_menu(session)
-            )
+            filter_display = "Género: Masculino"
         elif message == '2':
-            filters = session.get_temp('filters', {})
             filters['sexo'] = 'f'
+            filter_display = "Género: Femenino"
+        elif message == '3':
+            # No importa = no aplicar filtro de género
+            # Si ya existía el filtro, lo removemos
+            if 'sexo' in filters:
+                del filters['sexo']
             session.store_temp('filters', filters)
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Sexo: Femenino",
+                filter_name="Género: Cualquiera (filtro removido)",
                 menu=self.format_multifilter_menu(session)
             )
         else:
             return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_SEXO
 
+        session.store_temp('filters', filters)
+        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
+            filter_name=filter_display,
+            menu=self.format_multifilter_menu(session)
+        )
+
     # ==========================================
     # BÚSQUEDA RÁPIDA (Todo en 1 mensaje)
     # ==========================================
 
-    def parse_client_search_quick(self, message: str) -> dict:
+    def parse_client_search_quick(self, message: str) -> tuple:
         """
         Parsea mensaje de búsqueda rápida.
+        Soporta dos formatos:
 
-        Formatos aceptados:
-        - "zona:norte fecha:15/12/2024 hora:14:00"
-        - "norte, 15/12, 14:00"
-        - "15/12 14:00 norte"
+        Formato 1 (con etiquetas):
+            zona: norte
+            fecha: 15/11/2025
+            hora: 14:00
+            prepaga: si
+            genero: masculino
+
+        Formato 2 (sin etiquetas, orden importa):
+            norte
+            15/11/2025
+            14:00
+            si
+            masculino
+
+        Todos los campos son opcionales.
 
         Returns:
-            Diccionario con parámetros parseados o None si es inválido
+            tuple: (dict con filtros parseados, lista de errores)
         """
-        # Implementación del parser (código original de bot.py)
-        # TODO: Este método tiene ~160 líneas, copiarlo desde bot.py
-        # Por ahora placeholder
-        return {
-            'zona': 'norte',
-            'fecha': '15/12/2024',
-            'hora': '14:00'
-        }
+        import re
+        from src.core.validators import validate_email, parse_date, validate_time
+
+        lines = [line.strip()
+                 for line in message.strip().split('\n') if line.strip()]
+
+        if not lines:
+            return None, ["❌ Debes enviar al menos un filtro"]
+
+        # Check if using labeled format (has ':')
+        has_labels = any(':' in line for line in lines)
+
+        result = {}
+        errors = []
+
+        if has_labels:
+            # Parse labeled format - fields can be in any order
+            for line in lines:
+                if ':' not in line:
+                    continue
+
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+
+                if not value:
+                    continue
+
+                # Map variations to standard keys
+                if key in ['zona', 'zone', 'area']:
+                    result['zona'] = value.lower()
+                elif key in ['fecha', 'date', 'dia', 'día']:
+                    result['fecha_str'] = value
+                elif key in ['hora', 'time', 'horario']:
+                    result['hora'] = value
+                elif key in ['prepaga', 'obra social', 'os']:
+                    result['prepaga'] = value.lower()
+                elif key in ['genero', 'género', 'sexo', 'gender']:
+                    result['genero'] = value.lower()
+        else:
+            # Parse order-based format
+            # Order: zona, fecha, hora, prepaga, genero
+            # But all are optional, so we need to be smart
+
+            # Try to detect what each line is
+            for line in lines:
+                line_lower = line.lower()
+
+                # Zona
+                if line_lower in ['norte', 'n', 'sur', 's', 'este', 'e', 'oeste', 'o']:
+                    if 'zona' not in result:
+                        result['zona'] = line_lower
+
+                # Fecha (DD/MM/YYYY or DD/MM)
+                elif '/' in line:
+                    if 'fecha_str' not in result:
+                        result['fecha_str'] = line
+
+                # Hora (HH:MM)
+                elif ':' in line and len(line) <= 5:
+                    if 'hora' not in result:
+                        result['hora'] = line
+
+                # Prepaga
+                elif line_lower in ['si', 'sí', 's', 'no', 'n', 'yes', 'y']:
+                    if 'prepaga' not in result:
+                        result['prepaga'] = line_lower
+
+                # Genero
+                elif line_lower in ['masculino', 'm', 'male', 'hombre',
+                                    'femenino', 'f', 'female', 'mujer',
+                                    'otro', 'o', 'other']:
+                    if 'genero' not in result:
+                        result['genero'] = line_lower
+
+        if not result:
+            return None, ["❌ No se detectaron filtros válidos en tu mensaje"]
+
+        # Validate parsed values
+        validated = {}
+
+        # Zona
+        if 'zona' in result:
+            zona_map = {
+                'norte': 'norte', 'n': 'norte',
+                'sur': 'sur', 's': 'sur',
+                'este': 'este', 'e': 'este',
+                'oeste': 'oeste', 'o': 'oeste'
+            }
+            if result['zona'] not in zona_map:
+                errors.append(
+                    f"❌ Zona inválida: {result['zona']} (usa: norte, sur, este, oeste)")
+            else:
+                validated['zona'] = zona_map[result['zona']]
+
+        # Fecha
+        if 'fecha_str' in result:
+            fecha_obj = parse_date(result['fecha_str'])
+            if not fecha_obj:
+                errors.append(
+                    f"❌ Fecha inválida: {result['fecha_str']} (usa: DD/MM/YYYY)")
+            else:
+                # Validate date is not in the past
+                from datetime import date
+                today = date.today()
+
+                if fecha_obj < today:
+                    errors.append(
+                        f"❌ La fecha {result['fecha_str']} ya pasó. Usa una fecha de hoy en adelante.")
+                else:
+                    validated['fecha'] = fecha_obj
+                    validated['fecha_str'] = result['fecha_str']
+
+        # Hora
+        if 'hora' in result:
+            if not validate_time(result['hora']):
+                errors.append(
+                    f"❌ Hora inválida: {result['hora']} (usa: HH:MM)")
+            else:
+                validated['hora'] = result['hora']
+
+        # Prepaga
+        if 'prepaga' in result:
+            prepaga_map = {
+                'si': True, 'sí': True, 's': True, 'yes': True, 'y': True,
+                'no': False, 'n': False
+            }
+            if result['prepaga'] not in prepaga_map:
+                errors.append(
+                    f"❌ Prepaga inválida: {result['prepaga']} (usa: si o no)")
+            else:
+                validated['prepaga'] = prepaga_map[result['prepaga']]
+
+        # Género
+        if 'genero' in result:
+            genero_map = {
+                'm': 'm', 'masculino': 'm', 'male': 'm', 'hombre': 'm',
+                'f': 'f', 'femenino': 'f', 'female': 'f', 'mujer': 'f',
+                'o': 'o', 'otro': 'o', 'other': 'o'
+            }
+            if result['genero'] not in genero_map:
+                errors.append(
+                    f"❌ Género inválido: {result['genero']} (usa: masculino, femenino, otro)")
+            else:
+                validated['genero'] = genero_map[result['genero']]
+
+        if errors:
+            return None, errors
+
+        if not validated:
+            return None, ["❌ No se pudieron validar los filtros"]
+
+        return validated, []
 
     def handle_client_search_quick(self, session: SessionData, message: str) -> str:
         """
@@ -569,16 +804,101 @@ class ClientHandler:
         El usuario envía todos los filtros en un solo mensaje
         siguiendo el formato especificado.
         """
-        params = self.parse_client_search_quick(message)
+        # Check for back command
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
 
-        if not params:
-            return common_messages.INVALID_FORMAT + "\n\n" + client_messages.CLIENT_SEARCH_QUICK_FORMAT
+        # Parse the message
+        filters, errors = self.parse_client_search_quick(message)
 
-        # TODO: Realizar búsqueda con parámetros
-        # TODO: Log analytics
-        # TODO: Formatear y retornar resultados
+        if errors:
+            error_msg = "\n".join(errors)
+            return f"{error_msg}\n\n{client_messages.CLIENT_SEARCH_QUICK_FORMAT}"
 
-        return "🔍 Búsqueda rápida (en desarrollo)\n\nEscribe 'menu' para volver."
+        # Store filters
+        session.store_temp('filters', filters)
+
+        # Map parsed filters to service parameters
+        search_params = {}
+
+        if 'zona' in filters:
+            search_params['zone'] = filters['zona']
+        if 'genero' in filters:
+            search_params['gender'] = filters['genero']
+        if 'prepaga' in filters:
+            search_params['accept_prepaga'] = filters['prepaga']
+        if 'fecha' in filters:
+            # Convert to YYYY-MM-DD format
+            fecha_obj = filters['fecha']
+            search_params['date_str'] = fecha_obj.strftime("%Y-%m-%d")
+
+        # Search database with mapped parameters
+        from src.services.client_service import client_service
+
+        results = client_service.search_professionals_by_filters(
+            **search_params, limit=10)
+
+        # Log analytics
+        from src.services.analytics_service import analytics_service
+
+        # Convert datetime objects to strings for JSON serialization
+        filters_for_log = {}
+        for key, value in filters.items():
+            if hasattr(value, 'strftime'):  # Es un objeto date/datetime
+                filters_for_log[key] = value.strftime("%Y-%m-%d")
+            else:
+                filters_for_log[key] = value
+
+        search_id = analytics_service.log_search(
+            client_phone=session.phone_number,
+            search_type='quick',
+            search_params=filters_for_log,  # ← Usar el dict serializable
+            result_count=len(results),
+            session_id=session.phone_number
+        )
+        session.store_temp('current_search_id', search_id)
+
+        # Store results
+        session.store_temp('search_results', results)
+
+        # Format filters for display
+        filter_lines = []
+        if 'zona' in filters:
+            filter_lines.append(f"📍 Zona: {filters['zona'].capitalize()}")
+        if 'fecha_str' in filters:
+            filter_lines.append(f"📅 Fecha: {filters['fecha_str']}")
+        if 'hora' in filters:
+            filter_lines.append(f"⏰ Hora: {filters['hora']}")
+        if 'prepaga' in filters:
+            filter_lines.append(
+                f"💳 Prepaga: {'Sí' if filters['prepaga'] else 'No'}")
+        if 'genero' in filters:
+            genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
+            filter_lines.append(f"👥 Género: {genero_map[filters['genero']]}")
+
+        filters_text = "\n".join(filter_lines) if filter_lines else "Ninguno"
+
+        # Format results
+        if len(results) == 0:
+            return f"""🔍 *Búsqueda Rápida*
+
+    Filtros aplicados:
+    {filters_text}
+
+    {client_messages.CLIENT_NO_RESULTS}"""
+
+        # Format results list
+        formatted_results = client_service.format_results_list(results)
+
+        session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+
+        return f"""🔍 *Búsqueda Rápida*
+
+    Filtros aplicados:
+    {filters_text}
+
+    {formatted_results}"""
 
     # ==========================================
     # MOSTRAR RESULTADOS Y DETALLE
@@ -680,3 +1000,378 @@ class ClientHandler:
 
         else:
             return "⚠️ Opción inválida.\n\n1️⃣ Contactar\n0️⃣ Volver"
+
+    # ==========================================
+    # MIS CITAS (Appointments Management)
+    # ==========================================
+
+    def handle_client_view_appointments(self, session: SessionData, message: str) -> str:
+        """
+        Maneja vista de lista de citas del cliente.
+
+        Muestra todas las citas activas (pendientes y confirmadas) del cliente.
+
+        Args:
+            message: '' = carga inicial, 'número' = selección de cita
+        """
+        from datetime import datetime
+
+        # ✅ NUEVO: Si message tiene valor (no vacío), delegar a detalle
+        if message and message != '0':
+            return self.handle_client_appointment_detail(session, message)
+
+        # Check for back command
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+
+        # Obtener citas del cliente desde la BD
+        today = datetime.now().strftime("%Y-%m-%d")
+        appointments = db.get_appointments_by_client(
+            client_phone=session.phone_number,
+            from_date=today
+        )
+
+        # Filtrar solo citas activas (no canceladas ni completadas)
+        active_appointments = [
+            apt for apt in appointments
+            if apt['status'] in ['pendiente_confirmacion', 'confirmada']
+        ]
+
+        # Si no hay citas
+        if not active_appointments:
+            return appointment_messages.CLIENT_NO_APPOINTMENTS
+
+        # Guardar lista en temp_data
+        session.store_temp('appointment_list', active_appointments)
+
+        # Formatear lista
+        appointments_list = []
+        for idx, apt in enumerate(active_appointments, 1):
+            # Formatear fecha
+            date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
+            date_str = date_obj.strftime("%a %d/%m/%Y")
+
+            # Emoji según estado
+            if apt['status'] == 'pendiente_confirmacion':
+                status_emoji = "⏳"
+                status_text = "Pendiente confirmación"
+            else:
+                status_emoji = "✅"
+                status_text = "Confirmada"
+
+            appointments_list.append(
+                f"{idx}️⃣ {status_emoji} {date_str} - {apt['start_time']}hs\n"
+                f"   {apt['professional_name']}\n"
+                f"   {status_text}"
+            )
+
+        formatted_list = "\n\n".join(appointments_list)
+
+        return appointment_messages.CLIENT_VIEW_APPOINTMENTS.format(
+            appointments_list=formatted_list
+        )
+
+    def handle_client_appointment_detail(self, session: SessionData, message: str) -> str:
+        """
+        Maneja detalle de una cita específica.
+
+        Muestra información completa y opciones según el estado.
+
+        Args:
+            message: número de cita seleccionada o acción (1=cancelar/reprogramar, 2=cancelar, 0=volver)
+        """
+        from datetime import datetime
+
+        # Check for back command
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+
+        # Si viene con opción de reprogramar/cancelar (estando ya en detalle de una cita)
+        if message in ['1', '2', '3']:
+            # Estas son las opciones del menú de detalle
+            appointment_id = session.get_temp('appointment_id')
+
+            if appointment_id:
+                apt = db.get_appointment(appointment_id)
+
+                if apt:
+                    # ===== PARA CITAS PENDIENTES =====
+                    if apt['status'] == 'pendiente_confirmacion':
+                        if message == '1':
+                            # Reprogramar
+                            session.transition_to(
+                                ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
+                            return "🚧 Reprogramar - Próximamente\n\n_Escribe *0* para volver_"
+                        elif message == '2':
+                            # Cancelar
+                            session.transition_to(
+                                ConversationState.CLIENT_CANCEL_APPOINTMENT)
+                            return self.handle_client_cancel_appointment(session, '1')
+
+                    # ===== PARA CITAS CONFIRMADAS =====
+                    elif apt['status'] == 'confirmada':
+                        if message == '1':
+                            # Reprogramar
+                            session.transition_to(
+                                ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
+                            return "🚧 Reprogramar - Próximamente\n\n_Escribe *0* para volver_"
+                        elif message == '2':
+                            # Cancelar
+                            session.transition_to(
+                                ConversationState.CLIENT_CANCEL_APPOINTMENT)
+                            return self.handle_client_cancel_appointment(session, '1')
+        # Si es primera vez (viene de lista de citas), obtener cita por índice
+        appointment_list = session.get_temp('appointment_list')
+
+        if not appointment_list:
+            # NO limpiar temp_data todavía - lo necesitamos para saber qué cita fue
+            # session.clear_temp()  # ← Comentar esto
+
+            # Transicionar a estado de éxito con opciones
+            session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
+
+            return appointment_messages.CLIENT_APPOINTMENT_CANCELLED
+
+        # Validar que el número esté en rango
+        try:
+            selection = int(message)
+            if selection < 1 or selection > len(appointment_list):
+                return f"⚠️ Número inválido. Elige entre 1 y {len(appointment_list)}\n\n_Escribe *0* para volver al menú_"
+        except ValueError:
+            return "⚠️ Por favor, ingresa un número válido.\n\n_Escribe *0* para volver_"
+
+        # Obtener cita seleccionada
+        selected_apt = appointment_list[selection - 1]
+        appointment_id = selected_apt['id']
+
+        # Transicionar al detalle
+        session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
+
+        # Guardar ID en temp_data para acciones futuras
+        session.store_temp('appointment_id', appointment_id)
+        # Guardar también el número de selección para mostrarlo al usuario
+        session.store_temp('selected_appointment_number', selection)
+
+        # Obtener detalles completos de la cita
+        apt = db.get_appointment(appointment_id)
+
+        if not apt:
+            return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
+
+        # Formatear fecha completa
+        date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
+
+        # Mapeo manual de días en español
+        dias = ['Lunes', 'Martes', 'Miércoles',
+                'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+        dia_semana = dias[date_obj.weekday()]
+        dia_numero = date_obj.day
+        mes = meses[date_obj.month - 1]
+        anio = date_obj.year
+
+        date_full = f"{dia_semana} {dia_numero} de {mes} de {anio}"
+
+        # Badge de estado
+        if apt['status'] == 'pendiente_confirmacion':
+            status_badge = "Estado: ⏳ *Pendiente de confirmación*"
+        elif apt['status'] == 'confirmada':
+            status_badge = "Estado: ✅ *Confirmada*"
+        elif apt['status'] == 'completada':
+            status_badge = "Estado: ✔️ *Completada*"
+        else:
+            status_badge = "Estado: ❌ *Cancelada*"
+
+        # Modalidad
+        modality_icons = {
+            'presencial': '🏥 Presencial',
+            'virtual': '💻 Virtual',
+            'ambas': '🏥💻 Presencial o Virtual'
+        }
+        modality = modality_icons.get(apt['modality'], apt['modality'])
+
+        # Opciones según estado
+        if apt['status'] == 'pendiente_confirmacion':
+            options = appointment_messages.CLIENT_APPOINTMENT_OPTIONS_PENDING
+        elif apt['status'] == 'confirmada':
+            options = appointment_messages.CLIENT_APPOINTMENT_OPTIONS_CONFIRMED
+        elif apt['status'] == 'completada':
+            options = appointment_messages.CLIENT_APPOINTMENT_FINISHED
+        else:
+            options = appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED
+
+        # Razón (si existe)
+        reason_display = ""
+        if apt.get('reason'):
+            reason_display = f"\n📝 Motivo: {apt['reason']}"
+
+        return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
+            id=session.get_temp('selected_appointment_number', apt['id']),
+            date=date_full,
+            time=apt['start_time'],
+            professional_name=apt['professional_name'],
+            professional_phone=apt['professional_phone'],
+            modality=modality,
+            duration=apt['duration_minutes'],
+            reason_display=reason_display,
+            status_badge=status_badge,
+            options=options
+        )
+
+    def handle_client_cancel_appointment(self, session: SessionData, message: str) -> str:
+        """
+        Maneja confirmación de cancelación de cita.
+
+        Valida que se pueda cancelar y pide confirmación.
+        """
+        from datetime import datetime, timedelta
+
+        # Check for back command
+        if message == '0':
+            # Volver al detalle de la cita
+            session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
+            return self.handle_client_appointment_detail(session, '0')
+
+        # Si message es '1', viene del detalle pidiendo cancelar
+        # Si message es confirmación, procesar cancelación
+        appointment_id = session.get_temp('appointment_id')
+
+        if not appointment_id:
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: No hay cita seleccionada\n\n" + client_messages.CLIENT_MAIN_MENU
+
+        # Obtener datos de la cita
+        apt = db.get_appointment(appointment_id)
+
+        if not apt:
+            return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
+
+        # Validar que no esté ya cancelada
+        if apt['status'] in ['cancelada_cliente', 'cancelada_profesional']:
+            return appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED
+
+        # Validar que no esté completada
+        if apt['status'] == 'completada':
+            return "❌ No puedes cancelar una cita que ya finalizó.\n\n_Escribe *0* para volver_"
+
+        # Calcular horas hasta la cita
+        apt_datetime = datetime.strptime(
+            f"{apt['appointment_date']} {apt['start_time']}",
+            "%Y-%m-%d %H:%M"
+        )
+        now = datetime.now()
+        hours_until = (apt_datetime - now).total_seconds() / 3600
+
+        # Validar tiempo mínimo (24 horas por defecto)
+        CANCELLATION_HOURS_LIMIT = 24
+
+        if hours_until < CANCELLATION_HOURS_LIMIT:
+            # Muy tarde para cancelar
+            return appointment_messages.CLIENT_CANCEL_TOO_LATE.format(
+                hours_until=int(hours_until),
+                professional_phone=apt['professional_phone']
+            )
+
+        # Si es primera vez (viene desde detalle), mostrar confirmación
+        if message == '1':
+            # Formatear fecha
+            date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
+            date_str = date_obj.strftime("%A %d de %B de %Y").title()
+
+            # Mostrar política si existe
+            policy_info = ""
+            if hasattr(DomainConfig, 'CANCELLATION_POLICY') and DomainConfig.CANCELLATION_POLICY:
+                policy_info = appointment_messages.CLIENT_CANCEL_POLICY_INFO
+
+            session.transition_to(ConversationState.CLIENT_CANCEL_REASON)
+
+            return appointment_messages.CLIENT_CANCEL_APPOINTMENT_CONFIRM.format(
+                date=date_str,
+                time=apt['start_time'],
+                professional_name=apt['professional_name'],
+                policy_info=policy_info
+            )
+
+        # Si llegó aquí sin ser '1', es inválido
+        return "⚠️ Opción inválida.\n\n_Escribe *1* para cancelar o *0* para volver_"
+
+    def handle_client_cancel_reason(self, session: SessionData, message: str) -> str:
+        """
+        Maneja motivo de cancelación y ejecuta la cancelación.
+
+        El motivo es opcional.
+        """
+
+        appointment_id = session.get_temp('appointment_id')
+
+        if not appointment_id:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+
+        # Si es '0', significa cancelar sin motivo
+        if message == '0':
+            reason = None
+        elif message == '1':
+            # Confirmando cancelación sin motivo
+            reason = None
+        else:
+            # El mensaje es el motivo
+            reason = message
+
+        # Ejecutar cancelación en BD
+        success = db.update_appointment_status(
+            appointment_id=appointment_id,
+            new_status='cancelada_cliente',
+            changed_by='client',
+            reason=reason
+        )
+
+        if not success:
+            return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+
+        # TODO: Crear notificación para el profesional
+        # db.create_notification(...)
+
+        # Limpiar temp_data
+        session.clear_temp()
+        session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
+
+        return appointment_messages.CLIENT_APPOINTMENT_CANCELLED
+
+    def handle_client_cancel_success(self, session: SessionData, message: str) -> str:
+        """
+        Maneja opciones después de cancelar exitosamente una cita.
+
+        Opciones:
+        1 = Ver mis citas
+        2 = Buscar nuevo profesional
+        0 = Menú principal
+        """
+        if message == '1':
+            # Ver mis citas
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.handle_client_view_appointments(session, '')
+
+        elif message == '2':
+            # Buscar nuevo profesional
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+
+        elif message == '0':
+            # Menú principal
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+
+        else:
+            # Opción inválida
+            return "⚠️ Opción inválida.\n\n" + appointment_messages.CLIENT_APPOINTMENT_CANCELLED
