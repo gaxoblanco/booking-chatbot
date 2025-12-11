@@ -15,38 +15,41 @@ Este archivo contiene ~1000 líneas de lógica específica del profesional.
 """
 
 from datetime import datetime, timedelta
-from states import ConversationState, SessionData
-from messages import Messages
-from validators import validate_date, validate_time, parse_date
-from professional_service import professional_service
-from domain_config import DomainConfig
-import validators
+from src.core.states import ConversationState, SessionData
+from src.messages.messages_common import common_messages
+from src.messages.messages_professional import professional_messages
+from src.messages.messages_appointments import appointment_messages
+from src.core.validators import parse_time_range, validate_date, validate_time, parse_date
+from src.services.professional_service import professional_service
+from src.config.domain_config import DomainConfig
 
 
 class ProfessionalHandler:
     """
     Handler para gestión del flujo del profesional.
-    
+
     El profesional puede:
     1. Subir certificado (obligatorio)
     2. Cargar información personal
     3. Gestionar horarios disponibles
     4. Ver agenda y estadísticas
     """
-    
-    def __init__(self, messages: Messages):
+
+    def __init__(self):
         """
         Inicializar handler del profesional.
-        
-        Args:
-            messages: Instancia de Messages para acceder a mensajes predefinidos
+
+        Los mensajes se importan directamente desde los módulos:
+        - common_messages: Validaciones, errores, ayuda
+        - professional_messages: Certificado, horarios, perfil
+        - appointment_messages: Sistema de citas
         """
-        self.messages = messages
-    
+        pass
+
     # ==========================================
     # CERTIFICADO Y MENÚ PRINCIPAL
     # ==========================================
-    
+
     def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
         """
         Handle certificate requirement state.
@@ -56,7 +59,7 @@ class ProfessionalHandler:
         """
         # Block '0' and any other text input
         # User must upload certificate file to continue
-        return self.messages.PROF_NEED_CERTIFICATE
+        return professional_messages.PROF_NEED_CERTIFICATE
 
     def handle_prof_certificate_uploaded(self, session: SessionData) -> str:
         """
@@ -64,7 +67,7 @@ class ProfessionalHandler:
         Transitions to main menu.
         """
         session.transition_to(ConversationState.PROF_MAIN_MENU)
-        return self.messages.PROF_CERTIFICATE_RECEIVED + "\n\n" + self.messages.PROF_MAIN_MENU
+        return professional_messages.PROF_CERTIFICATE_RECEIVED + "\n\n" + professional_messages.PROF_MAIN_MENU
 
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
         """Handle professional main menu."""
@@ -72,19 +75,19 @@ class ProfessionalHandler:
             # Liberar horario
             session.clear_temp()
             session.transition_to(ConversationState.PROF_FREE_SLOT_DATE)
-            return self.messages.PROF_FREE_SLOT_ASK_DATE
+            return professional_messages.PROF_FREE_SLOT_ASK_DATE
 
         elif message == '2':
             # Cargar semana completa
             session.clear_temp()
             session.store_temp('week_schedule', {})
             session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_QUICK)
-            return self.messages.PROF_WEEK_QUICK_FORMAT
+            return professional_messages.PROF_WEEK_QUICK_FORMAT
 
         elif message == '3':
             schedule_info = professional_service.get_complete_schedule(
                 session.phone_number)
-            return schedule_info['formatted'] + "\n\n" + self.messages.PROF_MAIN_MENU
+            return schedule_info['formatted'] + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         elif message == '4':
             # Cargar informaciÃ³n
@@ -99,14 +102,19 @@ class ProfessionalHandler:
             # Carga rÃ¡pida
             session.clear_temp()
             session.transition_to(ConversationState.PROF_INFO_QUICK)
-            return self.messages.PROF_INFO_QUICK_FORMAT
+            return professional_messages.PROF_INFO_QUICK_FORMAT
+
+        elif message == '6':
+            # Mis Citas
+            session.transition_to(ConversationState.PROF_VIEW_APPOINTMENTS)
+            return self.handle_prof_view_appointments(session, message)
 
         elif message == '0':
             session.reset()
-            return self.messages.WELCOME
+            return common_messages.WELCOME
 
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_MAIN_MENU
+            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_MAIN_MENU
 
     def format_prof_info_menu(self, session: SessionData) -> str:
         """Format professional info menu with current data."""
@@ -121,7 +129,8 @@ class ProfessionalHandler:
             if 'email' in prof_info:
                 info_lines.append(f"ðŸ“§ {prof_info['email']}")
             if 'zone' in prof_info:  # â† CAMBIAR: era 'zona'
-                info_lines.append(f"ðŸ“ Zona {prof_info['zone'].capitalize()}")
+                info_lines.append(
+                    f"ðŸ“ Zona {prof_info['zone'].capitalize()}")
             if 'gender' in prof_info:  # â† CAMBIAR: era 'genero'
                 genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
                 info_lines.append(
@@ -140,7 +149,7 @@ class ProfessionalHandler:
 
             current_info = "\n".join(info_lines) if info_lines else "(ninguno)"
 
-        return self.messages.PROF_INFO_MENU.format(current_info=current_info)
+        return professional_messages.PROF_INFO_MENU.format(current_info=current_info)
 
     def handle_prof_info_menu(self, session: SessionData, message: str) -> str:
         """Handle professional info menu."""
@@ -148,42 +157,42 @@ class ProfessionalHandler:
         if message == '1':
             # Nombre
             session.transition_to(ConversationState.PROF_INFO_NAME)
-            return self.messages.PROF_INFO_ASK_NAME
+            return professional_messages.PROF_INFO_ASK_NAME
 
         elif message == '2':
             # Email
             session.transition_to(ConversationState.PROF_INFO_EMAIL)
-            return self.messages.PROF_INFO_ASK_EMAIL
+            return professional_messages.PROF_INFO_ASK_EMAIL
 
         elif message == '3':
             # Zona
             session.transition_to(ConversationState.PROF_INFO_ZONA)
-            return self.messages.PROF_INFO_ASK_ZONA
+            return professional_messages.PROF_INFO_ASK_ZONA
 
         elif message == '4':
             # GÃ©nero
             session.transition_to(ConversationState.PROF_INFO_GENERO)
-            return self.messages.PROF_INFO_ASK_GENERO
+            return professional_messages.PROF_INFO_ASK_GENERO
 
         elif message == '5':
             # Prepaga
             session.transition_to(ConversationState.PROF_INFO_PREPAGA)
-            return self.messages.PROF_INFO_ASK_PREPAGA
+            return professional_messages.PROF_INFO_ASK_PREPAGA
 
         elif message == '6':
             # Especialidad
             session.transition_to(ConversationState.PROF_INFO_ESPECIALIDAD)
-            return self.messages.PROF_INFO_ASK_ESPECIALIDAD
+            return professional_messages.PROF_INFO_ASK_ESPECIALIDAD
 
         elif message == '7':
             # Bio
             session.transition_to(ConversationState.PROF_INFO_BIO)
-            return self.messages.PROF_INFO_ASK_BIO
+            return professional_messages.PROF_INFO_ASK_BIO
 
         elif message == '8':
             # Honorarios
             session.transition_to(ConversationState.PROF_INFO_FEE_RANGE)
-            return self.messages.PROF_INFO_ASK_FEE_RANGE
+            return professional_messages.PROF_INFO_ASK_FEE_RANGE
 
         elif message == '9':
             # Guardar informaciÃ³n
@@ -198,7 +207,7 @@ class ProfessionalHandler:
             missing = [f for f in required if f not in prof_info]
 
             if missing:
-                return self.messages.PROF_INFO_INCOMPLETE + "\n\n" + self.format_prof_info_menu(session)
+                return professional_messages.PROF_INFO_INCOMPLETE + "\n\n" + self.format_prof_info_menu(session)
 
             # Save to database using professional_service
             professional_service.register_or_update_professional(
@@ -215,7 +224,8 @@ class ProfessionalHandler:
 
             # Format summary
             summary_lines = []
-            summary_lines.append(f"ðŸ‘¤ Nombre: {prof_info.get('name', 'N/A')}")
+            summary_lines.append(
+                f"ðŸ‘¤ Nombre: {prof_info.get('name', 'N/A')}")
             summary_lines.append(
                 f"ðŸ¥ Especialidad: {prof_info.get('especialidad', 'N/A')}")
             summary_lines.append(
@@ -240,18 +250,18 @@ class ProfessionalHandler:
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
 
-            return self.messages.PROF_INFO_SAVED.format(
+            return professional_messages.PROF_INFO_SAVED.format(
                 profile_summary=profile_summary
-            ) + "\n\n" + self.messages.PROF_MAIN_MENU
+            ) + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         elif message == '0':
             # Volver al menÃº
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.format_prof_info_menu(session)
+            return common_messages.INVALID_OPTION + "\n\n" + self.format_prof_info_menu(session)
 
     def handle_prof_info_name(self, session: SessionData, message: str) -> str:
         """Handle name input."""
@@ -274,7 +284,7 @@ class ProfessionalHandler:
             return self.format_prof_info_menu(session)
 
         # Validate email format
-        from validators import validate_email
+        from src.core.validators import validate_email
         if not validate_email(message):
             return "âŒ Email invÃ¡lido. Intenta nuevamente:\nEjemplo: juan@email.com"
 
@@ -297,7 +307,7 @@ class ProfessionalHandler:
         elif message == '2':
             zona = 'sur'
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_ZONA
+            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_INFO_ASK_ZONA
 
         # Store zona
         prof_info = session.get_temp('prof_info', {})
@@ -320,7 +330,7 @@ class ProfessionalHandler:
         elif message == '3':
             genero = 'o'
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_GENERO
+            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_INFO_ASK_GENERO
 
         # Store genero
         prof_info = session.get_temp('prof_info', {})
@@ -342,7 +352,7 @@ class ProfessionalHandler:
         elif message == '2':
             prepaga = False
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_INFO_ASK_PREPAGA
+            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_INFO_ASK_PREPAGA
 
         # Store prepaga
         prof_info = session.get_temp('prof_info', {})
@@ -351,6 +361,37 @@ class ProfessionalHandler:
 
         session.transition_to(ConversationState.PROF_INFO_MENU)
         return f"âœ… Prepaga: {'SÃ­' if prepaga else 'No'}\n\n" + self.format_prof_info_menu(session)
+
+    def handle_prof_view_appointments(self, session: SessionData, message: str) -> str:
+        """Ver lista de citas del profesional."""
+        from src.database.database import db
+
+        # Obtener citas del profesional
+        appointments = db.get_appointments_by_professional(
+            professional_phone=session.phone_number,
+            status=None,  # Todas
+            from_date=None  # Desde hoy
+        )
+
+        if not appointments or len(appointments) == 0:
+            return appointment_messages.PROF_NO_APPOINTMENTS + "\n\n" + professional_messages.PROF_MAIN_MENU
+
+        # Usar el mensaje que SÍ existe
+        response = appointment_messages.PROF_VIEW_APPOINTMENTS
+
+        # Agregar lista de citas
+        for idx, apt in enumerate(appointments[:10], 1):
+            status_emoji = appointment_messages.format_status_emoji(
+                apt['status'])
+            response += f"\n{idx}️⃣ {status_emoji} {apt['appointment_date']} - {apt['start_time']}"
+            response += f"\n   Paciente: {apt.get('client_phone', 'N/A')}"
+
+        # Footer simple
+        response += "\n\n_Escribe el número para ver detalle_"
+        response += "\n_0️⃣ Volver al menú_"
+        response += "\n\n" + professional_messages.PROF_MAIN_MENU
+
+        return response
 
     def handle_prof_info_especialidad(self, session: SessionData, message: str) -> str:
         """Handle especialidad input."""
@@ -519,7 +560,7 @@ class ProfessionalHandler:
             return None, errors
 
         # Validate and normalize each field
-        from validators import validate_email
+        from src.core.validators import validate_email
 
         # Email
         if not validate_email(result['email']):
@@ -581,14 +622,14 @@ class ProfessionalHandler:
 
         if message == '0':
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         # Parse the message
         prof_info, errors = self.parse_prof_info_quick(message)
 
         if errors:
             error_msg = "\n".join(errors)
-            return f"{error_msg}\n\n{self.messages.PROF_INFO_QUICK_FORMAT}"
+            return f"{error_msg}\n\n{professional_messages.PROF_INFO_QUICK_FORMAT}"
 
         # Save to database
         professional_service.register_or_update_professional(
@@ -627,7 +668,7 @@ class ProfessionalHandler:
         session.clear_temp()
         session.transition_to(ConversationState.PROF_MAIN_MENU)
 
-        return f"âœ… Â¡InformaciÃ³n guardada!\n\n{summary}\n\n" + self.messages.PROF_MAIN_MENU
+        return f"âœ… Â¡InformaciÃ³n guardada!\n\n{summary}\n\n" + professional_messages.PROF_MAIN_MENU
 
     def parse_week_schedule_quick(self, message: str) -> tuple:
         """
@@ -730,7 +771,7 @@ class ProfessionalHandler:
 
         if message == '0':
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         # Parse the message
         schedules, errors = self.parse_week_schedule_quick(message)
@@ -738,14 +779,14 @@ class ProfessionalHandler:
         if errors:
             error_msg = "âŒ Errores encontrados:\n\n"
             error_msg += "\n".join(errors)
-            error_msg += "\n\n" + self.messages.PROF_WEEK_QUICK_FORMAT
+            error_msg += "\n\n" + professional_messages.PROF_WEEK_QUICK_FORMAT
             return error_msg
 
         if not schedules:
-            return "âŒ No se encontraron horarios vÃ¡lidos.\n\n" + self.messages.PROF_WEEK_QUICK_FORMAT
+            return "âŒ No se encontraron horarios vÃ¡lidos.\n\n" + professional_messages.PROF_WEEK_QUICK_FORMAT
 
         # Save to database
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
 
         schedules_list = [
             {
@@ -791,7 +832,7 @@ class ProfessionalHandler:
 
     Estos horarios se repetirÃ¡n cada semana.
 
-    """ + self.messages.PROF_MAIN_MENU
+    """ + professional_messages.PROF_MAIN_MENU
 
     # ==========================================
     # PROFESSIONAL - LIBERAR HORARIO (FREE SLOT)
@@ -803,12 +844,12 @@ class ProfessionalHandler:
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         date_obj = parse_date(message)
 
         if not date_obj:
-            return self.messages.INVALID_DATE + "\n\n" + self.messages.PROF_FREE_SLOT_ASK_DATE
+            return common_messages.INVALID_DATE + "\n\n" + professional_messages.PROF_FREE_SLOT_ASK_DATE
 
         # Store date in YYYY-MM-DD format for database
         date_str_db = date_obj.strftime("%Y-%m-%d")
@@ -820,7 +861,7 @@ class ProfessionalHandler:
         session.store_temp('date_display', message)
         session.transition_to(ConversationState.PROF_FREE_SLOT_TIME)
 
-        return self.messages.PROF_FREE_SLOT_ASK_TIME
+        return professional_messages.PROF_FREE_SLOT_ASK_TIME
 
     def handle_prof_free_slot_time(self, session: SessionData, message: str) -> str:
         """Handle time input for freeing a slot."""
@@ -828,12 +869,12 @@ class ProfessionalHandler:
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         time_range = parse_time_range(message)
 
         if not time_range:
-            return self.messages.INVALID_TIME + "\n\n" + self.messages.PROF_FREE_SLOT_ASK_TIME
+            return common_messages.INVALID_TIME + "\n\n" + professional_messages.PROF_FREE_SLOT_ASK_TIME
 
         start_time, end_time = time_range
 
@@ -842,7 +883,7 @@ class ProfessionalHandler:
         session.store_temp('time_end', end_time)
         session.transition_to(ConversationState.PROF_FREE_SLOT_CONFIRM)
 
-        return self.messages.PROF_FREE_SLOT_CONFIRM.format(
+        return professional_messages.PROF_FREE_SLOT_CONFIRM.format(
             date=session.get_temp('date_str'),
             time_start=start_time,
             time_end=end_time
@@ -868,20 +909,20 @@ class ProfessionalHandler:
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
 
-            return self.messages.PROF_FREE_SLOT_SUCCESS.format(
+            return professional_messages.PROF_FREE_SLOT_SUCCESS.format(
                 date=date_str,
                 time_start=time_start,
                 time_end=time_end
-            ) + "\n\n" + self.messages.PROF_MAIN_MENU
+            ) + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         elif message == '2' or message == '0':
             # Cancelled
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.OPERATION_CANCELLED + "\n\n" + self.messages.PROF_MAIN_MENU
+            return common_messages.OPERATION_CANCELLED + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         else:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_FREE_SLOT_CONFIRM.format(
+            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_FREE_SLOT_CONFIRM.format(
                 date=session.get_temp('date_str', ''),
                 time_start=session.get_temp('time_start', ''),
                 time_end=session.get_temp('time_end', '')
@@ -892,12 +933,12 @@ class ProfessionalHandler:
 
     def handle_prof_manage_free_slots(self, session: SessionData, message: str) -> str:
         """Show menu to manage free slots."""
-        from professional_service import professional_service
+        from src.services.professional_service import professional_service
 
         if message == '1':
             # Add new free slot
             session.transition_to(ConversationState.PROF_FREE_SLOT_DATE)
-            return self.messages.PROF_FREE_SLOT_ASK_DATE
+            return professional_messages.PROF_FREE_SLOT_ASK_DATE
 
         elif message == '2':
             # Delete free slot
@@ -905,7 +946,7 @@ class ProfessionalHandler:
                 session.phone_number, future_only=True)
 
             if not free_slots:
-                return "âŒ No tienes horarios libres activos.\n\n" + self.messages.PROF_MAIN_MENU
+                return "âŒ No tienes horarios libres activos.\n\n" + professional_messages.PROF_MAIN_MENU
 
             # Show slots with numbers
             msg = "ðŸ“… ELIMINAR HORARIO LIBRE\n\n"
@@ -921,10 +962,10 @@ class ProfessionalHandler:
 
         elif message == '0':
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         else:
-            return self.messages.INVALID_OPTION
+            return common_messages.INVALID_OPTION
 
     def handle_prof_delete_free_slot(self, session: SessionData, message: str) -> str:
         """Handle deleting a free slot."""
@@ -932,7 +973,7 @@ class ProfessionalHandler:
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         try:
             selection = int(message)
@@ -941,7 +982,7 @@ class ProfessionalHandler:
             if 1 <= selection <= len(free_slots):
                 slot = free_slots[selection - 1]
 
-                from professional_service import professional_service
+                from src.services.professional_service import professional_service
                 success = professional_service.remove_free_slot(
                     session.phone_number,
                     slot['date'],
@@ -957,7 +998,7 @@ class ProfessionalHandler:
 
                 session.clear_temp()
                 session.transition_to(ConversationState.PROF_MAIN_MENU)
-                return msg + "\n\n" + self.messages.PROF_MAIN_MENU
+                return msg + "\n\n" + professional_messages.PROF_MAIN_MENU
             else:
                 return f"âŒ OpciÃ³n invÃ¡lida. Selecciona un nÃºmero entre 1 y {len(free_slots)}."
 
@@ -973,19 +1014,19 @@ class ProfessionalHandler:
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         if message not in ['1', '2', '3', '4', '5', '6', '7']:
-            return self.messages.INVALID_OPTION + "\n\n" + self.messages.PROF_WEEK_ASK_DAY
+            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_WEEK_ASK_DAY
 
         day_number = int(message)
-        day_name = self.messages.format_day_name(day_number)
+        day_name = common_messages.format_day_name(day_number)
 
         session.store_temp('current_day', day_number)
         session.store_temp('current_day_name', day_name)
         session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_TIME)
 
-        return self.messages.PROF_WEEK_ASK_TIME.format(day=day_name)
+        return professional_messages.PROF_WEEK_ASK_TIME.format(day=day_name)
 
     def handle_prof_week_time(self, session: SessionData, message: str) -> str:
         """Handle time input for weekly schedule."""
@@ -993,13 +1034,13 @@ class ProfessionalHandler:
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.PROF_MAIN_MENU
+            return professional_messages.PROF_MAIN_MENU
 
         time_range = parse_time_range(message)
 
         if not time_range:
             day_name = session.get_temp('current_day_name')
-            return self.messages.INVALID_TIME + "\n\n" + self.messages.PROF_WEEK_ASK_TIME.format(day=day_name)
+            return common_messages.INVALID_TIME + "\n\n" + professional_messages.PROF_WEEK_ASK_TIME.format(day=day_name)
 
         start_time, end_time = time_range
         day_number = session.get_temp('current_day')
@@ -1022,7 +1063,7 @@ class ProfessionalHandler:
 
         session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_MORE)
 
-        return self.messages.PROF_WEEK_ASK_MORE.format(
+        return professional_messages.PROF_WEEK_ASK_MORE.format(
             day=day_name,
             time_start=start_time,
             time_end=end_time,
@@ -1034,7 +1075,7 @@ class ProfessionalHandler:
         if message == '1':
             # Add another day
             session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_DAY)
-            return self.messages.PROF_WEEK_ASK_DAY
+            return professional_messages.PROF_WEEK_ASK_DAY
 
         elif message == '2':
             # Finish and save
@@ -1068,15 +1109,15 @@ class ProfessionalHandler:
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
 
-            return self.messages.PROF_WEEK_SUCCESS.format(
+            return professional_messages.PROF_WEEK_SUCCESS.format(
                 schedule_summary=schedule_summary
-            ) + "\n\n" + self.messages.PROF_MAIN_MENU
+            ) + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         elif message == '0':
             # Cancel and go back to menu
             session.clear_temp()
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return self.messages.OPERATION_CANCELLED + "\n\n" + self.messages.PROF_MAIN_MENU
+            return common_messages.OPERATION_CANCELLED + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         else:
-            return self.messages.INVALID_OPTION
+            return common_messages.INVALID_OPTION
