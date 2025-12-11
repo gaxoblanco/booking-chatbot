@@ -527,7 +527,6 @@ Selecciona tu género:
 
 1️⃣ Masculino
 2️⃣ Femenino
-3️⃣ Otro
 
 Responde con el número.
 _Escribe *0* para volver_"""

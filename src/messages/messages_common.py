@@ -346,8 +346,7 @@ El registro ha sido eliminado."""
         """
         zonas = {
             "norte": "Zona Norte",
-            "sur": "Zona Sur",
-            "indistinto": "Cualquier zona"
+            "sur": "Zona Sur"
         }
         return zonas.get(zona.lower(), zona.title())
 

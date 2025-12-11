@@ -144,8 +144,7 @@ _Escribe *0* para volver_"""
 
 1️⃣ Masculino
 2️⃣ Femenino
-3️⃣ Otro
-4️⃣ Prefiero no decir
+3️⃣ Prefiero no decir
 
 • Escribe el número
 • O envía *saltar* para omitir

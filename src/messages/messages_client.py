@@ -110,10 +110,7 @@ Selecciona los filtros que desees (uno a la vez):
 {filters_section}
 Responde con el número de opción."""
 
-    @staticmethod
-    def CLIENT_MULTIFILTER_ADDED(filter_name: str, menu: str) -> str:
-        """Show filter added confirmation with updated menu."""
-        return f"""✅ Filtro agregado: {filter_name}
+    CLIENT_MULTIFILTER_ADDED = """✅ Filtro agregado: {filter_name}
 
 {menu}"""
 
@@ -189,9 +186,10 @@ Volviendo al menú de filtros..."""
 
 ¿Buscas {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} que acepten {DomainConfig.CUSTOM_FIELD_1_LABEL.lower() if DomainConfig.CUSTOM_FIELD_1_ENABLED else 'prepaga'}?
 
-1️⃣ Sí, con {DomainConfig.CUSTOM_FIELD_1_LABEL.lower() if DomainConfig.CUSTOM_FIELD_1_ENABLED else 'prepaga'}
-2️⃣ No, sin {DomainConfig.CUSTOM_FIELD_1_LABEL.lower() if DomainConfig.CUSTOM_FIELD_1_ENABLED else 'prepaga'}
+1️⃣ Sí, con 'prepaga'
+2️⃣ No, sin 'prepaga'
 3️⃣ No importa
+
 
 Responde con el número.
 _Escribe *0* para volver_"""
@@ -210,8 +208,7 @@ Volviendo al menú de filtros..."""
 
 1️⃣ Masculino
 2️⃣ Femenino
-3️⃣ Otro
-4️⃣ No importa
+3️⃣ No importa
 
 Responde con el número.
 _Escribe *0* para volver_"""
@@ -525,7 +522,7 @@ Continuando búsqueda..."""
         options = []
         for i, (key, value) in enumerate(DomainConfig.ZONES.items(), 1):
             options.append(f"{i}️⃣ {value}")
-        options.append(f"{len(DomainConfig.ZONES) + 1}️⃣ Cualquier zona")
+        # options.append(f"{len(DomainConfig.ZONES) + 1}️⃣ Cualquier zona")
         return "\n".join(options)
 
     @staticmethod
