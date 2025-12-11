@@ -276,6 +276,12 @@ class BotController:
             ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
             ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
             ConversationState.CLIENT_SEARCH_QUICK: self.handle_client_search_quick,
+            # Estados de gestión de citas del cliente
+            ConversationState.CLIENT_VIEW_APPOINTMENTS: self.handle_client_view_appointments,
+            ConversationState.CLIENT_APPOINTMENT_DETAIL: self.handle_client_appointment_detail,
+            ConversationState.CLIENT_CANCEL_APPOINTMENT: self.handle_client_cancel_appointment,
+            ConversationState.CLIENT_CANCEL_REASON: self.handle_client_cancel_reason,
+
         }
 
         return handlers.get(state, self.handle_unknown_state)
@@ -484,6 +490,22 @@ class BotController:
     def handle_client_search_quick(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
         return self.client_handler.handle_client_search_quick(session, message)
+
+    def handle_client_view_appointments(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_view_appointments(session, message)
+
+    def handle_client_appointment_detail(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_appointment_detail(session, message)
+
+    def handle_client_cancel_appointment(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_cancel_appointment(session, message)
+
+    def handle_client_cancel_reason(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_cancel_reason(session, message)
 
 
 # ==========================================
