@@ -128,6 +128,7 @@ class ConversationState(Enum):
     CLIENT_APPOINTMENT_DETAIL = "client_appointment_detail"
     CLIENT_CANCEL_APPOINTMENT = "client_cancel_appointment"
     CLIENT_CANCEL_REASON = "client_cancel_reason"
+    CLIENT_CANCEL_SUCCESS = "client_cancel_success"
     CLIENT_RESCHEDULE_APPOINTMENT = "client_reschedule_appointment"
     CLIENT_RESCHEDULE_SELECT_DATE = "client_reschedule_select_date"
     CLIENT_RESCHEDULE_SELECT_TIME = "client_reschedule_select_time"
