@@ -258,7 +258,8 @@ _Escribe *0* para volver_"""
 
     # Opciones según el estado de la cita
     CLIENT_APPOINTMENT_OPTIONS_PENDING = f"""Opciones disponibles:
-1️⃣ Cancelar {DomainConfig.APPOINTMENT_NAME}"""
+1️⃣ Reprogramar {DomainConfig.APPOINTMENT_NAME}
+2️⃣ Cancelar {DomainConfig.APPOINTMENT_NAME}"""
 
     CLIENT_APPOINTMENT_OPTIONS_CONFIRMED = f"""Opciones disponibles:
 1️⃣ Reprogramar {DomainConfig.APPOINTMENT_NAME}
