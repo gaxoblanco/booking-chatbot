@@ -48,6 +48,9 @@ class ConversationState(Enum):
 
     # Option 3: Cargar semana completa (weekly recurring schedule)
     PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
+    PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"      # ✅ NUEVO
+    PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"    # ✅ NUEVO
+    PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"    # ✅ NUEVO
 
     # Option 5: Cargar información profesional
     PROF_INFO_MENU = "prof_info_menu"  # Main info menu
@@ -65,19 +68,8 @@ class ConversationState(Enum):
     PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"
     PROF_DELETE_FREE_SLOT = "prof_delete_free_slot"
 
-    # Client states - Multi-filter
-    CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
-    CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"
-    CLIENT_MULTIFILTER_FECHA = "client_multifilter_fecha"
-    CLIENT_MULTIFILTER_HORA = "client_multifilter_hora"
-    CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
-    CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
-    CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
-    # Quick search (all filters at once)
-    CLIENT_SEARCH_QUICK = "client_search_quick"
-
     # ==========================================
-    # CLIENT STATES
+    # CLIENT STATES - SEARCH & FILTERS
     # ==========================================
 
     # Main menu
@@ -87,17 +79,23 @@ class ConversationState(Enum):
     # Filter selection
     CLIENT_SELECT_FILTERS = "client_select_filters"  # Which filters to apply?
 
-    # Zona filter
-    CLIENT_FILTER_ZONA = "client_filter_zona"  # Ask for zone (Sur/Norte)
+    # Multi-filter menu
+    CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
+    CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"
+    CLIENT_MULTIFILTER_FECHA = "client_multifilter_fecha"
+    CLIENT_MULTIFILTER_HORA = "client_multifilter_hora"
+    CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
+    CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
+    CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
 
-    # Disponibilidad filter
+    # Quick search (all filters at once)
+    CLIENT_SEARCH_QUICK = "client_search_quick"
+
+    # Individual filters
+    CLIENT_FILTER_ZONA = "client_filter_zona"  # Ask for zone (Sur/Norte)
     CLIENT_FILTER_FECHA = "client_filter_fecha"  # Ask for date
     CLIENT_FILTER_HORA = "client_filter_hora"  # Ask for time
-
-    # Prepaga filter
     CLIENT_FILTER_PREPAGA = "client_filter_prepaga"  # Ask yes/no
-
-    # Sexo filter
     CLIENT_FILTER_SEXO = "client_filter_sexo"  # Ask M/F/Otro
 
     # Results
@@ -105,10 +103,53 @@ class ConversationState(Enum):
     CLIENT_VIEW_DETAIL = "client_view_detail"  # Show professional detail
 
     # ==========================================
+    # CLIENT - APPOINTMENT BOOKING STATES
+    # ==========================================
+    CLIENT_BOOKING_START = "client_booking_start"
+    CLIENT_BOOKING_FOR_WHOM = "client_booking_for_whom"
+    CLIENT_BOOKING_PATIENT_NAME = "client_booking_patient_name"
+    CLIENT_BOOKING_PATIENT_PHONE = "client_booking_patient_phone"
+    CLIENT_BOOKING_SELECT_MODALITY = "client_booking_select_modality"
+    CLIENT_BOOKING_SELECT_DATE = "client_booking_select_date"
+    CLIENT_BOOKING_SELECT_TIME = "client_booking_select_time"
+    CLIENT_BOOKING_COLLECT_DATA = "client_booking_collect_data"
+    CLIENT_BOOKING_COLLECT_NAME = "client_booking_collect_name"
+    CLIENT_BOOKING_COLLECT_EMAIL = "client_booking_collect_email"
+    CLIENT_BOOKING_COLLECT_AGE = "client_booking_collect_age"
+    CLIENT_BOOKING_COLLECT_GENDER = "client_booking_collect_gender"
+    CLIENT_BOOKING_REASON = "client_booking_reason"
+    CLIENT_BOOKING_CONFIRM = "client_booking_confirm"
+    CLIENT_BOOKING_SUCCESS = "client_booking_success"
+
+    # ==========================================
+    # CLIENT - MY APPOINTMENTS STATES
+    # ==========================================
+    CLIENT_VIEW_APPOINTMENTS = "client_view_appointments"
+    CLIENT_APPOINTMENT_DETAIL = "client_appointment_detail"
+    CLIENT_CANCEL_APPOINTMENT = "client_cancel_appointment"
+    CLIENT_CANCEL_REASON = "client_cancel_reason"
+    CLIENT_RESCHEDULE_APPOINTMENT = "client_reschedule_appointment"
+    CLIENT_RESCHEDULE_SELECT_DATE = "client_reschedule_select_date"
+    CLIENT_RESCHEDULE_SELECT_TIME = "client_reschedule_select_time"
+    CLIENT_RESCHEDULE_CONFIRM = "client_reschedule_confirm"
+
+    # ==========================================
+    # PROFESSIONAL - APPOINTMENT MANAGEMENT
+    # ==========================================
+    PROF_VIEW_APPOINTMENTS = "prof_view_appointments"
+    PROF_APPOINTMENT_DETAIL = "prof_appointment_detail"
+    PROF_CONFIRM_APPOINTMENT = "prof_confirm_appointment"
+    PROF_REJECT_APPOINTMENT = "prof_reject_appointment"  # ✅ NUEVO
+    PROF_CANCEL_APPOINTMENT = "prof_cancel_appointment"
+    PROF_CANCEL_REASON = "prof_cancel_reason"
+    PROF_MARK_COMPLETED = "prof_mark_completed"
+    PROF_MARK_NO_SHOW = "prof_mark_no_show"  # ✅ NUEVO
+
+    # ==========================================
     # COMMON STATES
     # ==========================================
-    ERROR = "error"  # Error state, show error message
-    CANCELLED = "cancelled"  # User cancelled operation
+    ERROR = "error"
+    CANCELLED = "cancelled"
 
 
 class SessionData:
