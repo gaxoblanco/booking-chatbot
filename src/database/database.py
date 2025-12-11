@@ -971,6 +971,608 @@ class Database:
             print(f"[DB] ❌ Error getting stats: {e}")
             return {}
 
+    # ==========================================
+    # CLIENTS CRUD OPERATIONS
+    # ==========================================
+
+    def add_client(
+        self,
+        phone: str,
+        name: str = None,
+        email: str = None,
+        age: int = None,
+        gender: str = None,
+        preferred_zone: str = None,
+        has_prepaga: bool = False,
+        prepaga_name: str = None
+    ) -> bool:
+        """
+        Add or update a client.
+
+        Args:
+            phone: Client's phone number (unique identifier)
+            name: Client's name
+            email: Email address
+            age: Age
+            gender: Gender ('m', 'f', 'otro', 'prefiero_no_decir')
+            preferred_zone: Preferred zone ('norte', 'sur', 'indistinto')
+            has_prepaga: Whether has prepaga
+            prepaga_name: Prepaga name
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO clients (phone, name, email, age, gender, preferred_zone, has_prepaga, prepaga_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(phone) DO UPDATE SET
+                        name = COALESCE(excluded.name, name),
+                        email = COALESCE(excluded.email, email),
+                        age = COALESCE(excluded.age, age),
+                        gender = COALESCE(excluded.gender, gender),
+                        preferred_zone = COALESCE(excluded.preferred_zone, preferred_zone),
+                        has_prepaga = excluded.has_prepaga,
+                        prepaga_name = COALESCE(excluded.prepaga_name, prepaga_name),
+                        updated_at = CURRENT_TIMESTAMP,
+                        last_interaction_at = CURRENT_TIMESTAMP
+                """, (phone, name, email, age, gender, preferred_zone, has_prepaga, prepaga_name))
+
+            print(f"[DB] ✅ Client added/updated: {phone}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error adding client: {e}")
+            return False
+
+    def get_client(self, phone: str) -> Optional[Dict]:
+        """
+        Get client data by phone.
+
+        Args:
+            phone: Client's phone
+
+        Returns:
+            Dictionary with client data or None
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM clients WHERE phone = ?", (phone,))
+                row = cursor.fetchone()
+
+                if row:
+                    return dict(row)
+                return None
+        except Exception as e:
+            print(f"[DB] ❌ Error getting client: {e}")
+            return None
+
+    def update_client_last_interaction(self, phone: str) -> bool:
+        """
+        Update client's last interaction timestamp.
+
+        Args:
+            phone: Client's phone
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE clients 
+                    SET last_interaction_at = CURRENT_TIMESTAMP
+                    WHERE phone = ?
+                """, (phone,))
+
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating last interaction: {e}")
+            return False
+
+    # ==========================================
+    # APPOINTMENTS CRUD OPERATIONS
+    # ==========================================
+
+    def create_appointment(
+        self,
+        client_phone: str,
+        professional_phone: str,
+        appointment_date: str,
+        start_time: str,
+        end_time: str,
+        duration_minutes: int = 50,
+        session_type: str = 'primera_vez',
+        modality: str = 'presencial',
+        notes: str = None
+    ) -> Optional[int]:
+        """
+        Create a new appointment.
+
+        Args:
+            client_phone: Client's phone
+            professional_phone: Professional's phone
+            appointment_date: Date in YYYY-MM-DD format
+            start_time: Start time in HH:MM format
+            end_time: End time in HH:MM format
+            duration_minutes: Duration in minutes
+            session_type: Type ('primera_vez', 'seguimiento', 'evaluacion')
+            modality: Modality ('presencial', 'virtual', 'ambas')
+            notes: Optional notes
+
+        Returns:
+            appointment_id if successful, None if failed
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO appointments (
+                        client_phone, professional_phone, appointment_date,
+                        start_time, end_time, duration_minutes,
+                        session_type, modality, notes, status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente_confirmacion')
+                """, (client_phone, professional_phone, appointment_date,
+                      start_time, end_time, duration_minutes,
+                      session_type, modality, notes))
+
+                appointment_id = cursor.lastrowid
+
+                # Crear registro en historial
+                cursor.execute("""
+                    INSERT INTO appointment_history (
+                        appointment_id, new_status, changed_by, change_reason
+                    )
+                    VALUES (?, 'pendiente_confirmacion', 'client', 'Cita creada')
+                """, (appointment_id,))
+
+            print(f"[DB] ✅ Appointment created: #{appointment_id}")
+            return appointment_id
+        except Exception as e:
+            print(f"[DB] ❌ Error creating appointment: {e}")
+            return None
+
+    def get_appointment(self, appointment_id: int) -> Optional[Dict]:
+        """
+        Get appointment by ID.
+
+        Args:
+            appointment_id: Appointment ID
+
+        Returns:
+            Dictionary with appointment data or None
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT a.*, 
+                           c.name as client_name,
+                           p.name as professional_name
+                    FROM appointments a
+                    LEFT JOIN clients c ON a.client_phone = c.phone
+                    LEFT JOIN professionals p ON a.professional_phone = p.phone
+                    WHERE a.id = ?
+                """, (appointment_id,))
+                row = cursor.fetchone()
+
+                if row:
+                    return dict(row)
+                return None
+        except Exception as e:
+            print(f"[DB] ❌ Error getting appointment: {e}")
+            return None
+
+    def get_appointments_by_client(
+        self,
+        client_phone: str,
+        status: str = None,
+        from_date: str = None
+    ) -> List[Dict]:
+        """
+        Get all appointments for a client.
+
+        Args:
+            client_phone: Client's phone
+            status: Optional filter by status
+            from_date: Optional filter from date (YYYY-MM-DD)
+
+        Returns:
+            List of appointment dictionaries
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                query = """
+                    SELECT a.*, p.name as professional_name, p.zone
+                    FROM appointments a
+                    LEFT JOIN professionals p ON a.professional_phone = p.phone
+                    WHERE a.client_phone = ?
+                """
+                params = [client_phone]
+
+                if status:
+                    query += " AND a.status = ?"
+                    params.append(status)
+
+                if from_date:
+                    query += " AND a.appointment_date >= ?"
+                    params.append(from_date)
+
+                query += " ORDER BY a.appointment_date ASC, a.start_time ASC"
+
+                cursor.execute(query, params)
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DB] ❌ Error getting client appointments: {e}")
+            return []
+
+    def get_appointments_by_professional(
+        self,
+        professional_phone: str,
+        status: str = None,
+        from_date: str = None
+    ) -> List[Dict]:
+        """
+        Get all appointments for a professional.
+
+        Args:
+            professional_phone: Professional's phone
+            status: Optional filter by status
+            from_date: Optional filter from date (YYYY-MM-DD)
+
+        Returns:
+            List of appointment dictionaries
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                query = """
+                    SELECT a.*, c.name as client_name
+                    FROM appointments a
+                    LEFT JOIN clients c ON a.client_phone = c.phone
+                    WHERE a.professional_phone = ?
+                """
+                params = [professional_phone]
+
+                if status:
+                    query += " AND a.status = ?"
+                    params.append(status)
+
+                if from_date:
+                    query += " AND a.appointment_date >= ?"
+                    params.append(from_date)
+
+                query += " ORDER BY a.appointment_date ASC, a.start_time ASC"
+
+                cursor.execute(query, params)
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DB] ❌ Error getting professional appointments: {e}")
+            return []
+
+    def update_appointment_status(
+        self,
+        appointment_id: int,
+        new_status: str,
+        changed_by: str,
+        reason: str = None
+    ) -> bool:
+        """
+        Update appointment status.
+
+        Args:
+            appointment_id: Appointment ID
+            new_status: New status
+            changed_by: Who made the change ('client', 'professional', 'system')
+            reason: Optional reason for change
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Obtener estado anterior
+                cursor.execute(
+                    "SELECT status FROM appointments WHERE id = ?", (appointment_id,))
+                row = cursor.fetchone()
+                if not row:
+                    print(f"[DB] ❌ Appointment not found: #{appointment_id}")
+                    return False
+
+                previous_status = row['status']
+
+                # Actualizar estado
+                cursor.execute("""
+                    UPDATE appointments 
+                    SET status = ?,
+                        updated_at = CURRENT_TIMESTAMP,
+                        confirmed_at = CASE WHEN ? = 'confirmada' THEN CURRENT_TIMESTAMP ELSE confirmed_at END,
+                        cancelled_at = CASE WHEN ? IN ('cancelada_cliente', 'cancelada_profesional') THEN CURRENT_TIMESTAMP ELSE cancelled_at END,
+                        completed_at = CASE WHEN ? = 'completada' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+                        cancellation_reason = CASE WHEN ? IN ('cancelada_cliente', 'cancelada_profesional') THEN ? ELSE cancellation_reason END
+                    WHERE id = ?
+                """, (new_status, new_status, new_status, new_status, new_status, reason, appointment_id))
+
+                # Registrar en historial
+                cursor.execute("""
+                    INSERT INTO appointment_history (
+                        appointment_id, previous_status, new_status, changed_by, change_reason
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                """, (appointment_id, previous_status, new_status, changed_by, reason))
+
+            print(
+                f"[DB] ✅ Appointment #{appointment_id} status updated: {previous_status} → {new_status}")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating appointment status: {e}")
+            return False
+
+    def update_appointment_datetime(
+        self,
+        appointment_id: int,
+        new_date: str,
+        new_start_time: str,
+        new_end_time: str,
+        changed_by: str
+    ) -> bool:
+        """
+        Update appointment date and time (reschedule).
+
+        Args:
+            appointment_id: Appointment ID
+            new_date: New date (YYYY-MM-DD)
+            new_start_time: New start time (HH:MM)
+            new_end_time: New end time (HH:MM)
+            changed_by: Who made the change
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Obtener datos anteriores
+                cursor.execute("""
+                    SELECT appointment_date, start_time, end_time 
+                    FROM appointments WHERE id = ?
+                """, (appointment_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return False
+
+                previous_date = row['appointment_date']
+                previous_start = row['start_time']
+                previous_end = row['end_time']
+
+                # Actualizar fecha y hora
+                cursor.execute("""
+                    UPDATE appointments 
+                    SET appointment_date = ?,
+                        start_time = ?,
+                        end_time = ?,
+                        status = 'reagendada',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (new_date, new_start_time, new_end_time, appointment_id))
+
+                # Registrar en historial
+                cursor.execute("""
+                    INSERT INTO appointment_history (
+                        appointment_id, 
+                        previous_date, new_date,
+                        previous_time, new_time,
+                        previous_status, new_status,
+                        changed_by, change_reason
+                    )
+                    VALUES (?, ?, ?, ?, ?, 'confirmada', 'reagendada', ?, 'Cita reprogramada')
+                """, (appointment_id, previous_date, new_date,
+                      previous_start, new_start_time, changed_by))
+
+            print(f"[DB] ✅ Appointment #{appointment_id} rescheduled")
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error rescheduling appointment: {e}")
+            return False
+
+    def check_time_slot_available(
+        self,
+        professional_phone: str,
+        appointment_date: str,
+        start_time: str,
+        end_time: str,
+        exclude_appointment_id: int = None
+    ) -> bool:
+        """
+        Check if a time slot is available (no overlapping appointments).
+
+        Args:
+            professional_phone: Professional's phone
+            appointment_date: Date to check (YYYY-MM-DD)
+            start_time: Start time (HH:MM)
+            end_time: End time (HH:MM)
+            exclude_appointment_id: Optional appointment ID to exclude from check
+
+        Returns:
+            True if available, False if occupied
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                query = """
+                    SELECT COUNT(*) as count
+                    FROM appointments
+                    WHERE professional_phone = ?
+                      AND appointment_date = ?
+                      AND status IN ('pendiente_confirmacion', 'confirmada')
+                      AND (
+                          (start_time < ? AND end_time > ?) OR
+                          (start_time < ? AND end_time > ?) OR
+                          (start_time >= ? AND end_time <= ?)
+                      )
+                """
+                params = [professional_phone, appointment_date,
+                          end_time, start_time,
+                          end_time, end_time,
+                          start_time, end_time]
+
+                if exclude_appointment_id:
+                    query += " AND id != ?"
+                    params.append(exclude_appointment_id)
+
+                cursor.execute(query, params)
+                count = cursor.fetchone()['count']
+
+                return count == 0
+        except Exception as e:
+            print(f"[DB] ❌ Error checking availability: {e}")
+            return False
+
+    # ==========================================
+    # APPOINTMENT HISTORY OPERATIONS
+    # ==========================================
+
+    def get_appointment_history(self, appointment_id: int) -> List[Dict]:
+        """
+        Get change history for an appointment.
+
+        Args:
+            appointment_id: Appointment ID
+
+        Returns:
+            List of history records
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT *
+                    FROM appointment_history
+                    WHERE appointment_id = ?
+                    ORDER BY changed_at ASC
+                """, (appointment_id,))
+
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DB] ❌ Error getting appointment history: {e}")
+            return []
+
+    # ==========================================
+    # NOTIFICATIONS OPERATIONS
+    # ==========================================
+
+    def create_notification(
+        self,
+        recipient_phone: str,
+        recipient_type: str,
+        notification_type: str,
+        message_text: str,
+        appointment_id: int = None,
+        channel: str = 'whatsapp'
+    ) -> Optional[int]:
+        """
+        Create a notification record.
+
+        Args:
+            recipient_phone: Recipient's phone
+            recipient_type: 'client' or 'professional'
+            notification_type: Type of notification
+            message_text: Message content
+            appointment_id: Optional related appointment ID
+            channel: Communication channel ('whatsapp', 'email', 'sms')
+
+        Returns:
+            notification_id if successful, None if failed
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO notifications (
+                        recipient_phone, recipient_type, notification_type,
+                        message_text, appointment_id, channel, status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                """, (recipient_phone, recipient_type, notification_type,
+                      message_text, appointment_id, channel))
+
+                notification_id = cursor.lastrowid
+
+            print(f"[DB] ✅ Notification created: #{notification_id}")
+            return notification_id
+        except Exception as e:
+            print(f"[DB] ❌ Error creating notification: {e}")
+            return None
+
+    def update_notification_status(
+        self,
+        notification_id: int,
+        status: str,
+        sent_at: str = None,
+        delivered_at: str = None
+    ) -> bool:
+        """
+        Update notification status.
+
+        Args:
+            notification_id: Notification ID
+            status: New status ('pending', 'sent', 'delivered', 'failed')
+            sent_at: Optional timestamp when sent
+            delivered_at: Optional timestamp when delivered
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE notifications 
+                    SET status = ?,
+                        sent_at = COALESCE(?, sent_at),
+                        delivered_at = COALESCE(?, delivered_at)
+                    WHERE id = ?
+                """, (status, sent_at, delivered_at, notification_id))
+
+            return True
+        except Exception as e:
+            print(f"[DB] ❌ Error updating notification: {e}")
+            return False
+
+    def get_pending_notifications(self) -> List[Dict]:
+        """
+        Get all pending notifications.
+
+        Returns:
+            List of pending notifications
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT *
+                    FROM notifications
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                """)
+
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DB] ❌ Error getting pending notifications: {e}")
+            return []
+
 
 # Global database instance
 db = Database()

@@ -5,7 +5,7 @@ Run this script to initialize/reset the database.
 Creates all tables and optionally adds test data.
 """
 
-from database import db
+from src.database.database import db
 import sys
 
 
