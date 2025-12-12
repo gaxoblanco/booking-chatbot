@@ -34,9 +34,12 @@ class ConversationState(Enum):
     # PROFESSIONAL STATES
     # ==========================================
 
-    # Certificate upload (mandatory first step)
+    # Certificate upload (Deprecated in favor of access key)
     PROF_NEED_CERTIFICATE = "prof_need_certificate"  # Must upload certificate
     PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"  # Waiting for file
+    # Verificación por clave
+    PROF_NEED_ACCESS_KEY = "prof_need_access_key"  # Pedir clave de acceso
+    PROF_VERIFY_KEY = "prof_verify_key"  # Verificar clave ingresada
 
     # Main menu
     PROF_MAIN_MENU = "prof_main_menu"  # Show professional menu
@@ -181,9 +184,12 @@ class SessionData:
         self.role = role
         if role == UserRole.PROFESSIONAL:
             # Check if certificate exists (will be implemented in bot.py)
-            self.state = ConversationState.PROF_NEED_CERTIFICATE
+            # self.state = ConversationState.PROF_NEED_CERTIFICATE
+            self.state = ConversationState.PROF_NEED_ACCESS_KEY
         elif role == UserRole.CLIENT:
             self.state = ConversationState.CLIENT_MAIN_MENU
+        # elif role == UserRole.CLIENT:
+        #     self.state = ConversationState.CLIENT_MAIN_MENU
 
     def transition_to(self, new_state: ConversationState):
         """
