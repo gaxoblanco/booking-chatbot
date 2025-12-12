@@ -136,11 +136,16 @@ class BotController:
                 session.reset()
 
                 if intention == 'professional':
-                    # Usuario dice "hola soy profesional"
+                    # ❌ ANTES:
+                    # session.set_role(UserRole.PROFESSIONAL)
+                    # session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
+                    # return professional_messages.PROF_NEED_CERTIFICATE
+
+                    # ✅ AHORA:
                     session.set_role(UserRole.PROFESSIONAL)
                     session.transition_to(
-                        ConversationState.PROF_NEED_CERTIFICATE)
-                    return professional_messages.PROF_NEED_CERTIFICATE
+                        ConversationState.PROF_NEED_ACCESS_KEY)
+                    return professional_messages.PROF_NEED_ACCESS_KEY
 
                 elif intention == 'client':
                     # Usuario dice "hola" o "busco turno"
@@ -160,10 +165,10 @@ class BotController:
                 return common_messages.WELCOME
 
         # ==========================================
-        # 4. CERTIFICATE GATE - BLOQUEA TODO
+        # 4. ACCESS KEY GATE - BLOQUEA TODO
         # ==========================================
-        # Si el profesional no subió certificado, bloquea TODOS los comandos
-        if session.state == ConversationState.PROF_NEED_CERTIFICATE:
+        # Si el profesional no ingresó clave de acceso, bloquea TODOS los comandos
+        if session.state == ConversationState.PROF_NEED_ACCESS_KEY:
             # Permitir 'inicio' para reiniciar y elegir rol nuevamente
             if message_lower in ['inicio', 'start', 'restart', 'empezar']:
                 session.reset()
@@ -177,7 +182,8 @@ class BotController:
                 return common_messages.WELCOME
 
             # Bloquear todo lo demás (menu, cancelar, ayuda, etc.)
-            return professional_messages.PROF_NEED_CERTIFICATE
+            # El usuario DEBE ingresar una clave válida
+            return professional_messages.PROF_NEED_ACCESS_KEY
 
         # ==========================================
         # 5. COMANDOS GLOBALES (funcionan desde cualquier lado EXCEPTO certificate gate)
@@ -236,7 +242,9 @@ class BotController:
 
             # ===== ESTADOS DE PROFESIONAL =====
             # TODO: Mover estos handlers a professional_handler.py
-            ConversationState.PROF_NEED_CERTIFICATE: self.handle_prof_need_certificate,
+            # ConversationState.PROF_NEED_CERTIFICATE: self.handle_prof_need_certificate,
+            # handlers de clave
+            ConversationState.PROF_NEED_ACCESS_KEY: self.handle_prof_need_access_key,
             ConversationState.PROF_MAIN_MENU: self.handle_prof_main_menu,
             ConversationState.PROF_FREE_SLOT_DATE: self.handle_prof_free_slot_date,
             ConversationState.PROF_FREE_SLOT_TIME: self.handle_prof_free_slot_time,
@@ -244,6 +252,7 @@ class BotController:
             ConversationState.PROF_WEEK_SCHEDULE_QUICK: self.handle_prof_week_schedule_quick,
             ConversationState.PROF_MANAGE_FREE_SLOTS: self.handle_prof_manage_free_slots,
             ConversationState.PROF_DELETE_FREE_SLOT: self.handle_prof_delete_free_slot,
+            ConversationState.PROF_VIEW_APPOINTMENTS: self.handle_prof_view_appointments,
 
             # Estados de información del profesional
             ConversationState.PROF_INFO_MENU: self.handle_prof_info_menu,
@@ -283,6 +292,12 @@ class BotController:
             ConversationState.CLIENT_CANCEL_REASON: self.handle_client_cancel_reason,
             ConversationState.CLIENT_CANCEL_SUCCESS: self.handle_client_cancel_success,
 
+            # Estados de reprogramación del cliente
+            ConversationState.CLIENT_RESCHEDULE_APPOINTMENT: self.handle_client_reschedule_appointment,
+            ConversationState.CLIENT_RESCHEDULE_SELECT_DATE: self.handle_client_reschedule_select_date,
+            ConversationState.CLIENT_RESCHEDULE_SELECT_TIME: self.handle_client_reschedule_select_time,
+            ConversationState.CLIENT_RESCHEDULE_CONFIRM: self.handle_client_reschedule_confirm,
+
         }
 
         return handlers.get(state, self.handle_unknown_state)
@@ -297,21 +312,44 @@ class BotController:
         return common_messages.WELCOME
 
     def handle_role_selection(self, session: SessionData, message: str) -> str:
-        """Maneja selección de rol - profesional o cliente."""
+        """Handle role selection - professional or client."""
         if message == '1':
-            # Usuario seleccionó opción 1 = CLIENTE/PACIENTE
+            # Cliente
             session.set_role(UserRole.CLIENT)
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return client_messages.CLIENT_MAIN_MENU
 
         elif message == '2':
-            # Usuario seleccionó opción 2 = PROFESIONAL
+            # Profesional
             session.set_role(UserRole.PROFESSIONAL)
-            session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
-            return professional_messages.PROF_NEED_CERTIFICATE
+
+            # ❌ ANTES: Check if professional already has certificate
+            # if professional_service.has_certificate(session.phone_number):
+            #     session.transition_to(ConversationState.PROF_MAIN_MENU)
+            #     return professional_messages.PROF_MAIN_MENU
+            # else:
+            #     session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
+            #     return professional_messages.PROF_NEED_CERTIFICATE
+
+            # ✅ AHORA: Verificar si ya tiene acceso autorizado
+            from src.database.database import db
+            prof = db.get_professional(session.phone_number)
+
+            if prof:
+                # Ya está registrado, ir directo al menú
+                print(
+                    f"[BOT] Profesional ya registrado: {session.phone_number}")
+                session.transition_to(ConversationState.PROF_MAIN_MENU)
+                return professional_messages.PROF_MAIN_MENU
+            else:
+                # No está registrado, pedir clave
+                print(
+                    f"[BOT] Profesional nuevo, requiere clave: {session.phone_number}")
+                session.transition_to(ConversationState.PROF_NEED_ACCESS_KEY)
+                return professional_messages.PROF_NEED_ACCESS_KEY
 
         else:
-            return common_messages.WELCOME + "\n\n⚠️ Por favor, elegí 1 o 2"
+            return common_messages.INVALID_ROLE
 
     # ==========================================
     # COMANDOS GLOBALES
@@ -357,9 +395,13 @@ class BotController:
 
     # === PROFESIONAL ===
 
-    def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
+    # def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
+    #     """Delega a professional_handler"""
+    #     return self.professional_handler.handle_prof_need_certificate(session, message)
+
+    def handle_prof_need_access_key(self, session: SessionData, message: str) -> str:
         """Delega a professional_handler"""
-        return self.professional_handler.handle_prof_need_certificate(session, message)
+        return self.professional_handler.handle_prof_need_access_key(session, message)
 
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
         """Delega a professional_handler"""
@@ -388,6 +430,10 @@ class BotController:
     def handle_prof_delete_free_slot(self, session: SessionData, message: str) -> str:
         """Delega a professional_handler"""
         return self.professional_handler.handle_prof_delete_free_slot(session, message)
+
+    def handle_prof_view_appointments(self, session: SessionData, message: str) -> str:
+        """Delega a professional_handler - Ver citas del profesional"""
+        return self.professional_handler.handle_prof_view_appointments(session, message)
 
     def handle_prof_info_menu(self, session: SessionData, message: str) -> str:
         """Delega a professional_handler"""
@@ -511,6 +557,22 @@ class BotController:
     def handle_client_cancel_success(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
         return self.client_handler.handle_client_cancel_success(session, message)
+
+    def handle_client_reschedule_appointment(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_reschedule_appointment(session, message)
+
+    def handle_client_reschedule_select_date(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_reschedule_select_date(session, message)
+
+    def handle_client_reschedule_select_time(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_reschedule_select_time(session, message)
+
+    def handle_client_reschedule_confirm(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler"""
+        return self.client_handler.handle_client_reschedule_confirm(session, message)
 
 
 # ==========================================

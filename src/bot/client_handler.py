@@ -1105,7 +1105,7 @@ class ClientHandler:
                             # Reprogramar
                             session.transition_to(
                                 ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-                            return "🚧 Reprogramar - Próximamente\n\n_Escribe *0* para volver_"
+                            return self.handle_client_reschedule_appointment(session, '1')
                         elif message == '2':
                             # Cancelar
                             session.transition_to(
@@ -1118,7 +1118,7 @@ class ClientHandler:
                             # Reprogramar
                             session.transition_to(
                                 ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-                            return "🚧 Reprogramar - Próximamente\n\n_Escribe *0* para volver_"
+                            return self.handle_client_reschedule_appointment(session, '1')
                         elif message == '2':
                             # Cancelar
                             session.transition_to(
@@ -1375,3 +1375,398 @@ class ClientHandler:
         else:
             # Opción inválida
             return "⚠️ Opción inválida.\n\n" + appointment_messages.CLIENT_APPOINTMENT_CANCELLED
+
+    # ==========================================
+    # REPROGRAMACIÓN DE CITAS
+    # ==========================================
+    def handle_client_reschedule_appointment(self, session: SessionData, message: str) -> str:
+        """
+        Inicio del flujo de reprogramación.
+
+        Valida que se pueda reprogramar (>24hs) y muestra fechas disponibles directamente.
+        """
+        from datetime import datetime, timedelta, date as date_type
+        import os
+
+        # Check for back command
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+
+        # Obtener appointment_id del temp_data
+        appointment_id = session.get_temp('appointment_id')
+
+        if not appointment_id:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: No hay cita seleccionada\n\n" + client_messages.CLIENT_MAIN_MENU
+
+        # Obtener datos de la cita
+        apt = db.get_appointment(appointment_id)
+
+        if not apt:
+            return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
+
+        # Validar que no esté cancelada o completada
+        if apt['status'] in ['cancelada_cliente', 'cancelada_profesional', 'completada']:
+            return f"❌ No puedes reprogramar una cita con estado: {apt['status']}\n\n_Escribe *0* para volver_"
+
+        # Calcular horas hasta la cita
+        apt_datetime = datetime.strptime(
+            f"{apt['appointment_date']} {apt['start_time']}",
+            "%Y-%m-%d %H:%M"
+        )
+        now = datetime.now()
+        hours_until = (apt_datetime - now).total_seconds() / 3600
+
+        # Validar tiempo mínimo (24 horas por defecto)
+        RESCHEDULE_HOURS_LIMIT = 24
+
+        # TESTING: Skip time validation if env var is set
+        if os.getenv('TESTING_SKIP_TIME_VALIDATION', '').lower() == 'true':
+            print(
+                f"[TEST] ⚠️ Skipping time validation for reschedule - original hours_until: {hours_until:.1f}")
+            hours_until = 48  # Simular suficiente tiempo
+
+        if hours_until < RESCHEDULE_HOURS_LIMIT:
+            # Muy tarde para reprogramar
+            return appointment_messages.CLIENT_RESCHEDULE_TOO_LATE.format(
+                hours_until=int(hours_until),
+                limit=RESCHEDULE_HOURS_LIMIT,
+                professional_phone=apt['professional_phone']
+            )
+
+        # Guardar datos originales de la cita
+        session.store_temp('original_date', apt['appointment_date'])
+        session.store_temp('original_start_time', apt['start_time'])
+        session.store_temp('original_end_time', apt['end_time'])
+        session.store_temp('professional_phone', apt['professional_phone'])
+        session.store_temp('professional_name', apt['professional_name'])
+        session.store_temp('duration', apt['duration_minutes'])
+        session.store_temp('modality', apt['modality'])
+
+        # ✅ CAMBIO: Transicionar directamente a selección de fecha
+        session.transition_to(ConversationState.CLIENT_RESCHEDULE_SELECT_DATE)
+
+        # ✅ CAMBIO: Llamar directamente al handler de selección de fecha
+        # Esto carga y muestra las fechas disponibles inmediatamente
+        return self.handle_client_reschedule_select_date(session, 'start')
+
+    def handle_client_reschedule_select_date(self, session: SessionData, message: str) -> str:
+        """
+        Maneja selección de nueva fecha para reprogramación.
+        """
+        from datetime import datetime
+        from src.services.professional_service import professional_service
+
+        # Check for back command
+        if message == '0':
+            # Volver al detalle de la cita
+            session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
+            appointment_id = session.get_temp('appointment_id')
+            if appointment_id:
+                apt = db.get_appointment(appointment_id)
+                if apt:
+                    return self._format_appointment_detail(session, apt)
+            return "❌ Error al volver.\n\n_Escribe *0* para menú_"
+
+        professional_phone = session.get_temp('professional_phone')
+        original_date = session.get_temp('original_date')
+        appointment_id = session.get_temp('appointment_id')
+
+        if not professional_phone or not original_date:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: Sesión expirada\n\n" + client_messages.CLIENT_MAIN_MENU
+
+        # ✅ CAMBIO: Verificar si ya se mostraron las fechas
+        dates_shown = session.get_temp('reschedule_dates_shown', False)
+
+        # ✅ Si es primer ingreso (viene de otro handler), mostrar fechas
+        if message == 'start' or not dates_shown:
+
+            # Buscar fechas disponibles
+            dates = professional_service.get_available_dates_for_reschedule(
+                professional_phone=professional_phone,
+                current_appointment_date=original_date,
+                current_appointment_id=appointment_id,
+                days_to_search=7,
+                max_dates=7
+            )
+
+            if not dates:
+                return appointment_messages.CLIENT_NO_DATES_AVAILABLE.format(days=7)
+
+            # Formatear lista de fechas
+            dates_list = []
+            for idx, date_info in enumerate(dates, 1):
+                # Etiqueta especial para hoy/mañana
+                day_label = date_info['day_name_short']
+                if date_info['is_today']:
+                    day_label = "HOY"
+                elif date_info['is_tomorrow']:
+                    day_label = "Mañana"
+
+                dates_list.append(
+                    f"{idx}️⃣ {day_label} {date_info['date_str']} "
+                    f"({date_info['slots_count']} horarios)"
+                )
+
+            formatted_dates = "\n".join(dates_list)
+
+            # ✅ CAMBIO: Guardar fechas Y marcar que ya se mostraron
+            session.store_temp('available_dates', dates)
+            session.store_temp('reschedule_dates_shown', True)
+
+            # Formatear fecha original
+            original_time = session.get_temp('original_start_time')
+            old_date_obj = datetime.strptime(original_date, "%Y-%m-%d")
+            old_date_str = old_date_obj.strftime("%d/%m/%Y")
+
+            return appointment_messages.CLIENT_RESCHEDULE_SELECT_DATE.format(
+                old_date=old_date_str,
+                old_time=original_time,
+                available_dates=formatted_dates
+            )
+
+        # ✅ Si llegó aquí, el usuario está seleccionando una fecha
+        try:
+            selection = int(message)
+            available_dates = session.get_temp('available_dates')
+
+            if not available_dates or selection < 1 or selection > len(available_dates):
+                return "⚠️ Opción inválida.\n\n_Escribe el número de la fecha o *0* para volver_"
+
+            selected_date = available_dates[selection - 1]
+
+            # Guardar fecha seleccionada
+            session.store_temp('new_date', selected_date['date_db'])
+            session.store_temp('new_date_str', selected_date['date_str'])
+
+            # ✅ IMPORTANTE: Limpiar el flag de fechas mostradas
+            session.store_temp('reschedule_dates_shown', False)
+
+            # Transicionar a selección de horario
+            session.transition_to(
+                ConversationState.CLIENT_RESCHEDULE_SELECT_TIME)
+
+            # Llamar directamente al handler de selección de horario
+            return self.handle_client_reschedule_select_time(session, 'start')
+
+        except ValueError:
+            return "⚠️ Por favor, ingresa el número de la fecha.\n\n_Escribe *0* para volver_"
+
+    def handle_client_reschedule_select_time(self, session: SessionData, message: str) -> str:
+        """
+        Maneja selección de nuevo horario para reprogramación.
+        """
+        from datetime import datetime, timedelta
+        from src.services.professional_service import professional_service
+
+        # Check for back command
+        if message == '0':
+            # Volver a selección de fecha
+            session.transition_to(
+                ConversationState.CLIENT_RESCHEDULE_SELECT_DATE)
+            return self.handle_client_reschedule_select_date(session, 'start')
+
+        professional_phone = session.get_temp('professional_phone')
+        new_date = session.get_temp('new_date')
+        new_date_str = session.get_temp('new_date_str')
+
+        if not professional_phone or not new_date:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: Sesión expirada\n\n" + client_messages.CLIENT_MAIN_MENU
+
+        # ✅ CAMBIO: Si viene del inicio O es primer ingreso, mostrar horarios
+        if message == 'start' or not message or message == '':
+
+            # Obtener slots disponibles para la fecha
+            slots = professional_service.get_available_slots(
+                professional_phone,
+                new_date,
+                exclude_appointment_id=session.get_temp(
+                    'appointment_id')  # Excluir cita actual
+            )
+
+            if not slots:
+                return appointment_messages.CLIENT_NO_SLOTS_AVAILABLE
+
+            # Formatear lista de horarios
+            slots_list = []
+            for idx, slot in enumerate(slots, 1):
+                slots_list.append(
+                    f"{idx}️⃣ {slot['start_time']} - {slot['end_time']}")
+
+            formatted_slots = "\n".join(slots_list)
+
+            # Guardar slots en temp
+            session.store_temp('available_slots', slots)
+
+            return appointment_messages.CLIENT_RESCHEDULE_SELECT_TIME.format(
+                new_date=new_date_str,
+                available_slots=formatted_slots
+            )
+
+        # Usuario seleccionó un horario
+        try:
+            selection = int(message)
+            available_slots = session.get_temp('available_slots')
+
+            if not available_slots or selection < 1 or selection > len(available_slots):
+                return "⚠️ Opción inválida.\n\n_Escribe el número del horario o *0* para volver_"
+
+            selected_slot = available_slots[selection - 1]
+
+            # Guardar horario seleccionado
+            session.store_temp('new_start_time', selected_slot['start_time'])
+            session.store_temp('new_end_time', selected_slot['end_time'])
+
+            # Transicionar a confirmación
+            session.transition_to(ConversationState.CLIENT_RESCHEDULE_CONFIRM)
+
+            # Formatear fechas para confirmación
+            original_date = session.get_temp('original_date')
+            original_time = session.get_temp('original_start_time')
+
+            old_date_obj = datetime.strptime(original_date, "%Y-%m-%d")
+            old_date_formatted = old_date_obj.strftime("%d/%m/%Y")
+
+            professional_name = session.get_temp('professional_name')
+
+            return appointment_messages.CLIENT_RESCHEDULE_CONFIRM.format(
+                old_date=old_date_formatted,
+                old_time=original_time,
+                new_date=new_date_str,
+                new_time=selected_slot['start_time'],
+                professional_name=professional_name
+            )
+
+        except ValueError:
+            return "⚠️ Por favor, ingresa el número del horario.\n\n_Escribe *0* para volver_"
+
+    def handle_client_reschedule_confirm(self, session: SessionData, message: str) -> str:
+        """
+        Confirma y ejecuta la reprogramación de la cita.
+        """
+        from datetime import datetime
+
+        # Check for back/cancel
+        if message == '0':
+            # Volver a selección de horario
+            session.transition_to(
+                ConversationState.CLIENT_RESCHEDULE_SELECT_TIME)
+            return self.handle_client_reschedule_select_time(session, '')
+
+        if message != '1':
+            return "⚠️ Por favor, ingresa *1* para confirmar o *0* para cancelar."
+
+        # Obtener datos de temp
+        appointment_id = session.get_temp('appointment_id')
+        new_date = session.get_temp('new_date')
+        new_start_time = session.get_temp('new_start_time')
+        new_end_time = session.get_temp('new_end_time')
+        new_date_str = session.get_temp('new_date_str')
+        professional_name = session.get_temp('professional_name')
+
+        if not all([appointment_id, new_date, new_start_time, new_end_time]):
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: Datos incompletos\n\n" + client_messages.CLIENT_MAIN_MENU
+
+        # Actualizar cita en BD
+        success = db.update_appointment_datetime(
+            appointment_id=appointment_id,
+            new_date=new_date,
+            new_start_time=new_start_time,
+            new_end_time=new_end_time,
+            changed_by='client'
+        )
+
+        if not success:
+            return "❌ Error al reprogramar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+
+        # TODO: Crear notificación para el profesional
+        # db.create_notification(...)
+
+        # NO limpiar temp_data - se usará en el estado de éxito
+        # Transicionar a estado de éxito (reutilizamos CLIENT_CANCEL_SUCCESS)
+        session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
+
+        # Retornar mensaje de éxito
+        return appointment_messages.CLIENT_RESCHEDULE_SUCCESS.format(
+            new_date=new_date_str,
+            new_time=new_start_time,
+            professional_name=professional_name
+        )
+
+    # Helper method para formatear detalle de cita
+    def _format_appointment_detail(self, session: SessionData, apt: dict) -> str:
+        """
+        Helper para formatear el detalle de una cita.
+        Reutilizable desde múltiples handlers.
+        """
+        from datetime import datetime
+
+        # Formatear fecha completa
+        date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
+
+        dias = ['Lunes', 'Martes', 'Miércoles',
+                'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+        dia_semana = dias[date_obj.weekday()]
+        dia_numero = date_obj.day
+        mes = meses[date_obj.month - 1]
+        anio = date_obj.year
+
+        date_full = f"{dia_semana} {dia_numero} de {mes} de {anio}"
+
+        # Badge de estado
+        if apt['status'] == 'pendiente_confirmacion':
+            status_badge = "Estado: ⏳ *Pendiente de confirmación*"
+        elif apt['status'] == 'confirmada':
+            status_badge = "Estado: ✅ *Confirmada*"
+        elif apt['status'] == 'completada':
+            status_badge = "Estado: ✔️ *Completada*"
+        else:
+            status_badge = "Estado: ❌ *Cancelada*"
+
+        # Modalidad
+        modality_icons = {
+            'presencial': '🏥 Presencial',
+            'virtual': '💻 Virtual',
+            'ambas': '🏥💻 Presencial o Virtual'
+        }
+        modality = modality_icons.get(apt['modality'], apt['modality'])
+
+        # Opciones según estado
+        if apt['status'] == 'pendiente_confirmacion':
+            options = appointment_messages.CLIENT_APPOINTMENT_OPTIONS_PENDING
+        elif apt['status'] == 'confirmada':
+            options = appointment_messages.CLIENT_APPOINTMENT_OPTIONS_CONFIRMED
+        elif apt['status'] == 'completada':
+            options = appointment_messages.CLIENT_APPOINTMENT_FINISHED
+        else:
+            options = appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED
+
+        # Razón (si existe)
+        reason_display = ""
+        if apt.get('reason'):
+            reason_display = f"\n📝 Motivo: {apt['reason']}"
+
+        return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
+            id=session.get_temp('selected_appointment_number', apt['id']),
+            date=date_full,
+            time=apt['start_time'],
+            professional_name=apt['professional_name'],
+            professional_phone=apt['professional_phone'],
+            modality=modality,
+            duration=apt['duration_minutes'],
+            reason_display=reason_display,
+            status_badge=status_badge,
+            options=options
+        )
