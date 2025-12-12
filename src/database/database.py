@@ -1573,6 +1573,68 @@ class Database:
             print(f"[DB] ❌ Error getting pending notifications: {e}")
             return []
 
+    def check_slot_availability(
+        self,
+        professional_phone: str,
+        date: str,
+        start_time: str,
+        end_time: str,
+        exclude_appointment_id: int = None
+    ) -> bool:
+        """
+        Verificar si un slot está disponible.
+
+        Args:
+            professional_phone: Teléfono del profesional
+            date: Fecha en formato YYYY-MM-DD
+            start_time: Hora de inicio HH:MM
+            end_time: Hora de fin HH:MM
+            exclude_appointment_id: ID de cita a excluir (para reprogramación)
+
+        Returns:
+            True si está disponible, False si está ocupado
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Buscar citas que se solapen con este horario
+                query = """
+                    SELECT COUNT(*) as count
+                    FROM appointments
+                    WHERE professional_phone = ?
+                    AND appointment_date = ?
+                    AND status NOT IN ('cancelada_cliente', 'cancelada_profesional')
+                    AND (
+                        (start_time >= ? AND start_time < ?) OR
+                        (end_time > ? AND end_time <= ?) OR
+                        (start_time <= ? AND end_time >= ?)
+                    )
+                """
+
+                params = [
+                    professional_phone,
+                    date,
+                    start_time, end_time,
+                    start_time, end_time,
+                    start_time, end_time
+                ]
+
+                # Excluir cita específica si se proporciona
+                if exclude_appointment_id:
+                    query += " AND id != ?"
+                    params.append(exclude_appointment_id)
+
+                cursor.execute(query, params)
+                result = cursor.fetchone()
+
+                # Disponible si count == 0
+                return result['count'] == 0
+
+        except Exception as e:
+            print(f"[DB] ❌ Error checking slot availability: {e}")
+            return False
+
 
 # Global database instance
 db = Database()
