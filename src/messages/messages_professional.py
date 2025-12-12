@@ -26,52 +26,106 @@ class ProfessionalMessages:
     # PROFESSIONAL - CERTIFICATE UPLOAD
     # ==========================================
 
-    PROF_NEED_CERTIFICATE = f"""{DomainConfig.EMOJI_CERTIFICATE} *Registro de {DomainConfig.PROFESSIONAL_TITLE}*
+#     PROF_NEED_CERTIFICATE = f"""{DomainConfig.EMOJI_CERTIFICATE} *Registro de {DomainConfig.PROFESSIONAL_TITLE}*
 
-Para comenzar, necesito que subas tu {DomainConfig.CERTIFICATE_NAME}.
+# Para comenzar, necesito que subas tu {DomainConfig.CERTIFICATE_NAME}.
 
-📎 Envía una foto o PDF de tu:
-• Matrícula profesional
-• Título habilitante
-• Documento que acredite tu profesión
+# 📎 Envía una foto o PDF de tu:
+# • Matrícula profesional
+# • Título habilitante
+# • Documento que acredite tu profesión
 
-⚠️ Solo {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} verificados aparecen en búsquedas.
+# ⚠️ Solo {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} verificados aparecen en búsquedas.
+
+# _Escribe *0* para volver al menú_"""
+
+#     PROF_UPLOADING_CERTIFICATE = """📎 *Subiendo Certificado*
+
+# Procesando tu archivo...
+
+# Por favor espera un momento."""
+
+#     PROF_CERTIFICATE_RECEIVED = """✅ *¡Certificado recibido!*
+
+# Tu certificado ha sido guardado y verificado.
+
+# Ya puedes gestionar tu agenda y perfil profesional.
+
+# _Presiona cualquier tecla para continuar_"""
+
+#     PROF_CERTIFICATE_ERROR = """❌ *Error al guardar certificado*
+
+# No pudimos procesar el archivo.
+
+# Por favor, intenta nuevamente enviando:
+# • Una imagen (JPG, PNG)
+# • Un PDF
+# • Tamaño menor a 10MB
+
+# _Escribe *0* para volver_"""
+
+#     PROF_CERTIFICATE_INVALID_FORMAT = """❌ *Formato no válido*
+
+# Solo se aceptan:
+# • Imágenes: JPG, PNG
+# • Documentos: PDF
+
+# Por favor, envía un archivo válido."""
+
+    # ==========================================
+    # PROFESSIONAL - ACCESS KEY VERIFICATION
+    # ==========================================
+
+    PROF_NEED_ACCESS_KEY = f"""🔑 *Acceso de {DomainConfig.PROFESSIONAL_TITLE}*
+
+Para acceder al sistema, necesitas una clave de acceso.
+
+Esta clave es proporcionada por la administración.
+
+Por favor, ingresa tu clave de acceso:
 
 _Escribe *0* para volver al menú_"""
 
-    PROF_UPLOADING_CERTIFICATE = """📎 *Subiendo Certificado*
-
-Procesando tu archivo...
+    PROF_VERIFY_KEY = """🔄 *Verificando clave...*
 
 Por favor espera un momento."""
 
-    PROF_CERTIFICATE_RECEIVED = """✅ *¡Certificado recibido!*
+    PROF_KEY_VALID = """✅ *¡Acceso autorizado!*
 
-Tu certificado ha sido guardado y verificado.
+Bienvenido al sistema de gestión.
 
 Ya puedes gestionar tu agenda y perfil profesional.
 
-_Presiona cualquier tecla para continuar_"""
+_Presiona cualquier tecla para continuar al menú_"""
 
-    PROF_CERTIFICATE_ERROR = """❌ *Error al guardar certificado*
+    PROF_KEY_INVALID = """❌ *Clave inválida*
 
-No pudimos procesar el archivo.
+La clave ingresada no es correcta.
 
-Por favor, intenta nuevamente enviando:
-• Una imagen (JPG, PNG)
-• Un PDF
-• Tamaño menor a 10MB
+Por favor:
+- Verifica que hayas ingresado la clave correctamente
+- Contacta a la administración si no tienes una clave
+- Intenta nuevamente
 
 _Escribe *0* para volver_"""
 
-    PROF_CERTIFICATE_INVALID_FORMAT = """❌ *Formato no válido*
+    PROF_KEY_EXPIRED = """⏰ *Clave expirada*
 
-Solo se aceptan:
-• Imágenes: JPG, PNG
-• Documentos: PDF
+Esta clave ya no es válida.
 
-Por favor, envía un archivo válido."""
+Por favor contacta a la administración para obtener una nueva clave.
 
+_Escribe *0* para volver_"""
+
+    PROF_KEY_ALREADY_USED = """⚠️ *Clave ya utilizada*
+
+Esta clave ya fue usada por otro profesional.
+
+Cada clave solo puede usarse una vez.
+
+Por favor contacta a la administración para obtener una nueva clave.
+
+_Escribe *0* para volver_"""
     # ==========================================
     # PROFESSIONAL - MAIN MENU
     # ==========================================
@@ -638,7 +692,7 @@ Valores aceptados:
 ━━━━━━━━━━━━━━━━━━━━
 
 - zona: norte, sur (o n, s)
-- genero: masculino, femenino, otro (o m, f, o)
+- genero: masculino, femenino (m, f)
 - prepaga: si, no (o s, n)
 - especialidad: texto libre
 - bio: texto libre (opcional)
