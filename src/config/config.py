@@ -44,6 +44,24 @@ class Config:
     CERTIFICATES_DIR = os.getenv('CERTIFICATES_DIR', './certificates')
 
     # ==========================================
+    # SISTEMA DE CLAVES DE ACCESO
+    # ==========================================
+
+    # Claves válidas para profesionales
+    # Formato: { "clave": {"used": False, "created_by": "admin", "expires": "2025-12-31"} }
+    PROFESSIONAL_ACCESS_KEYS = {
+        "PSICO2025": {"used": False, "created_by": "admin", "expires": None},
+        "DEMO12345": {"used": False, "created_by": "admin", "expires": None},
+        # Agregar más claves según sea necesario
+    }
+
+    # Alternativamente, usar una clave maestra que siempre funciona (para testing)
+    MASTER_ACCESS_KEY = os.getenv('MASTER_ACCESS_KEY', 'ADMIN2025')
+
+    # Permitir múltiples usos de la misma clave (False = una clave solo se usa una vez)
+    ALLOW_KEY_REUSE = os.getenv('ALLOW_KEY_REUSE', 'false').lower() == 'true'
+
+    # ==========================================
     # VALIDATION
     # ==========================================
     @staticmethod
