@@ -65,12 +65,11 @@ def webhook():
 
     Handles:
     - Text messages
-    - Media files (images, PDFs)
+    - Media files (images, PDFs) - OPCIONAL, ahora sin certificados
 
     Returns:
     - TwiML response with bot's reply
     """
-
     # Extract message data from Twilio request
     incoming_msg = request.values.get('Body', '').strip()
     sender = request.values.get('From', '')  # Format: whatsapp:+1234567890
@@ -88,12 +87,17 @@ def webhook():
     print(f"Media files: {num_media}")
     print(f"{'='*50}\n")
 
+    # ✅ CAMBIO: Ya no procesamos certificados
     # Determine response based on message type
     if num_media > 0:
-        # Handle media upload (certificate)
-        reply = handle_media_upload(sender_clean, num_media)
+        # ❌ ANTES: Handle media upload (certificate)
+        # reply = handle_media_upload(sender_clean, num_media)
+
+        # ✅ AHORA: Informar que no se procesan archivos (o guardarlos para otro uso futuro)
+        reply = handle_media_upload(
+            sender_clean, num_media)  # Mantener por si acaso
     else:
-        # Handle text message (echo for testing)
+        # Handle text message
         reply = handle_text_message(sender_clean, incoming_msg)
 
     # Create TwiML response
@@ -101,11 +105,10 @@ def webhook():
     response.message(reply)
 
     # Log outgoing response
-    # DEBUG: Print TwiML XML being sent to Twilio
     twiml_response = str(response)
-    print(f" TwiML XML:")
+    print(f"📤 TwiML XML:")
     print(twiml_response)
-    print(f" TwiML Length: {len(twiml_response)}\n")
+    print(f"📊 TwiML Length: {len(twiml_response)}\n")
 
     return twiml_response
 
@@ -131,6 +134,9 @@ def handle_text_message(sender, message):
 
 def handle_media_upload(sender, num_media):
     """
+    NOTA: Sistema de certificados deshabilitado.
+    Esta función se mantiene para futuras funcionalidades de media.
+
     Handle incoming media files (images, PDFs).
     Downloads and stores files locally.
 
