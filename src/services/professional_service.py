@@ -651,6 +651,271 @@ class ProfessionalService:
         }
         return genders.get(gender, '❌ No configurado')
 
+    def get_available_slots(
+        self,
+        professional_phone: str,
+        date: str,
+        duration_minutes: int = 50,
+        exclude_appointment_id: int = None
+    ) -> List[Dict]:
+        """
+        Obtener slots disponibles para un profesional en una fecha específica.
+
+        Genera slots basándose en:
+        1. Horarios libres específicos (specific_free_slots)
+        2. Horario laboral general (9:00-18:00 si no hay weekly_schedule)
+        3. Excluye slots ocupados por citas existentes
+
+        Args:
+            professional_phone: Teléfono del profesional
+            date: Fecha en formato YYYY-MM-DD
+            duration_minutes: Duración de cada slot (default 50 min)
+            exclude_appointment_id: ID de cita a excluir (para reprogramación)
+
+        Returns:
+            Lista de slots disponibles:
+            [
+                {
+                    'start_time': '10:00',
+                    'end_time': '10:50',
+                    'date': '2025-12-15'
+                },
+                ...
+            ]
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            # Convertir fecha a datetime
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            day_of_week = date_obj.weekday()  # 0=Lunes, 6=Domingo
+
+            available_slots = []
+
+            # ==========================================
+            # PASO 1: Verificar slots libres específicos
+            # ==========================================
+            specific_free_slots = self.db.get_free_slots(
+                professional_phone,
+                from_date=date
+            )
+
+            for free_slot in specific_free_slots:
+                if free_slot['date'] == date:
+                    # Este día tiene un slot libre específico
+                    start_time = datetime.strptime(
+                        free_slot['start_time'], "%H:%M")
+                    end_time = datetime.strptime(
+                        free_slot['end_time'], "%H:%M")
+
+                    # Generar slots de duración específica dentro del rango
+                    current_time = start_time
+                    while current_time + timedelta(minutes=duration_minutes) <= end_time:
+                        slot_start = current_time.strftime("%H:%M")
+                        slot_end = (
+                            current_time + timedelta(minutes=duration_minutes)).strftime("%H:%M")
+
+                        # Verificar que el slot no esté ocupado
+                        is_available = self.db.check_slot_availability(
+                            professional_phone,
+                            date,
+                            slot_start,
+                            slot_end,
+                            exclude_appointment_id=exclude_appointment_id
+                        )
+
+                        if is_available:
+                            available_slots.append({
+                                'start_time': slot_start,
+                                'end_time': slot_end,
+                                'date': date
+                            })
+
+                        # Avanzar al siguiente slot (con buffer de 10 min)
+                        current_time += timedelta(minutes=duration_minutes + 10)
+
+            # Si hay slots específicos, solo retornar esos
+            if available_slots:
+                return available_slots
+
+            # ==========================================
+            # PASO 2: Verificar horario semanal
+            # ==========================================
+            weekly_schedule = self.db.get_weekly_schedule(professional_phone)
+
+            # Buscar si este día está en el horario semanal
+            day_schedule = None
+            for schedule in weekly_schedule:
+                if schedule['day_of_week'] == day_of_week and not schedule.get('is_busy', True):
+                    day_schedule = schedule
+                    break
+
+            # Si no hay horario semanal para este día, usar horario por defecto
+            if not day_schedule:
+                # Verificar si el día está marcado como ocupado
+                is_busy_day = any(
+                    s['day_of_week'] == day_of_week and s.get('is_busy', True)
+                    for s in weekly_schedule
+                )
+
+                if is_busy_day:
+                    # Día completamente ocupado en el schedule semanal
+                    return []
+
+                # Día no tiene schedule = usar horario por defecto 9:00-18:00
+                start_time = datetime.strptime("09:00", "%H:%M")
+                end_time = datetime.strptime("18:00", "%H:%M")
+            else:
+                # Usar horario del schedule semanal
+                start_time = datetime.strptime(
+                    day_schedule['start_time'], "%H:%M")
+                end_time = datetime.strptime(day_schedule['end_time'], "%H:%M")
+
+            # ==========================================
+            # PASO 3: Generar slots dentro del horario
+            # ==========================================
+            current_time = start_time
+            while current_time + timedelta(minutes=duration_minutes) <= end_time:
+                slot_start = current_time.strftime("%H:%M")
+                slot_end = (
+                    current_time + timedelta(minutes=duration_minutes)).strftime("%H:%M")
+
+                # Verificar que el slot no esté ocupado por una cita
+                is_available = self.db.check_slot_availability(
+                    professional_phone,
+                    date,
+                    slot_start,
+                    slot_end,
+                    exclude_appointment_id=exclude_appointment_id
+                )
+
+                if is_available:
+                    available_slots.append({
+                        'start_time': slot_start,
+                        'end_time': slot_end,
+                        'date': date
+                    })
+
+                # Avanzar al siguiente slot (duración + 10 min de buffer)
+                current_time += timedelta(minutes=duration_minutes + 10)
+
+            return available_slots
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error getting available slots: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def get_available_dates_for_reschedule(
+        self,
+        professional_phone: str,
+        current_appointment_date: str,
+        current_appointment_id: int,
+        days_to_search: int = 7,
+        max_dates: int = 7
+    ) -> List[Dict]:
+        """
+        Obtener fechas disponibles para reprogramar una cita.
+
+        Busca desde HOY hasta los próximos 7 días (semana actual).
+        Excluye la fecha actual de la cita.
+
+        Args:
+            professional_phone: Teléfono del profesional
+            current_appointment_date: Fecha actual de la cita (YYYY-MM-DD)
+            current_appointment_id: ID de la cita a reprogramar
+            days_to_search: Cuántos días buscar desde hoy (default 7)
+            max_dates: Máximo de fechas a retornar (default 7)
+
+        Returns:
+            Lista de fechas disponibles:
+            [
+                {
+                    'date': datetime.date(2025, 12, 12),
+                    'date_str': '12/12/2025',
+                    'day_name': 'Jueves',
+                    'day_name_short': 'Jue',
+                    'slots_count': 5,
+                    'is_today': False,
+                    'is_tomorrow': True
+                },
+                ...
+            ]
+        """
+        from datetime import datetime, timedelta, date as date_type
+
+        try:
+            today = date_type.today()
+            current_time = datetime.now()
+
+            # Determinar desde qué día empezar
+            # Si es muy tarde hoy (después de las 16:00), empezar desde mañana
+            if current_time.hour >= 16:
+                start_date = today + timedelta(days=1)
+                print(
+                    f"[PROF_SERVICE] ⏰ Es tarde ({current_time.hour}:00), empezando desde mañana")
+            else:
+                start_date = today
+                print(f"[PROF_SERVICE] 📅 Buscando desde hoy")
+
+            available_dates = []
+
+            # Buscar en los próximos N días
+            for days_ahead in range(days_to_search):
+                check_date = start_date + timedelta(days=days_ahead)
+                date_str_db = check_date.strftime("%Y-%m-%d")
+
+                # ✅ IMPORTANTE: Excluir la fecha actual de la cita
+                if date_str_db == current_appointment_date:
+                    print(
+                        f"[PROF_SERVICE] ⏭️  Saltando fecha actual de la cita: {date_str_db}")
+                    continue
+
+                # Obtener slots disponibles para esta fecha
+                slots = self.get_available_slots(
+                    professional_phone,
+                    date_str_db,
+                    duration_minutes=50,
+                    exclude_appointment_id=current_appointment_id
+                )
+
+                # Si hay slots disponibles, agregar la fecha
+                if slots:
+                    # Nombres de días en español
+                    day_names = ['Lunes', 'Martes', 'Miércoles',
+                                 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+                    day_names_short = ['Lun', 'Mar',
+                                       'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+                    date_info = {
+                        'date': check_date,
+                        'date_str': check_date.strftime("%d/%m/%Y"),
+                        'date_db': date_str_db,
+                        'day_name': day_names[check_date.weekday()],
+                        'day_name_short': day_names_short[check_date.weekday()],
+                        'slots_count': len(slots),
+                        'is_today': check_date == today,
+                        'is_tomorrow': check_date == today + timedelta(days=1)
+                    }
+
+                    available_dates.append(date_info)
+
+                    print(
+                        f"[PROF_SERVICE] ✅ {date_info['day_name']} {date_info['date_str']}: {len(slots)} slots")
+
+                    # Limitar cantidad de fechas
+                    if len(available_dates) >= max_dates:
+                        break
+
+            return available_dates
+
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error getting available dates: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
 
 # Global professional service instance
 professional_service = ProfessionalService()
