@@ -589,7 +589,7 @@ Valores aceptados:
 - fecha: DD/MM/YYYY - OPCIONAL
 - hora: HH:MM - OPCIONAL
 - prepaga: si, no (o s, n) - OPCIONAL
-- genero: masculino, femenino, otro (o m, f, o) - OPCIONAL
+- genero: masculino, femenino (m, f) - OPCIONAL
 
 💡 Todos los campos son opcionales
 💡 Puedes enviar solo los filtros que necesites
