@@ -396,9 +396,8 @@ Estado: *Confirmada* ✅
 El {DomainConfig.PROFESSIONAL_TITLE_LOWER} ha sido notificado del cambio.
 
 ¿Qué deseas hacer?
-1️⃣ Ver detalle de la {DomainConfig.APPOINTMENT_NAME}
-2️⃣ Ver todas mis {DomainConfig.APPOINTMENT_NAME_PLURAL}
-0️⃣ Menú principal"""
+1️⃣ Ver todas mis {DomainConfig.APPOINTMENT_NAME}
+2️⃣ Menú principal"""
 
     # ==========================================
     # PROFESSIONAL - VIEW APPOINTMENTS
