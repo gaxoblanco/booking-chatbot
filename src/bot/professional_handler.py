@@ -49,25 +49,123 @@ class ProfessionalHandler:
     # ==========================================
     # CERTIFICADO Y MENÚ PRINCIPAL
     # ==========================================
+    # def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
+    #     """
+    #     Handle certificate requirement state.
+    #     Professional MUST upload certificate before accessing any menu.
+    #     Block all text inputs until file is uploaded.
+    #     Note: File upload is handled separately in whatsapp_handler.py
+    #     """
+    #     # Block '0' and any other text input
+    #     # User must upload certificate file to continue
+    #     return professional_messages.PROF_NEED_CERTIFICATE
 
-    def handle_prof_need_certificate(self, session: SessionData, message: str) -> str:
-        """
-        Handle certificate requirement state.
-        Professional MUST upload certificate before accessing any menu.
-        Block all text inputs until file is uploaded.
-        Note: File upload is handled separately in whatsapp_handler.py
-        """
-        # Block '0' and any other text input
-        # User must upload certificate file to continue
-        return professional_messages.PROF_NEED_CERTIFICATE
+    # def handle_prof_certificate_uploaded(self, session: SessionData) -> str:
+    #     """
+    #     Called from whatsapp_handler when certificate is uploaded.
+    #     Transitions to main menu.
+    #     """
+    #     session.transition_to(ConversationState.PROF_MAIN_MENU)
+    #     return professional_messages.PROF_CERTIFICATE_RECEIVED + "\n\n" + professional_messages.PROF_MAIN_MENU
 
-    def handle_prof_certificate_uploaded(self, session: SessionData) -> str:
+    # ==========================================
+    # VERIFICACIÓN DE CLAVE DE ACCESO
+    # ==========================================
+
+    def handle_prof_need_access_key(self, session: SessionData, message: str) -> str:
         """
-        Called from whatsapp_handler when certificate is uploaded.
-        Transitions to main menu.
+        Solicitar clave de acceso al profesional.
+
+        El profesional debe ingresar una clave válida proporcionada por la administración.
         """
+        from src.config.config import Config
+
+        # Permitir volver
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.START)
+            from src.messages.messages_common import common_messages
+            return common_messages.WELCOME
+
+        # Si no hay mensaje, mostrar instrucciones
+        if not message or message.strip() == '':
+            return professional_messages.PROF_NEED_ACCESS_KEY
+
+        # Intentar validar la clave
+        key = message.strip().upper()
+
+        # Verificar clave maestra
+        if key == Config.MASTER_ACCESS_KEY:
+            # Clave maestra siempre válida
+            return self._activate_professional_access(session, key, is_master=True)
+
+        # Verificar claves normales
+        if key in Config.PROFESSIONAL_ACCESS_KEYS:
+            key_info = Config.PROFESSIONAL_ACCESS_KEYS[key]
+
+            # Verificar si ya fue usada
+            if key_info.get('used', False) and not Config.ALLOW_KEY_REUSE:
+                return professional_messages.PROF_KEY_ALREADY_USED
+
+            # Verificar si expiró
+            if key_info.get('expires'):
+                from datetime import datetime
+                expires = datetime.strptime(key_info['expires'], "%Y-%m-%d")
+                if datetime.now() > expires:
+                    return professional_messages.PROF_KEY_EXPIRED
+
+            # Clave válida - activar acceso
+            return self._activate_professional_access(session, key, is_master=False)
+
+        # Clave inválida
+        return professional_messages.PROF_KEY_INVALID
+
+    def _activate_professional_access(self, session: SessionData, key: str, is_master: bool = False) -> str:
+        """
+        Activar acceso del profesional después de validar la clave.
+
+        Args:
+            session: Sesión del usuario
+            key: Clave utilizada
+            is_master: Si es la clave maestra
+        """
+        from src.config.config import Config
+        from src.database.database import db
+
+        # Marcar clave como usada (solo si no es maestra y no se permite reuso)
+        if not is_master and not Config.ALLOW_KEY_REUSE:
+            Config.PROFESSIONAL_ACCESS_KEYS[key]['used'] = True
+            Config.PROFESSIONAL_ACCESS_KEYS[key]['used_by'] = session.phone_number
+            Config.PROFESSIONAL_ACCESS_KEYS[key]['used_at'] = datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S")
+
+        # Crear o actualizar profesional en BD
+        # Verificar si ya existe
+        prof = db.get_professional(session.phone_number)
+
+        if not prof:
+            # Crear nuevo profesional con datos básicos
+            db.add_professional(
+                phone=session.phone_number,
+                name="Profesional Nuevo",  # Se actualizará después
+                email="",
+                zone="sur",  # Default
+                gender="otro",
+                accept_prepaga=False,
+                category=""
+            )
+            print(f"[PROF] ✅ Nuevo profesional creado: {session.phone_number}")
+        else:
+            print(f"[PROF] ℹ️ Profesional ya existe: {session.phone_number}")
+
+        # Guardar info de la clave usada (opcional)
+        session.store_temp('access_key_used', key)
+        session.store_temp('is_master_key', is_master)
+
+        # Transicionar al menú principal
         session.transition_to(ConversationState.PROF_MAIN_MENU)
-        return professional_messages.PROF_CERTIFICATE_RECEIVED + "\n\n" + professional_messages.PROF_MAIN_MENU
+
+        return professional_messages.PROF_KEY_VALID + "\n\n" + professional_messages.PROF_MAIN_MENU
 
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
         """Handle professional main menu."""
@@ -366,6 +464,12 @@ class ProfessionalHandler:
         """Ver lista de citas del profesional."""
         from src.database.database import db
 
+        # Check for back command
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return professional_messages.PROF_MAIN_MENU
+
         # Obtener citas del profesional
         appointments = db.get_appointments_by_professional(
             professional_phone=session.phone_number,
@@ -374,7 +478,8 @@ class ProfessionalHandler:
         )
 
         if not appointments or len(appointments) == 0:
-            return appointment_messages.PROF_NO_APPOINTMENTS + "\n\n" + professional_messages.PROF_MAIN_MENU
+            # También aquí, solo el mensaje de "no hay citas"
+            return appointment_messages.PROF_NO_APPOINTMENTS
 
         # Usar el mensaje que SÍ existe
         response = appointment_messages.PROF_VIEW_APPOINTMENTS
@@ -389,7 +494,9 @@ class ProfessionalHandler:
         # Footer simple
         response += "\n\n_Escribe el número para ver detalle_"
         response += "\n_0️⃣ Volver al menú_"
-        response += "\n\n" + professional_messages.PROF_MAIN_MENU
+
+        # Guardar lista para siguiente selección
+        session.store_temp('appointment_list', appointments)
 
         return response
 
