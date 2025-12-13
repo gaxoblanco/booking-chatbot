@@ -24,48 +24,47 @@ from src.bot.bot_controller import bot_controller
 class Bot:
     """
     Wrapper class para retrocompatibilidad.
-    
+
     Delega todas las llamadas al bot_controller real.
     Esta clase es simplemente un puente para mantener
     la interfaz pública sin cambios.
     """
-    
+
     def __init__(self):
         """
         Inicializar wrapper.
-        
+
         El bot real (bot_controller) se importa como módulo
         y ya está instanciado.
         """
         self.controller = bot_controller
-        self.messages = bot_controller.messages
-    
+
     def process_message(self, phone_number: str, message: str) -> str:
         """
         Procesa mensaje entrante y retorna respuesta.
-        
+
         Esta es la interfaz pública principal del bot.
         Delega directamente a bot_controller.
-        
+
         Args:
             phone_number: Número de WhatsApp del usuario
             message: Mensaje de texto del usuario
-            
+
         Returns:
             Respuesta del bot (string)
         """
         return self.controller.process_message(phone_number, message)
-    
+
     def handle_prof_certificate_uploaded(self, session):
         """
         Maneja evento de certificado subido.
-        
+
         Llamado desde whatsapp_handler.py cuando un profesional
         sube su certificado.
-        
+
         Args:
             session: SessionData del profesional
-            
+
         Returns:
             Mensaje de confirmación con menú
         """

@@ -50,9 +50,20 @@ class Config:
     # Claves válidas para profesionales
     # Formato: { "clave": {"used": False, "created_by": "admin", "expires": "2025-12-31"} }
     PROFESSIONAL_ACCESS_KEYS = {
-        "PSICO2025": {"used": False, "created_by": "admin", "expires": None},
-        "DEMO12345": {"used": False, "created_by": "admin", "expires": None},
-        # Agregar más claves según sea necesario
+        "PSICO2025": {
+            "used": False,
+            "created_by": "admin",
+            "expires": None,
+            "used_by": None,
+            "used_at": None
+        },
+        "DEMO12345": {
+            "used": False,
+            "created_by": "admin",
+            "expires": "2025-12-31",
+            "used_by": None,
+            "used_at": None
+        },
     }
 
     # Alternativamente, usar una clave maestra que siempre funciona (para testing)

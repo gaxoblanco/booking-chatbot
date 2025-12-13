@@ -305,7 +305,13 @@ class ProfessionalHandler:
             missing = [f for f in required if f not in prof_info]
 
             if missing:
-                return professional_messages.PROF_INFO_INCOMPLETE + "\n\n" + self.format_prof_info_menu(session)
+                from src.config.domain_config import DomainConfig
+
+                incomplete_msg = professional_messages.PROF_INFO_INCOMPLETE.format(
+                    category_label=DomainConfig.CATEGORY_LABEL
+                )
+
+                return incomplete_msg + "\n\n" + self.format_prof_info_menu(session)
 
             # Save to database using professional_service
             professional_service.register_or_update_professional(
@@ -571,47 +577,69 @@ class ProfessionalHandler:
         session.transition_to(ConversationState.PROF_INFO_MENU)
         return f"âœ… Honorarios guardados: ${min_fee} - ${max_fee}\n\n{self.format_prof_info_menu(session)}"
 
-    def parse_prof_info_quick(self, message: str) -> dict:
+    def parse_prof_info_quick(self, message: str) -> tuple:
         """
         Parse professional info from message.
+
         Supports two formats:
-
-        Format 1 (with labels):
-            nombre: Juan PÃ©rez
-            email: juan@email.com
-            zona: norte
-            genero: masculino
-            prepaga: si
-            especialidad: dentista
-            bio: DescripciÃ³n (opcional)
-            honorarios: 100-150 (opcional)
-
-        Format 2 (without labels, order matters):
-            Juan PÃ©rez
-            juan@email.com
-            norte
-            masculino
-            si
-            dentista
-            DescripciÃ³n (opcional - lÃ­nea 7)
-            100-150 (opcional - lÃ­nea 8)
+        1. With labels (key: value)
+        2. Without labels (line by line in order)
 
         Returns:
-            (dict with parsed info, list of errors)
+            tuple: (result_dict, errors_list)
         """
         import re
 
         lines = [line.strip()
                  for line in message.strip().split('\n') if line.strip()]
-
-        # Check if using labeled format (has ':')
-        has_labels = any(':' in line for line in lines)
-
         result = {}
         errors = []
 
+        # ✅ AGREGAR: Validar mínimo de líneas
+        if len(lines) < 6:
+            errors.append(
+                f"❌ Información incompleta: Se recibieron {len(lines)} línea(s), se requieren mínimo 6"
+            )
+            errors.append(
+                "📋 Campos requeridos: nombre, email, zona, género, prepaga, especialidad"
+            )
+            errors.append(
+                "💡 Los campos bio y honorarios son opcionales"
+            )
+            return None, errors
+
+        # Check if using labeled format (key: value)
+        has_labels = any(':' in line for line in lines)
+
         if has_labels:
-            # Parse labeled format
+            # ===== FORMATO CON ETIQUETAS =====
+            # nombre: Dr. Juan Pérez
+            # email: juan@email.com
+            # etc.
+
+            label_map = {
+                'nombre': 'name',
+                'name': 'name',
+                'email': 'email',
+                'correo': 'email',
+                'zona': 'zona',
+                'zone': 'zona',
+                'genero': 'genero',
+                'género': 'genero',
+                'gender': 'genero',
+                'sexo': 'genero',
+                'prepaga': 'prepaga',
+                'especialidad': 'especialidad',
+                'specialty': 'especialidad',
+                'categoria': 'especialidad',
+                'bio': 'bio',
+                'descripcion': 'bio',
+                'descripción': 'bio',
+                'honorarios': 'fee_range',
+                'fee': 'fee_range',
+                'precio': 'fee_range'
+            }
+
             for line in lines:
                 if ':' not in line:
                     continue
@@ -620,58 +648,77 @@ class ProfessionalHandler:
                 key = key.strip().lower()
                 value = value.strip()
 
-                # Map variations to standard keys
-                if key in ['nombre', 'name', 'nom']:
-                    result['name'] = value
-                elif key in ['email', 'correo', 'mail']:
-                    result['email'] = value
-                elif key in ['zona', 'zone', 'area']:
-                    result['zona'] = value.lower()
-                elif key in ['genero', 'gÃ©nero', 'sexo', 'gender']:
-                    result['genero'] = value.lower()
-                elif key in ['prepaga', 'obra social', 'os']:
-                    result['prepaga'] = value.lower()
-                elif key in ['especialidad', 'specialty', 'profesion', 'profesiÃ³n', 'category']:
-                    result['especialidad'] = value
-                elif key in ['bio', 'descripcion', 'descripciÃ³n', 'about']:  # â† AGREGAR
-                    result['bio'] = value
-                elif key in ['honorarios', 'fee', 'precio', 'costo']:  # â† AGREGAR
-                    result['fee_range'] = value
+                if key in label_map:
+                    field = label_map[key]
+                    result[field] = value
+
+            # ✅ MEJORAR: Validar campos requeridos con mensajes específicos
+            required_fields = {
+                'name': 'nombre',
+                'email': 'email',
+                'zona': 'zona',
+                'genero': 'género',
+                'prepaga': 'prepaga',
+                'especialidad': 'especialidad'
+            }
+
+            missing_fields = []
+            for field, label in required_fields.items():
+                if field not in result or not result[field]:
+                    missing_fields.append(label)
+
+            if missing_fields:
+                errors.append(
+                    f"❌ Faltan campos requeridos: {', '.join(missing_fields)}")
+                errors.append(
+                    "💡 Asegúrate de incluir todos los campos obligatorios")
+                return None, errors
+
         else:
-            # Parse order-based format
+            # ===== FORMATO SIN ETIQUETAS =====
+            # Orden: nombre, email, zona, genero, prepaga, especialidad, [bio], [honorarios]
+
+            # ✅ VALIDAR: Mínimo 6 líneas
             if len(lines) < 6:
-                return None, [f"âŒ Esperaba al menos 6 lÃ­neas, recibÃ­ {len(lines)}"]
+                errors.append(
+                    f"❌ Faltan datos: Se recibieron {len(lines)} línea(s), se requieren mínimo 6"
+                )
+                errors.append(
+                    "\n📋 Orden correcto:"
+                )
+                errors.append("1. Nombre")
+                errors.append("2. Email")
+                errors.append("3. Zona (norte/sur)")
+                errors.append("4. Género (masculino/femenino/otro)")
+                errors.append("5. Prepaga (si/no)")
+                errors.append("6. Especialidad")
+                errors.append("7. Bio (opcional)")
+                errors.append("8. Honorarios (opcional, ej: 100-150)")
+                return None, errors
 
             result = {
                 'name': lines[0],
                 'email': lines[1],
-                'zona': lines[2].lower(),
-                'genero': lines[3].lower(),
-                'prepaga': lines[4].lower(),
+                'zona': lines[2].lower().strip(),
+                'genero': lines[3].lower().strip(),
+                'prepaga': lines[4].lower().strip(),
                 'especialidad': lines[5]
             }
 
-            # Optional fields (lÃ­neas 7 y 8)
-            if len(lines) >= 7 and lines[6]:  # â† AGREGAR
+            # Opcionales
+            if len(lines) >= 7:
                 result['bio'] = lines[6]
-            if len(lines) >= 8 and lines[7]:  # â† AGREGAR
+            if len(lines) >= 8:
                 result['fee_range'] = lines[7]
 
-        # Validate required fields
-        required = ['name', 'email', 'zona',
-                    'genero', 'prepaga', 'especialidad']
-        missing = [f for f in required if f not in result or not result[f]]
-
-        if missing:
-            errors.append(f"âŒ Faltan campos: {', '.join(missing)}")
-            return None, errors
-
-        # Validate and normalize each field
-        from src.core.validators import validate_email
+        # ===== VALIDACIONES =====
 
         # Email
-        if not validate_email(result['email']):
-            errors.append(f"âŒ Email invÃ¡lido: {result['email']}")
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, result['email']):
+            errors.append(
+                f"❌ Email inválido: {result['email']}"
+            )
 
         # Zona
         zona_map = {
@@ -680,11 +727,12 @@ class ProfessionalHandler:
         }
         if result['zona'] not in zona_map:
             errors.append(
-                f"âŒ Zona invÃ¡lida: {result['zona']} (usa: norte o sur)")
+                f"❌ Zona inválida: '{result['zona']}' (usa: norte o sur)"
+            )
         else:
             result['zona'] = zona_map[result['zona']]
 
-        # GÃ©nero
+        # Género
         genero_map = {
             'm': 'm', 'masculino': 'm', 'male': 'm', 'hombre': 'm',
             'f': 'f', 'femenino': 'f', 'female': 'f', 'mujer': 'f',
@@ -692,34 +740,41 @@ class ProfessionalHandler:
         }
         if result['genero'] not in genero_map:
             errors.append(
-                f"âŒ GÃ©nero invÃ¡lido: {result['genero']} (usa: masculino, femenino, otro)")
+                f"❌ Género inválido: '{result['genero']}' (usa: masculino, femenino, otro)"
+            )
         else:
             result['genero'] = genero_map[result['genero']]
 
         # Prepaga
         prepaga_map = {
-            'si': True, 'sÃ­': True, 's': True, 'yes': True, 'y': True,
+            'si': True, 'sí': True, 's': True, 'yes': True, 'y': True,
             'no': False, 'n': False
         }
         if result['prepaga'] not in prepaga_map:
             errors.append(
-                f"âŒ Prepaga invÃ¡lida: {result['prepaga']} (usa: si o no)")
+                f"❌ Prepaga inválida: '{result['prepaga']}' (usa: si o no)"
+            )
         else:
             result['prepaga'] = prepaga_map[result['prepaga']]
 
-        # Validar fee_range si existe (opcional)  # â† AGREGAR
-        if 'fee_range' in result:
+        # Validar fee_range si existe (opcional)
+        if 'fee_range' in result and result['fee_range']:
             match = re.match(r'^(\d+)-(\d+)$', result['fee_range'].strip())
             if not match:
                 errors.append(
-                    f"âŒ Honorarios invÃ¡lidos: {result['fee_range']} (usa formato: 100-150)")
+                    f"❌ Honorarios inválidos: '{result['fee_range']}' (usa formato: 100-150)"
+                )
             else:
                 min_fee, max_fee = match.groups()
                 if int(min_fee) >= int(max_fee):
                     errors.append(
-                        f"âŒ Honorarios: el mÃ­nimo debe ser menor que el mÃ¡ximo")
+                        "❌ Honorarios: el mínimo debe ser menor que el máximo"
+                    )
 
+        # ✅ AGREGAR: Si hay errores, incluir sugerencia
         if errors:
+            errors.append("\n💡 Revisa tu información e inténtalo nuevamente")
+            errors.append("💡 Escribe *0* para volver al menú")
             return None, errors
 
         return result, []
@@ -735,8 +790,16 @@ class ProfessionalHandler:
         prof_info, errors = self.parse_prof_info_quick(message)
 
         if errors:
+            # Mensaje de error más claro
             error_msg = "\n".join(errors)
-            return f"{error_msg}\n\n{professional_messages.PROF_INFO_QUICK_FORMAT}"
+
+            # Encabezado de error
+            response = "⚠️ *Error en la información*\n\n"
+            response += error_msg
+            response += "\n\n" + "─" * 40 + "\n\n"
+            response += professional_messages.PROF_INFO_QUICK_FORMAT
+
+            return response
 
         # Save to database
         professional_service.register_or_update_professional(
@@ -775,7 +838,7 @@ class ProfessionalHandler:
         session.clear_temp()
         session.transition_to(ConversationState.PROF_MAIN_MENU)
 
-        return f"âœ… Â¡InformaciÃ³n guardada!\n\n{summary}\n\n" + professional_messages.PROF_MAIN_MENU
+        return f"✅ ¡Información guardada!\n\n{summary}\n\n" + professional_messages.PROF_MAIN_MENU
 
     def parse_week_schedule_quick(self, message: str) -> tuple:
         """

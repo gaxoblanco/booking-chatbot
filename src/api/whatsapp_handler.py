@@ -24,14 +24,15 @@ load_preset(DOMAIN_PRESET)
 print(f"✅ Domain loaded: {DomainConfig.BUSINESS_NAME}")
 
 # Import bot AFTER loading preset
-bot_module = importlib.import_module('bot')
+# Import bot AFTER loading preset
+bot_module = importlib.import_module('src.bot.bot_wrapper')
 bot = bot_module.bot
 
-states_module = importlib.import_module('states')
+states_module = importlib.import_module('src.core.states')
 session_manager = states_module.session_manager
 ConversationState = states_module.ConversationState
 
-prof_module = importlib.import_module('professional_service')
+prof_module = importlib.import_module('src.services.professional_service')
 professional_service = prof_module.professional_service
 
 # Initialize Flask application
@@ -199,7 +200,7 @@ def handle_certificate_upload_success(sender):
     session = session_manager.get_session(sender)
 
     # Check if user is in certificate upload state
-    if session.state == ConversationState.PROF_NEED_CERTIFICATE:
+    if session.state == ConversationState.PROF_NEED_ACCESS_KEY:
         # Transition to main menu
         return bot.handle_prof_certificate_uploaded(session)
 
