@@ -3,7 +3,9 @@
 echo "🚀 Starting WhatsApp Bot Setup..."
 echo ""
 
-# Check if domain is configured via environment variable
+# ==================================================
+# DOMAIN CONFIGURATION
+# ==================================================
 if [ -n "$DOMAIN_PRESET" ]; then
     echo "📦 Configurando dominio desde variable de entorno: $DOMAIN_PRESET"
     
@@ -36,9 +38,11 @@ else
     exit 1
 fi
 
-# Check if database exists
+# ==================================================
+# DATABASE INITIALIZATION
+# ==================================================
 if [ ! -f "data/database.db" ]; then
-    echo "🔄 Initializing database..."
+    echo "📄 Initializing database..."
     python scripts/init_db.py
     
     if [ $? -ne 0 ]; then
@@ -83,9 +87,46 @@ conn.close()
     echo ""
 fi
 
+# ==================================================
+# ACCESS KEYS CONFIGURATION
+# ==================================================
+echo "🔑 Sistema de Claves de Acceso:"
+echo ""
+
+# Check if master key is configured
+if [ -n "$MASTER_ACCESS_KEY" ]; then
+    echo "  ✅ Master key configurada: ${MASTER_ACCESS_KEY:0:4}****"
+else
+    echo "  ⚠️  Master key no configurada (opcional)"
+    echo "     Configura MASTER_ACCESS_KEY en .env para testing"
+fi
+
+# Check if professional keys are configured
+if [ -n "$PROFESSIONAL_ACCESS_KEYS" ]; then
+    echo "  ✅ Claves de profesionales configuradas"
+else
+    echo "  ⚠️  Claves de profesionales no configuradas"
+    echo "     Configura PROFESSIONAL_ACCESS_KEYS en config.py"
+fi
+
+echo ""
+echo "💡 Para generar nuevas claves, usa:"
+echo "   docker-compose exec whatsapp-bot python scripts/generate_access_keys.py"
+echo ""
+
+# ==================================================
+# STARTUP
+# ==================================================
 echo ""
 echo "✅ Setup complete!"
 echo "🚀 Starting application..."
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  📱 WhatsApp Bot Webhook"
+echo "  🌐 Port: 5000"
+echo "  🔑 Sistema: Claves de Acceso"
+echo "  📦 Dominio: $DOMAIN_PRESET"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
 # Start the application

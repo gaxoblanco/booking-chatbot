@@ -12,9 +12,10 @@ services:
   # ==================================================
   whatsapp-bot:
     # Build from local Dockerfile
+    # Context es la raíz del proyecto, no docker/
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
 
     # Container name
     container_name: whatsapp-webhook
@@ -33,19 +34,21 @@ services:
     environment:
       - DOMAIN_PRESET=${DOMAIN_PRESET:-SALUD} # Default: SALUD
       - PYTHONPATH=/app
+      # Access keys configuration
+      - MASTER_ACCESS_KEY=${MASTER_ACCESS_KEY:-}
+      - ALLOW_KEY_REUSE=${ALLOW_KEY_REUSE:-false}
 
-    # Volume mounts
+    # Volume mounts (desde raíz del proyecto)
     volumes:
-      # Mount data directory (persistent storage)
-      - ./data/certificates:/app/data/certificates
-      - ./data/database.db:/app/data/database.db
+      # Mount database (persistent storage)
+      - ../data/database.db:/app/data/database.db
 
       # Mount source code for hot reload in development
       # Comment out for production
-      - ./src:/app/src
+      - ../src:/app/src
 
       # Mount scripts (if needed for debugging)
-      - ./scripts:/app/scripts
+      - ../scripts:/app/scripts
 
     # Health check
     healthcheck:
@@ -77,20 +80,21 @@ networks:
 # VOLUMES
 # ==================================================
 volumes:
-  certificates:
-    driver: local
   database:
     driver: local
 # ==================================================
 # USAGE INSTRUCTIONS
 # ==================================================
 # 1. Copy .env.example to .env and fill in credentials
-# 2. Build and start: docker-compose up --build
-# 3. Stop: docker-compose down
-# 4. View logs: docker-compose logs -f whatsapp-bot
-# 5. Restart: docker-compose restart whatsapp-bot
+# 2. Configure access keys in src/config/config.py
+# 3. Build and start: docker-compose up --build
+# 4. Stop: docker-compose down
+# 5. View logs: docker-compose logs -f whatsapp-bot
+# 6. Restart: docker-compose restart whatsapp-bot
+# 7. Generate keys: docker-compose exec whatsapp-bot python scripts/generate_access_keys.py
 #
 # For production:
 # - Remove volume mounts for source code
 # - Use gunicorn in Dockerfile
 # - Set FLASK_ENV=production in .env
+# - Load keys from environment variables or encrypted file
