@@ -74,97 +74,121 @@ class ProfessionalHandler:
 
     def handle_prof_need_access_key(self, session: SessionData, message: str) -> str:
         """
-        Solicitar clave de acceso al profesional.
+        Handler para validación de clave de acceso.
+        El profesional DEBE ingresar una clave válida antes de acceder al sistema.
+        """
+        if message == '0':
+            session.reset()
+            session.transition_to(ConversationState.ROLE_SELECTION)
+            return common_messages.WELCOME
 
-        El profesional debe ingresar una clave válida proporcionada por la administración.
+        # Validar clave de acceso
+        is_valid, key_info = self._validate_access_key(message)
+
+        if is_valid:
+            # Clave válida - activar profesional
+            return self._activate_professional_access(session, message, key_info.get('is_master', False))
+        else:
+            # Clave inválida
+            error_type = key_info.get('error', 'invalid')
+
+            if error_type == 'key_already_used':
+                return professional_messages.PROF_KEY_ALREADY_USED + "\n\n" + professional_messages.PROF_NEED_ACCESS_KEY
+            elif error_type == 'key_expired':
+                return professional_messages.PROF_KEY_EXPIRED + "\n\n" + professional_messages.PROF_NEED_ACCESS_KEY
+            else:
+                return professional_messages.PROF_KEY_INVALID + "\n\n" + professional_messages.PROF_NEED_ACCESS_KEY
+
+    def _validate_access_key(self, key: str) -> tuple:
+        """
+        Valida una clave de acceso.
+
+        Args:
+            key: Clave ingresada por el usuario
+
+        Returns:
+            (is_valid: bool, key_info: dict)
         """
         from src.config.config import Config
 
-        # Permitir volver
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.START)
-            from src.messages.messages_common import common_messages
-            return common_messages.WELCOME
+        # Verificar master key
+        if hasattr(Config, 'MASTER_ACCESS_KEY') and key == Config.MASTER_ACCESS_KEY:
+            return True, {'is_master': True}
 
-        # Si no hay mensaje, mostrar instrucciones
-        if not message or message.strip() == '':
-            return professional_messages.PROF_NEED_ACCESS_KEY
+        # Verificar claves de profesionales
+        if hasattr(Config, 'PROFESSIONAL_ACCESS_KEYS'):
+            keys = Config.PROFESSIONAL_ACCESS_KEYS
+            if key in keys:
+                key_data = keys[key]
 
-        # Intentar validar la clave
-        key = message.strip().upper()
+                # Verificar si ya fue usada
+                if key_data.get('used', False):
+                    allow_reuse = getattr(Config, 'ALLOW_KEY_REUSE', False)
+                    if not allow_reuse:
+                        return False, {'error': 'key_already_used'}
 
-        # Verificar clave maestra
-        if key == Config.MASTER_ACCESS_KEY:
-            # Clave maestra siempre válida
-            return self._activate_professional_access(session, key, is_master=True)
+                # Verificar expiración
+                if key_data.get('expires'):
+                    from datetime import datetime
+                    try:
+                        expires_str = key_data['expires']
+                        # Asegurar formato ISO
+                        if 'T' not in expires_str:
+                            expires_str += 'T00:00:00'
+                        expires = datetime.fromisoformat(expires_str)
+                        if datetime.now() > expires:
+                            return False, {'error': 'key_expired'}
+                    except:
+                        pass  # Si hay error parseando fecha, ignorar expiración
 
-        # Verificar claves normales
-        if key in Config.PROFESSIONAL_ACCESS_KEYS:
-            key_info = Config.PROFESSIONAL_ACCESS_KEYS[key]
+                return True, {'is_master': False, 'key_data': key_data}
 
-            # Verificar si ya fue usada
-            if key_info.get('used', False) and not Config.ALLOW_KEY_REUSE:
-                return professional_messages.PROF_KEY_ALREADY_USED
-
-            # Verificar si expiró
-            if key_info.get('expires'):
-                from datetime import datetime
-                expires = datetime.strptime(key_info['expires'], "%Y-%m-%d")
-                if datetime.now() > expires:
-                    return professional_messages.PROF_KEY_EXPIRED
-
-            # Clave válida - activar acceso
-            return self._activate_professional_access(session, key, is_master=False)
-
-        # Clave inválida
-        return professional_messages.PROF_KEY_INVALID
+        return False, {'error': 'key_not_found'}
 
     def _activate_professional_access(self, session: SessionData, key: str, is_master: bool = False) -> str:
         """
-        Activar acceso del profesional después de validar la clave.
+        Activa el acceso del profesional después de validar la clave.
 
         Args:
-            session: Sesión del usuario
-            key: Clave utilizada
-            is_master: Si es la clave maestra
+            session: Sesión del profesional
+            key: Clave validada
+            is_master: Si es la master key
+
+        Returns:
+            Mensaje de confirmación + menú principal
         """
         from src.config.config import Config
         from src.database.database import db
+        from datetime import datetime
 
-        # Marcar clave como usada (solo si no es maestra y no se permite reuso)
-        if not is_master and not Config.ALLOW_KEY_REUSE:
-            Config.PROFESSIONAL_ACCESS_KEYS[key]['used'] = True
-            Config.PROFESSIONAL_ACCESS_KEYS[key]['used_by'] = session.phone_number
-            Config.PROFESSIONAL_ACCESS_KEYS[key]['used_at'] = datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S")
+        # Marcar clave como usada (si no es master)
+        if not is_master and hasattr(Config, 'PROFESSIONAL_ACCESS_KEYS'):
+            keys = Config.PROFESSIONAL_ACCESS_KEYS
+            if key in keys:
+                keys[key]['used'] = True
+                keys[key]['used_by'] = session.phone_number
+                keys[key]['used_at'] = datetime.now().isoformat()
 
-        # Crear o actualizar profesional en BD
-        # Verificar si ya existe
+        # Crear o activar profesional en la base de datos
         prof = db.get_professional(session.phone_number)
-
         if not prof:
-            # Crear nuevo profesional con datos básicos
+            # Crear registro básico
             db.add_professional(
                 phone=session.phone_number,
-                name="Profesional Nuevo",  # Se actualizará después
-                email="",
-                zone="sur",  # Default
-                gender="otro",
+                name="Usuario Nuevo",
+                email=None,
+                zone=None,
+                gender=None,
                 accept_prepaga=False,
-                category=""
+                category=None
             )
             print(f"[PROF] ✅ Nuevo profesional creado: {session.phone_number}")
         else:
-            print(f"[PROF] ℹ️ Profesional ya existe: {session.phone_number}")
-
-        # Guardar info de la clave usada (opcional)
-        session.store_temp('access_key_used', key)
-        session.store_temp('is_master_key', is_master)
+            print(
+                f"[PROF] ✅ Profesional existente activado: {session.phone_number}")
 
         # Transicionar al menú principal
         session.transition_to(ConversationState.PROF_MAIN_MENU)
-
         return professional_messages.PROF_KEY_VALID + "\n\n" + professional_messages.PROF_MAIN_MENU
 
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
