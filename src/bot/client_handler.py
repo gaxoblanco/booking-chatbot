@@ -116,6 +116,109 @@ class ClientHandler:
         else:
             return common_messages.INVALID_DATE + "\n\n" + client_messages.CLIENT_MAIN_MENU
 
+    def handle_client_new_user_menu(self, session: SessionData, message: str) -> str:
+        """
+        Maneja menú especial para usuarios nuevos.
+
+        Opciones optimizadas:
+        1. Búsqueda asistida paso a paso
+        2. Ver disponibles mañana (búsqueda rápida)
+        3. Información del centro
+
+        Args:
+            session: Sesión del usuario
+            message: Opción seleccionada
+
+        Returns:
+            Respuesta según la opción
+        """
+        if message == '1':
+            # Opción 1: Búsqueda asistida paso a paso
+            print(
+                f"[CLIENT] Usuario nuevo → Búsqueda asistida: {session.phone_number}")
+
+            session.temp_data.clear()
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+
+            # Iniciar flujo de filtros paso a paso
+            return self.handle_client_multifilter_menu(session, "start")
+
+        elif message == '2':
+            # Opción 2: Búsqueda rápida para mañana
+            print(
+                f"[CLIENT] Usuario nuevo → Disponibles mañana: {session.phone_number}")
+
+            from datetime import date, timedelta
+
+            tomorrow = date.today() + timedelta(days=1)
+            tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+            tomorrow_formatted = tomorrow.strftime("%d/%m/%Y")
+
+            # Guardar fecha en sesión
+            session.temp_data['search_date'] = tomorrow_str
+            session.temp_data['search_filters'] = {'fecha': tomorrow_formatted}
+
+            # Buscar profesionales disponibles mañana
+            results = client_service.search_professionals(
+                available_date=tomorrow_str
+            )
+
+            if not results:
+                # No hay resultados
+                message = f"😔 No encontramos {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} "
+                message += f"disponibles para mañana ({tomorrow_formatted}).\n\n"
+                message += "¿Qué querés hacer?\n\n"
+                message += "1️⃣ Búsqueda asistida (elegir fecha y filtros)\n"
+                message += "2️⃣ Buscar para otra fecha\n"
+                message += "0️⃣ Volver al menú"
+
+                # Mantener en el mismo estado
+                return message
+
+            # Hay resultados - mostrarlos
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            session.temp_data['search_results'] = results
+
+            return self.format_search_results(results, session)
+
+        elif message == '3':
+            # Opción 3: Información del centro
+            print(
+                f"[CLIENT] Usuario nuevo → Info del centro: {session.phone_number}")
+
+            from src.services.user_service import user_service
+
+            info_message = user_service.get_center_info()
+
+            # Mantener en el mismo estado para que puedan volver a elegir
+            return info_message
+
+        elif message == '0':
+            # Volver al inicio
+            print(
+                f"[CLIENT] Usuario nuevo → Volver inicio: {session.phone_number}")
+
+            session.reset()
+            session.transition_to(ConversationState.ROLE_SELECTION)
+            return common_messages.WELCOME
+
+        else:
+            # Opción inválida - volver a mostrar el menú
+            from src.services.user_service import user_service
+
+            invalid_msg = common_messages.INVALID_OPTION + "\n\n"
+
+            # Regenerar mensaje de bienvenida
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+
+            return invalid_msg + welcome_msg
     # ==========================================
     # FILTROS INDIVIDUALES (Búsqueda simple)
     # ==========================================
