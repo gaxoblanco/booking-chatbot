@@ -120,6 +120,12 @@ class BotController:
                 elif user_info['user_type'] == 'client':
                     session.set_role(UserRole.CLIENT)
                     session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                elif user_info['user_type'] == 'new':
+                    session.reset()
+                    session.set_role(UserRole.CLIENT)
+                    session.transition_to(
+                        ConversationState.CLIENT_NEW_USER_MENU)  # ✅ Nuevo estado
+                    return user_service.generate_welcome_message(user_info)
 
                 # Generar mensaje personalizado
                 if user_info['user_type'] == 'professional':
@@ -182,7 +188,7 @@ class BotController:
                 return common_messages.WELCOME
 
             # Bloquear todo lo demás (menu, cancelar, ayuda, etc.)
-            # El usuario DEBE ingresar una clave válida
+            # El usuario DEBE ingresar la clave de acceso
             return professional_messages.PROF_NEED_ACCESS_KEY
 
         # ==========================================
@@ -246,6 +252,7 @@ class BotController:
             # handlers de clave
             ConversationState.PROF_NEED_ACCESS_KEY: self.handle_prof_need_access_key,
             ConversationState.PROF_MAIN_MENU: self.handle_prof_main_menu,
+            ConversationState.CLIENT_NEW_USER_MENU: self.handle_client_new_user_menu,
             ConversationState.PROF_FREE_SLOT_DATE: self.handle_prof_free_slot_date,
             ConversationState.PROF_FREE_SLOT_TIME: self.handle_prof_free_slot_time,
             ConversationState.PROF_FREE_SLOT_CONFIRM: self.handle_prof_free_slot_confirm,
@@ -269,6 +276,7 @@ class BotController:
             # ===== ESTADOS DE CLIENTE =====
             # TODO: Mover estos handlers a client_handler.py
             ConversationState.CLIENT_MAIN_MENU: self.handle_client_main_menu,
+            ConversationState.CLIENT_NEW_USER_MENU: self.handle_client_new_user_menu,
             ConversationState.CLIENT_FILTER_ZONA: self.handle_client_filter_zona,
             ConversationState.CLIENT_FILTER_FECHA: self.handle_client_filter_fecha,
             ConversationState.CLIENT_FILTER_HORA: self.handle_client_filter_hora,
@@ -320,31 +328,23 @@ class BotController:
             return client_messages.CLIENT_MAIN_MENU
 
         elif message == '2':
-            # Profesional
+            # Usuario seleccionó opción 2 = PROFESIONAL
             session.set_role(UserRole.PROFESSIONAL)
 
-            # ❌ ANTES: Check if professional already has certificate
-            # if professional_service.has_certificate(session.phone_number):
-            #     session.transition_to(ConversationState.PROF_MAIN_MENU)
-            #     return professional_messages.PROF_MAIN_MENU
-            # else:
-            #     session.transition_to(ConversationState.PROF_NEED_CERTIFICATE)
-            #     return professional_messages.PROF_NEED_CERTIFICATE
-
-            # ✅ AHORA: Verificar si ya tiene acceso autorizado
+            # Verificar si ya tiene acceso autorizado
             from src.database.database import db
             prof = db.get_professional(session.phone_number)
 
-            if prof:
-                # Ya está registrado, ir directo al menú
+            # Si existe y tiene datos completos, ir directo al menú
+            if prof and prof.get('name') and prof.get('name') != 'Usuario Nuevo':
                 print(
-                    f"[BOT] Profesional ya registrado: {session.phone_number}")
+                    f"[BOT] Profesional completamente registrado: {session.phone_number}")
                 session.transition_to(ConversationState.PROF_MAIN_MENU)
                 return professional_messages.PROF_MAIN_MENU
             else:
-                # No está registrado, pedir clave
+                # No está registrado o está incompleto → pedir clave
                 print(
-                    f"[BOT] Profesional nuevo, requiere clave: {session.phone_number}")
+                    f"[BOT] Profesional nuevo o incompleto, requiere clave: {session.phone_number}")
                 session.transition_to(ConversationState.PROF_NEED_ACCESS_KEY)
                 return professional_messages.PROF_NEED_ACCESS_KEY
 
@@ -400,7 +400,11 @@ class BotController:
     #     return self.professional_handler.handle_prof_need_certificate(session, message)
 
     def handle_prof_need_access_key(self, session: SessionData, message: str) -> str:
-        """Delega a professional_handler"""
+        """
+        Delega a professional_handler - Validación de clave de acceso.
+
+        El profesional DEBE ingresar una clave válida antes de acceder al sistema.
+        """
         return self.professional_handler.handle_prof_need_access_key(session, message)
 
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
@@ -481,6 +485,10 @@ class BotController:
     def handle_client_main_menu(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
         return self.client_handler.handle_client_main_menu(session, message)
+
+    def handle_client_new_user_menu(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler - Menú especial para usuarios nuevos"""
+        return self.client_handler.handle_client_new_user_menu(session, message)
 
     def handle_client_filter_zona(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
