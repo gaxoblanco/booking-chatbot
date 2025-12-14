@@ -8,6 +8,7 @@ Core del sistema de reconocimiento inteligente.
 import json
 from datetime import datetime
 from typing import Dict, Optional, List
+from src.config.domain_config import DomainConfig
 from src.database.database import db
 from src.messages.messages_professional import professional_messages
 
@@ -248,12 +249,18 @@ class UserService:
 
         # === USUARIO NUEVO ===
         else:
-            message = "¡Bienvenido/a a Psico Connect! 👋\n\n"
-            message += "Te ayudamos a encontrar el profesional indicado para vos.\n\n"
-            message += "¿Qué querés hacer?\n"
-            message += "1️⃣ Agendar una cita\n"
-            message += "2️⃣ Consultar disponibilidad\n"
-            message += "3️⃣ Información sobre el centro\n"
+
+            message = f"👋 ¡Bienvenido/a a {DomainConfig.BUSINESS_NAME}!\n\n"
+            message += f"{DomainConfig.WELCOME_TAGLINE}\n\n"
+            message += "¿Qué querés hacer?\n\n"
+            message += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
+            message += f"   Búsqueda asistida paso a paso\n\n"
+            message += f"2️⃣ Ver disponibles mañana\n"
+            message += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
+            message += f"3️⃣ Información del centro\n"
+            message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+            message += "Responde con el número de opción."
+
             return message
 
     def log_action(
@@ -313,6 +320,58 @@ class UserService:
         # TODO: Implementar cuando tengamos appointments completo
         # Por ahora retorna lista vacía
         return []
+
+    def get_center_info(self) -> str:
+        """
+        Genera mensaje con información del centro/negocio.
+
+        Usa configuración del dominio para mostrar información
+        relevante del negocio.
+
+        Returns:
+            Mensaje con información del centro
+        """
+        from src.config.domain_config import DomainConfig
+
+        message = f"{DomainConfig.EMOJI_PROFESSIONAL} *{DomainConfig.BUSINESS_NAME}*\n\n"
+
+        # Información básica
+        message += f"📋 *Sobre Nosotros*\n"
+        message += f"{DomainConfig.WELCOME_TAGLINE}\n\n"
+
+        # Especialidades/Categorías disponibles
+        if DomainConfig.CATEGORIES:
+            message += f"{DomainConfig.EMOJI_CATEGORY} *{DomainConfig.CATEGORY_LABEL_PLURAL}*\n"
+            for key, value in DomainConfig.CATEGORIES.items():
+                message += f"• {value}\n"
+            message += "\n"
+
+        # Zonas de atención
+        if DomainConfig.ZONES:
+            message += f"{DomainConfig.EMOJI_LOCATION} *Zonas de Atención*\n"
+            for key, value in DomainConfig.ZONES.items():
+                message += f"• {value}\n"
+            message += "\n"
+
+        # Información adicional
+        if DomainConfig.CUSTOM_FIELD_1_ENABLED:
+            message += f"✅ {DomainConfig.CUSTOM_FIELD_1_LABEL} disponible\n"
+
+        if hasattr(DomainConfig, 'CUSTOM_FIELD_2_ENABLED') and DomainConfig.CUSTOM_FIELD_2_ENABLED:
+            message += f"✅ {DomainConfig.CUSTOM_FIELD_2_LABEL} disponible\n"
+
+        message += "\n"
+        message += "💬 *¿Cómo funciona?*\n"
+        message += f"1. Buscás {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} según tus preferencias\n"
+        message += f"2. Ves perfiles y {DomainConfig.SLOT_NAME_PLURAL} disponibles\n"
+        message += f"3. Agendás tu {DomainConfig.APPOINTMENT_NAME}\n"
+        message += "4. Recibís confirmación instantánea\n\n"
+
+        message += "¿Querés buscar ahora?\n"
+        message += "1️⃣ Sí, buscar\n"
+        message += "0️⃣ Volver al menú"
+
+        return message
 
 
 # === SINGLETON ===
