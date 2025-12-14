@@ -77,6 +77,7 @@ class ConversationState(Enum):
 
     # Main menu
     CLIENT_MAIN_MENU = "client_main_menu"  # Show search options
+    CLIENT_NEW_USER_MENU = "client_new_user_menu"  # Show intro for new users
     CLIENT_SELECT_MODALITY = "client_select_modality"  # Virtual or Presencial
 
     # Filter selection
