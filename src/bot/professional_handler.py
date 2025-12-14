@@ -15,7 +15,7 @@ Este archivo contiene ~1000 líneas de lógica específica del profesional.
 """
 
 from datetime import datetime, timedelta
-from src.core.states import ConversationState, SessionData
+from src.core.states import ConversationState, SessionData, UserRole
 from src.messages.messages_common import common_messages
 from src.messages.messages_professional import professional_messages
 from src.messages.messages_appointments import appointment_messages
@@ -192,7 +192,50 @@ class ProfessionalHandler:
         return professional_messages.PROF_KEY_VALID + "\n\n" + professional_messages.PROF_MAIN_MENU
 
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
-        """Handle professional main menu."""
+        """
+        Maneja menú principal del profesional.
+
+        Opciones:
+        1. Gestionar Horarios Libres
+        2. Cargar Agenda Semanal  
+        3. Ver Mi Agenda Completa
+        4. Actualizar Mi Información
+        5. Carga Rápida de Información
+        6. Mis Citas
+        0. Volver al inicio
+        """
+
+        # ==========================================
+        # NUEVO: Validar comandos especiales
+        # ==========================================
+        message_lower = message.lower().strip()
+
+        # Detectar "hola" y resetear conversación
+        if message_lower in ['hola', 'hello', 'hi', 'hey', 'buenos días', 'buenas tardes', 'buenas noches']:
+            # Resetear pero mantener rol profesional
+            session.reset()
+            session.set_role(UserRole.PROFESSIONAL)
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+
+            # Saludo personalizado si está registrado
+            from src.database.database import db
+            prof = db.get_professional(session.phone_number)
+
+            if prof and prof.get('name') and prof.get('name') != 'Usuario Nuevo':
+                greeting = f"¡Hola Dr/Dra. {prof['name']}! 👋\n\n"
+            else:
+                greeting = "¡Hola! 👋\n\n"
+
+            return greeting + professional_messages.PROF_MAIN_MENU
+
+        # Detectar "menu" o "volver"
+        if message_lower in ['menu', 'menú', 'volver']:
+            return professional_messages.PROF_MAIN_MENU
+
+        # ==========================================
+        # Opciones del menú (código existente)
+        # ==========================================
+
         if message == '1':
             # Liberar horario
             session.clear_temp()
@@ -212,16 +255,15 @@ class ProfessionalHandler:
             return schedule_info['formatted'] + "\n\n" + professional_messages.PROF_MAIN_MENU
 
         elif message == '4':
-            # Cargar informaciÃ³n
+            # Cargar información
             session.clear_temp()
-            # Initialize info dict if not exists
             if not session.get_temp('prof_info'):
                 session.store_temp('prof_info', {})
             session.transition_to(ConversationState.PROF_INFO_MENU)
             return self.format_prof_info_menu(session)
 
         elif message == '5':
-            # Carga rÃ¡pida
+            # Carga rápida
             session.clear_temp()
             session.transition_to(ConversationState.PROF_INFO_QUICK)
             return professional_messages.PROF_INFO_QUICK_FORMAT
@@ -236,7 +278,8 @@ class ProfessionalHandler:
             return common_messages.WELCOME
 
         else:
-            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_MAIN_MENU
+            # CORREGIDO: Mensaje apropiado para opción inválida
+            return "❌ Opción inválida. Selecciona un número del menú.\n\n" + professional_messages.PROF_MAIN_MENU
 
     def format_prof_info_menu(self, session: SessionData) -> str:
         """Format professional info menu with current data."""

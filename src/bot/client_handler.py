@@ -17,7 +17,7 @@ Este archivo contiene ~800 líneas de lógica específica del cliente.
 
 from datetime import date
 from src.config.domain_config import DomainConfig
-from src.core.states import ConversationState, SessionData
+from src.core.states import ConversationState, SessionData, UserRole
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
 from src.messages.messages_appointments import appointment_messages
@@ -66,6 +66,27 @@ class ClientHandler:
         5. Presencial (por zona)
         0. Volver
         """
+        # Validar comandos especiales
+        message_lower = message.lower().strip()
+
+        if message_lower in ['hola', 'hello', 'hi', 'hey', 'buenos días', 'buenas tardes', 'buenas noches']:
+            session.reset()
+            session.set_role(UserRole.CLIENT)
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+
+            from src.database.database import db
+            client = db.get_client(session.phone_number)
+
+            if client and client.get('name'):
+                greeting = f"¡Hola {client['name']}! 👋\n\n"
+            else:
+                greeting = "¡Hola! 👋\n\n"
+
+            return greeting + client_messages.CLIENT_MAIN_MENU
+
+        if message_lower in ['menu', 'menú', 'volver']:
+            return client_messages.CLIENT_MAIN_MENU
+
         # Detectar si viene de cancelación exitosa
         just_cancelled = session.get_temp('just_cancelled_appointment')
         if just_cancelled:
