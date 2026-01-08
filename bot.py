@@ -34,6 +34,8 @@ from validators import (
     normalize_fee_range,
     validate_zona_psivale,
     normalize_zona_psivale,
+    validate_email,
+    normalize_sexo,
 )
 from client_service import client_service
 from professional_service import professional_service
@@ -657,72 +659,101 @@ class Bot:
 
     def parse_prof_info_quick(self, message: str) -> dict:
         """
-        Parse professional info from message (PSIVALE VERSION).
+        Parse professional info from message (PSIVALE VERSION - FLEXIBLE).
 
-        Format (with labels):
-            nombre: Dra. María González
-            email: maria@psivale.com
-            zona: norte
-            genero: femenino
-            enfoque: tcc, contextual
-            poblacion: adultos, parejas
-            modalidad: ambas
-            horarios: tarde, noche
-            bio: Psicóloga con enfoque cognitivo-conductual (opcional)
-            honorarios: 25000-35000 (opcional)
+        Acepta múltiples formatos:
+
+        Formato 1 (con etiquetas - flexible):
+            Nombre: Dra. María González
+            Email: maria@psivale.com
+            Zona: Norte
+            Genero: Masculino
+            Enfoque: TCC, contextual
+            Población: niños, adolescentes
+            Modalidad: Online
+            Horario: tarde, noche
+            Honorarios: 30000-35000
+
+        Formato 2 (sin etiquetas, línea por línea):
+            Dra. María González
+            maria@psivale.com
+            norte
+            masculino
+            tcc, contextual
+            niños, adolescentes
+            online
+            tarde, noche
+            Psicólogo con enfoque cognitivo
+            30000-35000
 
         Returns:
             (dict with parsed info, list of errors)
         """
-        import re
-        from validators import (
-            validate_email, normalize_zona_psivale, normalize_sexo,
-            parse_enfoque_list, parse_poblacion_list, normalize_modalidad,
-            parse_horarios_list, validate_fee_range, normalize_fee_range
-        )
 
         lines = [line.strip()
                  for line in message.strip().split('\n') if line.strip()]
 
-        # Check if using labeled format (has ':')
-        has_labels = any(':' in line for line in lines)
-
-        if not has_labels:
-            return None, ["❌ Por favor usa el formato con etiquetas (nombre:, email:, etc.)"]
+        if not lines:
+            return None, ["❌ No se detectó información. Por favor intenta nuevamente."]
 
         result = {}
         errors = []
 
-        # Parse labeled format
-        for line in lines:
-            if ':' not in line:
-                continue
+        # Check if using labeled format (has ':')
+        has_labels = any(':' in line for line in lines)
 
-            key, value = line.split(':', 1)
-            key = key.strip().lower()
-            value = value.strip()
+        if has_labels:
+            # Parse labeled format (flexible con mayúsculas/acentos)
+            for line in lines:
+                if ':' not in line:
+                    continue
 
-            # Map variations to standard keys
-            if key in ['nombre', 'name', 'nom']:
-                result['name'] = value
-            elif key in ['email', 'correo', 'mail']:
-                result['email'] = value
-            elif key in ['zona', 'zone', 'area']:
-                result['zone'] = value.lower()
-            elif key in ['genero', 'género', 'sexo', 'gender']:
-                result['gender'] = value.lower()
-            elif key in ['enfoque', 'enfoques', 'approach']:
-                result['enfoque'] = value.lower()
-            elif key in ['poblacion', 'población', 'population']:
-                result['poblacion'] = value.lower()
-            elif key in ['modalidad', 'modality', 'modo']:
-                result['modalidad'] = value.lower()
-            elif key in ['horarios', 'horario', 'schedule']:
-                result['horarios'] = value.lower()
-            elif key in ['bio', 'descripcion', 'descripción', 'about']:
-                result['bio'] = value
-            elif key in ['honorarios', 'fee', 'precio', 'costo']:
-                result['fee_range'] = value
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                # Normalizar key: quitar acentos
+                key = key.replace('á', 'a').replace('é', 'e').replace('í', 'i')
+                key = key.replace('ó', 'o').replace('ú', 'u').replace('ñ', 'n')
+                value = value.strip()
+
+                # Map variations to standard keys (case-insensitive)
+                if key in ['nombre', 'name', 'nom']:
+                    result['name'] = value
+                elif key in ['email', 'correo', 'mail']:
+                    result['email'] = value
+                elif key in ['zona', 'zone', 'area']:
+                    result['zone'] = value.lower()
+                elif key in ['genero', 'genero', 'sexo', 'gender']:
+                    result['gender'] = value.lower()
+                elif key in ['enfoque', 'enfoques', 'approach']:
+                    result['enfoque'] = value.lower()
+                elif key in ['poblacion', 'poblacion', 'population']:
+                    result['poblacion'] = value.lower()
+                elif key in ['modalidad', 'modality', 'modo']:
+                    result['modalidad'] = value.lower()
+                elif key in ['horarios', 'horario', 'schedule']:
+                    result['horarios'] = value.lower()
+                elif key in ['bio', 'descripcion', 'descripcion', 'about']:
+                    result['bio'] = value
+                elif key in ['honorarios', 'fee', 'precio', 'costo']:
+                    result['fee_range'] = value
+
+        else:
+            # Parse unlabeled format (línea por línea en orden esperado)
+            # Orden: nombre, email, zona, genero, enfoque, poblacion, modalidad, horarios, bio, honorarios
+            field_order = ['name', 'email', 'zone', 'gender',
+                           'enfoque', 'poblacion', 'modalidad',
+                           'horarios', 'bio', 'fee_range']
+
+            for i, line in enumerate(lines):
+                if i < len(field_order):
+                    field = field_order[i]
+                    value = line.strip()
+
+                    # Aplicar lowercase a campos que lo necesitan
+                    if field in ['zone', 'gender', 'enfoque', 'poblacion', 'modalidad', 'horarios']:
+                        value = value.lower()
+
+                    result[field] = value
 
         # ✅ VALIDAR CAMPOS OBLIGATORIOS PSIVALE
         required = ['name', 'email', 'zone', 'gender',
@@ -802,7 +833,7 @@ class Bot:
         if 'fee_range' in result and result['fee_range']:
             if not validate_fee_range(result['fee_range']):
                 errors.append(
-                    f"❌ Honorarios inválidos: {result['fee_range']} (usa formato: 15000-25000)")
+                    f"❌ Honorarios inválidos: {result['fee_range']} (usa formato: 15000-35000)")
             else:
                 normalized_fee = normalize_fee_range(result['fee_range'])
                 if normalized_fee:
@@ -814,57 +845,103 @@ class Bot:
         return result, []
 
     def handle_prof_info_quick(self, session: SessionData, message: str) -> str:
-        """Handle quick info input (all in one message)."""
+        """Handle quick info input (all in one message) - PSIVALE VERSION."""
 
         if message == '0':
             session.transition_to(ConversationState.PROF_MAIN_MENU)
             return self.messages.PROF_MAIN_MENU
 
-        # Parse the message
-        prof_info, errors = self.parse_prof_info_quick(message)
+        try:
+            # Parse the message
+            prof_info, errors = self.parse_prof_info_quick(message)
 
-        if errors:
-            error_msg = "\n".join(errors)
-            return f"{error_msg}\n\n{self.messages.PROF_INFO_QUICK_FORMAT}"
+            if errors:
+                error_msg = "\n".join(errors)
+                return f"{error_msg}\n\n{self.messages.PROF_INFO_QUICK_FORMAT}"
 
-        # Save to database
-        professional_service.register_or_update_professional(
-            phone=session.phone_number,
-            name=prof_info.get('name'),
-            email=prof_info.get('email'),
-            zone=prof_info.get('zona'),
-            gender=prof_info.get('genero'),
-            accept_prepaga=prof_info.get('prepaga', False),
-            category=prof_info.get('especialidad'),
-            bio=prof_info.get('bio'),
-            fee_range=prof_info.get('fee_range')
-        )
+            if not prof_info:
+                return f"❌ No se pudo procesar la información.\n\n{self.messages.PROF_INFO_QUICK_FORMAT}"
 
-        # Format summary
-        genero_map = {'m': 'Masculino', 'f': 'Femenino', 'o': 'Otro'}
-        summary_lines = [
-            f"👤 Nombre: {prof_info['name']}",
-            f"📧 Email: {prof_info['email']}",
-            f"📍 Zona: {prof_info['zona'].capitalize()}",
-            f"👥 Género: {genero_map[prof_info['genero']]}",
-            f"💳 Prepaga: {'Sí' if prof_info['prepaga'] else 'No'}",
-            f"🏥 Especialidad: {prof_info['especialidad']}"
-        ]
+            # ✅ GUARDAR CON CAMPOS PSIVALE (variables internas en inglés)
+            success = professional_service.register_or_update_professional(
+                phone=session.phone_number,
+                name=prof_info.get('name'),
+                email=prof_info.get('email'),
+                zone=prof_info.get('zone'),  # ← usa 'zone' no 'zona'
+                gender=prof_info.get('gender'),  # ← usa 'gender' no 'genero'
+                enfoque_terapeutico=prof_info.get('enfoque_terapeutico'),
+                poblacion=prof_info.get('poblacion'),
+                modalidad=prof_info.get('modalidad'),
+                horarios_disponibles=prof_info.get('horarios_disponibles', []),
+                bio=prof_info.get('bio'),
+                fee_range=prof_info.get('fee_range')
+            )
 
-        # Agregar opcionales si existen
-        if 'bio' in prof_info:
-            bio_preview = prof_info['bio'][:50] + \
-                "..." if len(prof_info['bio']) > 50 else prof_info['bio']
-            summary_lines.append(f"📝 Bio: {bio_preview}")
-        if 'fee_range' in prof_info:
-            summary_lines.append(f"💰 Honorarios: ${prof_info['fee_range']}")
+            if not success:
+                return "❌ Error al guardar la información. Por favor intenta nuevamente.\n\n" + self.messages.PROF_MAIN_MENU
 
-        summary = "\n".join(summary_lines)
+            # ✅ FORMATO DE RESUMEN EN ESPAÑOL
+            # Mapeos para mostrar al usuario (mensajes en español)
+            gender_map = {'m': 'Masculino', 'f': 'Femenino', 'otro': 'Otro'}
+            zone_map = {'norte': 'Zona Norte', 'sur': 'Zona Sur',
+                        'nueva_cordoba': 'Nueva Córdoba'}
+            modalidad_map = {'online': '💻 Online',
+                             'presencial': '🏢 Presencial', 'ambas': '🔀 Ambas'}
 
-        session.clear_temp()
-        session.transition_to(ConversationState.PROF_MAIN_MENU)
+            summary_lines = [
+                f"👤 {prof_info['name']}",
+                f"📧 {prof_info['email']}",
+                f"📍 {zone_map.get(prof_info['zone'], prof_info['zone'])}",
+                f"👥 {gender_map.get(prof_info['gender'], prof_info['gender'])}"
+            ]
 
-        return f"✅ ¡Información guardada!\n\n{summary}\n\n" + self.messages.PROF_MAIN_MENU
+            # Enfoque terapéutico
+            if prof_info.get('enfoque_terapeutico'):
+                enfoque_display = professional_service._format_enfoques(
+                    prof_info['enfoque_terapeutico'])
+                summary_lines.append(f"🧠 {enfoque_display}")
+
+            # Población que atiende
+            if prof_info.get('poblacion'):
+                poblacion_display = professional_service._format_poblaciones(
+                    prof_info['poblacion'])
+                summary_lines.append(f"👥 {poblacion_display}")
+
+            # Modalidad de atención
+            if prof_info.get('modalidad'):
+                summary_lines.append(
+                    f"{modalidad_map.get(prof_info['modalidad'], prof_info['modalidad'])}")
+
+            # Horarios disponibles
+            if prof_info.get('horarios_disponibles'):
+                horarios_display = professional_service._format_horarios(
+                    prof_info['horarios_disponibles'])
+                summary_lines.append(f"📅 {horarios_display}")
+
+            # Bio (opcional)
+            if prof_info.get('bio'):
+                bio_preview = prof_info['bio'][:50] + \
+                    "..." if len(prof_info['bio']) > 50 else prof_info['bio']
+                summary_lines.append(f"📝 {bio_preview}")
+
+            # Honorarios (opcional)
+            if prof_info.get('fee_range'):
+                from validators import get_fee_range_display
+                summary_lines.append(
+                    f"💰 {get_fee_range_display(prof_info['fee_range'])}")
+
+            summary = "\n".join(summary_lines)
+
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+
+            return f"✅ ¡Información guardada!\n\n{summary}\n\n" + self.messages.PROF_MAIN_MENU
+
+        except Exception as e:
+            print(f"❌ Error en handle_prof_info_quick: {e}")
+            import traceback
+            traceback.print_exc()
+            return f"❌ Error al procesar la información: {str(e)}\n\nPor favor intenta nuevamente o usa el menú paso a paso (opción 5)."
 
     def _save_professional_info(self, session: SessionData) -> str:
         """
