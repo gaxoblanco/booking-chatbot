@@ -58,185 +58,286 @@ def home():
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     """
-    Main webhook endpoint for Meta WhatsApp Cloud API.
+    Main webhook endpoint for Twilio WhatsApp API.
 
-    GET: Webhook verification (Meta sends this to verify the endpoint)
+    GET: Health check / verification endpoint
     POST: Receive incoming WhatsApp messages
     """
 
     if request.method == 'GET':
-        # ==========================================
-        # WEBHOOK VERIFICATION (Meta Cloud API)
-        # ==========================================
-        # Meta sends a verification request when you configure the webhook
+        # Simple health check (Twilio doesn't use GET for verification)
         return verify_webhook()
 
     elif request.method == 'POST':
-        # ==========================================
-        # RECEIVE INCOMING MESSAGES
-        # ==========================================
+        # Receive incoming messages from Twilio
         return handle_incoming_message()
 
 
 def verify_webhook():
     """
-    Verify webhook endpoint for Meta Cloud API.
-    Meta sends GET request with hub.mode, hub.verify_token, and hub.challenge.
-    We must return hub.challenge if verify_token matches.
+    Webhook verification endpoint.
+    Twilio doesn't require verification like Meta does.
+    This endpoint is kept for compatibility but returns a simple response.
     """
-    # Get verification parameters
-    mode = request.args.get('hub.mode')
-    token = request.args.get('hub.verify_token')
-    challenge = request.args.get('hub.challenge')
+    print(f"\n🔐 Webhook verification request (GET)")
+    print(f"   Note: Twilio doesn't use verification tokens")
 
-    print(f"\n🔐 Webhook verification request:")
-    print(f"   Mode: {mode}")
-    print(f"   Token: {token}")
-    print(f"   Challenge: {challenge}")
-
-    # Check if mode and token are correct
-    if mode == 'subscribe' and token == Config.META_WEBHOOK_VERIFY_TOKEN:
-        print("✅ Webhook verified successfully")
-        # Return challenge to complete verification
-        return challenge, 200
-    else:
-        print("❌ Webhook verification failed")
-        return 'Forbidden', 403
+    # Return simple OK response
+    return jsonify({
+        "status": "ok",
+        "message": "Webhook endpoint is active",
+        "provider": "Twilio"
+    }), 200
 
 
 def handle_incoming_message():
     """
-    Handle incoming WhatsApp messages from Meta Cloud API.
+    Handle incoming WhatsApp messages from Twilio.
     Extracts message data and routes to bot for processing.
     """
     try:
-        # Get webhook payload
-        data = request.get_json()
-
+        # PASO 1: Debug - Ver qué está llegando
         print(f"\n{'='*50}")
-        print(f"📩 WEBHOOK RECEIVED")
+        print(f"📩 WEBHOOK RECEIVED (TWILIO)")
         print(f"{'='*50}")
-        print(f"Payload: {data}")
+        print(f"Content-Type: {request.content_type}")
+        print(f"Method: {request.method}")
         print(f"{'='*50}\n")
 
-        # Extract entry data (Meta webhook structure)
-        if not data.get('entry'):
-            print("⚠️  No entry in payload, ignoring")
-            return jsonify({"status": "ok"}), 200
+        data = None
 
-        entry = data['entry'][0]
-        changes = entry.get('changes', [])
+        # OPCIÓN 1: Intentar JSON primero
+        if request.is_json or 'application/json' in request.content_type:
+            data = request.get_json(force=True, silent=True)
+            print("📝 Parsed as JSON")
+            if data:
+                print(f"JSON data: {data}")
 
-        if not changes:
-            print("⚠️  No changes in entry, ignoring")
-            return jsonify({"status": "ok"}), 200
+        # OPCIÓN 2: Si no hay JSON, intentar form-data
+        if not data and request.form:
+            data = request.form.to_dict()
+            print("📝 Parsed as form-urlencoded")
+            if data:
+                print(f"Form data: {data}")
 
-        change = changes[0]
-        value = change.get('value', {})
+        # OPCIÓN 3: Intentar parsear raw data como JSON
+        if not data and request.data:
+            try:
+                import json
+                data = json.loads(request.data.decode('utf-8'))
+                print("📝 Parsed raw data as JSON")
+                if data:
+                    print(f"Raw JSON data: {data}")
+            except:
+                pass
 
-        # Check if this is a message event
-        if 'messages' not in value:
-            print("⚠️  No messages in value, might be status update")
-            return jsonify({"status": "ok"}), 200
+        if not data:
+            print("❌ No data could be extracted")
+            print(f"   Content-Type: {request.content_type}")
+            print(f"   request.data: {request.data[:200]}")
+            print(f"   request.form: {request.form}")
+            return jsonify({"status": "error", "message": "No data received"}), 400
 
-        messages = value['messages']
-        message = messages[0]
+        print(f"\nForm data received:")
+        for key, value in data.items():
+            print(f"  {key}: {value}")
+        print(f"{'='*50}\n")
 
-        # Extract message data
-        message_type = message.get('type')
-        sender = message.get('from')  # Phone number
-        message_id = message.get('id')
-        timestamp = message.get('timestamp')
+        # Extraer campos de Twilio (funciona tanto para JSON como form-data)
+        sender = data.get('From', '').replace('whatsapp:', '').strip()
+        body = data.get('Body', '')
+        profile_name = data.get('ProfileName', 'Unknown')
+        message_sid = data.get('MessageSid', '')
+        num_media = int(data.get('NumMedia', 0))
 
         print(f"\n{'='*50}")
         print(f"📩 MESSAGE RECEIVED")
         print(f"{'='*50}")
         print(f"From: {sender}")
-        print(f"Type: {message_type}")
-        print(f"Message ID: {message_id}")
-        print(f"Timestamp: {timestamp}")
+        print(f"Profile: {profile_name}")
+        print(f"Body: {body}")
+        print(f"Message SID: {message_sid}")
+        print(f"Media count: {num_media}")
+        print(f"{'='*50}\n")
+
+        # Validar que tengamos el sender
+        if not sender:
+            print("❌ No sender phone number in request")
+            return jsonify({"status": "error", "message": "Missing sender"}), 400
 
         # Handle different message types
-        if message_type == 'text':
+        if num_media == 0 and body:
             # Text message
-            text_content = message.get('text', {}).get('body', '')
-            print(f"Text: {text_content}")
-            print(f"{'='*50}\n")
+            print(f"Processing text message: {body}")
 
             # Process message through bot
-            reply = bot.process_message(sender, text_content)
+            reply = bot.process_message(sender, body)
 
-            # Send reply via Meta API
-            send_reply(sender, reply)
+            # Send reply via Twilio
+            send_twilio_reply(sender, reply)
 
-        elif message_type in ['image', 'document']:
+        elif num_media > 0:
             # Media message (image or PDF)
-            print(f"Media type: {message_type}")
-            print(f"{'='*50}\n")
+            print(f"Processing media message with {num_media} attachments")
 
             # Handle media upload
-            reply = handle_media_message(sender, message, message_type)
+            reply = handle_twilio_media_message(sender, data, num_media)
 
-            # Send reply via Meta API
-            send_reply(sender, reply)
+            # Send reply via Twilio
+            send_twilio_reply(sender, reply)
 
         else:
-            print(f"⚠️  Unsupported message type: {message_type}")
+            print("⚠️  Empty message (no body and no media)")
 
-        # Always return 200 OK to Meta
+        # Always return 200 OK to Twilio
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
         print(f"❌ Error handling webhook: {e}")
         import traceback
         traceback.print_exc()
-        # Still return 200 to prevent Meta from retrying
+        # Still return 200 to prevent Twilio from retrying
         return jsonify({"status": "error", "message": str(e)}), 200
 
 
-def send_reply(to_number: str, message: str):
+def send_twilio_reply(to_number: str, message: str):
     """
-    Send a reply message via Meta WhatsApp Cloud API.
+    Send a reply message via Twilio API.
 
     Args:
-        to_number: Recipient phone number
+        to_number: Recipient phone number (without whatsapp: prefix)
         message: Message text to send
     """
     try:
-        url = f"{Config.META_API_BASE_URL}/{Config.META_PHONE_NUMBER_ID}/messages"
+        from twilio.rest import Client
 
-        headers = {
-            "Authorization": f"Bearer {Config.META_WHATSAPP_TOKEN}",
-            "Content-Type": "application/json"
-        }
+        # Twilio credentials (deberías tenerlos en Config)
+        account_sid = Config.TWILIO_ACCOUNT_SID
+        auth_token = Config.TWILIO_AUTH_TOKEN
+        twilio_number = Config.TWILIO_WHATSAPP_NUMBER  # ej: 'whatsapp:+14155238886'
 
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to_number,
-            "type": "text",
-            "text": {
-                "preview_url": False,
-                "body": message
-            }
-        }
+        client = Client(account_sid, auth_token)
 
-        response = requests.post(url, headers=headers,
-                                 json=payload, timeout=10)
+        # Agregar prefijo whatsapp: si no lo tiene
+        if not to_number.startswith('whatsapp:'):
+            to_number = f'whatsapp:{to_number}'
 
-        if response.status_code == 200:
-            response_data = response.json()
-            message_id = response_data.get('messages', [{}])[
-                0].get('id', 'unknown')
-            print(f"✅ Reply sent (Message ID: {message_id})")
-        else:
-            print(f"❌ Error sending reply: HTTP {response.status_code}")
-            print(f"   Response: {response.text}")
+        # Enviar mensaje
+        twilio_message = client.messages.create(
+            body=message,
+            from_=twilio_number,
+            to=to_number
+        )
+
+        print(f"✅ Reply sent via Twilio (SID: {twilio_message.sid})")
 
     except Exception as e:
-        print(f"❌ Exception sending reply: {e}")
+        print(f"❌ Exception sending Twilio reply: {e}")
         import traceback
         traceback.print_exc()
+
+
+def handle_twilio_media_message(sender: str, data: dict, num_media: int):
+    """
+    Handle incoming media files from Twilio (images, PDFs).
+    Downloads and stores files locally.
+
+    Args:
+        sender: Phone number of sender
+        data: Form data from Twilio webhook
+        num_media: Number of media items
+
+    Returns:
+        str: Confirmation message
+    """
+    try:
+        # Twilio envía URLs de media como MediaUrl0, MediaUrl1, etc.
+        for i in range(num_media):
+            media_url = data.get(f'MediaUrl{i}')
+            media_content_type = data.get(f'MediaContentType{i}')
+
+            if not media_url:
+                continue
+
+            print(f"📎 Processing media {i+1}/{num_media}:")
+            print(f"   URL: {media_url}")
+            print(f"   Content-Type: {media_content_type}")
+
+            # Download media file
+            file_path = download_twilio_media(
+                sender, media_url, media_content_type)
+
+            if file_path:
+                print(f"   ✅ Saved: {file_path}")
+            else:
+                print(f"   ❌ Failed to save")
+
+        # Check if this is a professional uploading certificate
+        return handle_certificate_upload_success(sender)
+
+    except Exception as e:
+        print(f"❌ Error handling media: {e}")
+        import traceback
+        traceback.print_exc()
+        return "❌ Error processing media file."
+
+
+def download_twilio_media(sender: str, media_url: str, content_type: str):
+    """
+    Download media file from Twilio and save locally.
+
+    Args:
+        sender: Phone number (used for folder structure)
+        media_url: Twilio media URL
+        content_type: MIME type (e.g., 'image/jpeg', 'application/pdf')
+
+    Returns:
+        str: Path to saved file, or None if failed
+    """
+    try:
+        from twilio.rest import Client
+
+        # Twilio credentials
+        account_sid = Config.TWILIO_ACCOUNT_SID
+        auth_token = Config.TWILIO_AUTH_TOKEN
+
+        # Download file with Twilio auth
+        response = requests.get(
+            media_url,
+            auth=(account_sid, auth_token),
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            print(f"❌ Failed to download media: HTTP {response.status_code}")
+            return None
+
+        # Create directory for this user
+        user_dir = os.path.join(Config.CERTIFICATES_DIR, sender)
+        os.makedirs(user_dir, exist_ok=True)
+
+        # Determine file extension based on MIME type
+        extension = get_file_extension(content_type)
+
+        # Generate filename with timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"certificate_{timestamp}.{extension}"
+        file_path = os.path.join(user_dir, filename)
+
+        # Save file
+        with open(file_path, 'wb') as f:
+            f.write(response.content)
+
+        professional_service.save_certificate(sender, file_path)
+
+        return file_path
+
+    except Exception as e:
+        print(f"❌ Exception downloading media: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def handle_media_message(sender: str, message: dict, media_type: str):
@@ -401,7 +502,6 @@ if __name__ == '__main__':
     Run Flask development server.
     For production, use gunicorn instead.
     """
-
     # Print configuration on startup
     print("\n")
     Config.print_config()
@@ -419,9 +519,10 @@ if __name__ == '__main__':
     print(f"🚀 Starting WhatsApp webhook server...")
     print(f"📍 Listening on: http://0.0.0.0:{Config.FLASK_PORT}")
     print(f"📍 Webhook endpoint: http://0.0.0.0:{Config.FLASK_PORT}/webhook")
-    print(f"\n💡 Configure webhook in Meta:")
+    print(f"\n💡 Configure webhook in Twilio Console:")
     print(f"   URL: {Config.WEBHOOK_URL}/webhook")
-    print(f"   Verify Token: {Config.META_WEBHOOK_VERIFY_TOKEN}\n")
+    print(f"   Method: POST")
+    print(f"   Note: Twilio doesn't require a verify token\n")
 
     app.run(
         host='0.0.0.0',  # Listen on all interfaces (required for Docker)
