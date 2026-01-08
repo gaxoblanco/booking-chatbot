@@ -4,7 +4,7 @@ Configuration Module
 Loads and validates environment variables for WhatsApp bot.
 Ensures all required credentials are present before starting.
 
-Updated to use Meta WhatsApp Cloud API instead of Twilio.
+Configured for Twilio WhatsApp API.
 """
 
 import os
@@ -21,17 +21,12 @@ class Config:
     """
 
     # ==========================================
-    # META WHATSAPP CLOUD API CREDENTIALS
+    # TWILIO WHATSAPP API CREDENTIALS
     # ==========================================
-    META_WHATSAPP_TOKEN = os.getenv('META_WHATSAPP_TOKEN')
-    META_PHONE_NUMBER_ID = os.getenv('META_PHONE_NUMBER_ID')
-    META_WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv(
-        'META_WHATSAPP_BUSINESS_ACCOUNT_ID')
-    META_WEBHOOK_VERIFY_TOKEN = os.getenv('META_WEBHOOK_VERIFY_TOKEN')
-
-    # Meta API Base URL
-    META_API_VERSION = 'v21.0'
-    META_API_BASE_URL = f'https://graph.facebook.com/{META_API_VERSION}'
+    TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+    TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+    TWILIO_WHATSAPP_NUMBER = os.getenv(
+        'TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
 
     # ==========================================
     # FLASK SETTINGS
@@ -60,9 +55,9 @@ class Config:
         Raises ValueError if any required variable is missing.
         """
         required_vars = {
-            'META_WHATSAPP_TOKEN': Config.META_WHATSAPP_TOKEN,
-            'META_PHONE_NUMBER_ID': Config.META_PHONE_NUMBER_ID,
-            'META_WEBHOOK_VERIFY_TOKEN': Config.META_WEBHOOK_VERIFY_TOKEN,
+            'TWILIO_ACCOUNT_SID': Config.TWILIO_ACCOUNT_SID,
+            'TWILIO_AUTH_TOKEN': Config.TWILIO_AUTH_TOKEN,
+            'TWILIO_WHATSAPP_NUMBER': Config.TWILIO_WHATSAPP_NUMBER,
         }
 
         missing_vars = [
@@ -73,7 +68,7 @@ class Config:
         if missing_vars:
             raise ValueError(
                 f"Missing required environment variables: {', '.join(missing_vars)}\n"
-                f"Please copy .env.example to .env and fill in your Meta WhatsApp Cloud API credentials."
+                f"Please copy .env.example to .env and fill in your Twilio credentials."
             )
 
         return True
@@ -92,23 +87,19 @@ class Config:
         print(f"Port: {Config.FLASK_PORT}")
         print(f"Webhook URL: {Config.WEBHOOK_URL}")
         print(f"Certificates Dir: {Config.CERTIFICATES_DIR}")
-        print(f"API Provider: Meta WhatsApp Cloud API")
+        print(f"API Provider: Twilio WhatsApp API")
 
         # Hide sensitive data
-        if Config.META_PHONE_NUMBER_ID:
-            print(f"Phone Number ID: {Config.META_PHONE_NUMBER_ID}")
+        if Config.TWILIO_ACCOUNT_SID:
+            masked_sid = Config.TWILIO_ACCOUNT_SID[:6] + \
+                "..." + Config.TWILIO_ACCOUNT_SID[-6:]
+            print(f"Account SID: {masked_sid}")
 
-        if Config.META_WHATSAPP_BUSINESS_ACCOUNT_ID:
-            print(
-                f"WhatsApp Business Account ID: {Config.META_WHATSAPP_BUSINESS_ACCOUNT_ID}")
+        if Config.TWILIO_AUTH_TOKEN:
+            print(f"Auth Token: {'*' * 20} (hidden)")
 
-        if Config.META_WHATSAPP_TOKEN:
-            masked_token = Config.META_WHATSAPP_TOKEN[:10] + \
-                "..." + Config.META_WHATSAPP_TOKEN[-10:]
-            print(f"Access Token: {masked_token}")
-
-        if Config.META_WEBHOOK_VERIFY_TOKEN:
-            print(f"Webhook Verify Token: {'*' * 20} (hidden)")
+        if Config.TWILIO_WHATSAPP_NUMBER:
+            print(f"WhatsApp Number: {Config.TWILIO_WHATSAPP_NUMBER}")
 
         print("=" * 50)
 
