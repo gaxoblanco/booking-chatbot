@@ -1,11 +1,10 @@
 """
 Messaging utilities for sending delayed messages.
-Updated to use Meta WhatsApp Cloud API instead of Twilio.
+Updated to use Twilio WhatsApp API.
 """
 
 import time
 import threading
-import requests
 from config import Config
 
 
@@ -13,7 +12,7 @@ def send_delayed_message(to_number: str, message: str, delay_seconds: int = 3,
                          callback=None, callback_args=None):
     """
     Send a WhatsApp message after a delay (non-blocking).
-    Uses Meta WhatsApp Cloud API.
+    Uses Twilio WhatsApp API.
 
     Args:
         to_number: Recipient phone number (format: whatsapp:+1234567890 or +1234567890)
@@ -27,54 +26,43 @@ def send_delayed_message(to_number: str, message: str, delay_seconds: int = 3,
         time.sleep(delay_seconds)
 
         try:
-            # Clean phone number (remove 'whatsapp:' prefix if present)
-            phone_number = to_number.replace('whatsapp:', '')
+            from twilio.rest import Client
 
-            # Meta API endpoint for sending messages
-            url = f"{Config.META_API_BASE_URL}/{Config.META_PHONE_NUMBER_ID}/messages"
+            # Twilio credentials
+            account_sid = Config.TWILIO_ACCOUNT_SID
+            auth_token = Config.TWILIO_AUTH_TOKEN
+            twilio_number = Config.TWILIO_WHATSAPP_NUMBER
 
-            # Headers with access token
-            headers = {
-                "Authorization": f"Bearer {Config.META_WHATSAPP_TOKEN}",
-                "Content-Type": "application/json"
-            }
+            # Asegurar que twilio_number tenga prefijo whatsapp:
+            if not twilio_number.startswith('whatsapp:'):
+                twilio_number = f'whatsapp:{twilio_number}'
 
-            # Message payload (Meta Cloud API format)
-            payload = {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": phone_number,
-                "type": "text",
-                "text": {
-                    "preview_url": False,
-                    "body": message
-                }
-            }
+            # Clean phone number and ensure whatsapp: prefix
+            phone_number = to_number.replace('whatsapp:', '').strip()
+            if phone_number and not phone_number.startswith('+'):
+                phone_number = '+' + phone_number
+            phone_number = f'whatsapp:{phone_number}'
 
-            # Send message via Meta Cloud API
-            response = requests.post(
-                url, headers=headers, json=payload, timeout=10)
+            # Create Twilio client
+            client = Client(account_sid, auth_token)
 
-            # Check if request was successful
-            if response.status_code == 200:
-                response_data = response.json()
-                message_id = response_data.get('messages', [{}])[
-                    0].get('id', 'unknown')
+            # Send message via Twilio
+            twilio_message = client.messages.create(
+                body=message,
+                from_=twilio_number,
+                to=phone_number
+            )
 
-                print(f"✅ Delayed message sent (Message ID: {message_id})")
-                print(f"   To: {phone_number}")
-                print(f"   After: {delay_seconds}s delay")
+            print(f"✅ Delayed message sent (SID: {twilio_message.sid})")
+            print(f"   To: {phone_number}")
+            print(f"   After: {delay_seconds}s delay")
 
-                # Call callback if provided (for changing state)
-                if callback:
-                    if callback_args:
-                        callback(*callback_args)
-                    else:
-                        callback()
-            else:
-                print(
-                    f"❌ Error sending delayed message: HTTP {response.status_code}")
-                print(f"   Response: {response.text}")
+            # Call callback if provided (for changing state)
+            if callback:
+                if callback_args:
+                    callback(*callback_args)
+                else:
+                    callback()
 
         except Exception as e:
             print(f"❌ Error sending delayed message: {e}")
@@ -92,54 +80,51 @@ def send_delayed_message(to_number: str, message: str, delay_seconds: int = 3,
 def send_message_sync(to_number: str, message: str):
     """
     Send a WhatsApp message immediately (synchronous).
-    Uses Meta WhatsApp Cloud API.
+    Uses Twilio WhatsApp API.
 
     Args:
         to_number: Recipient phone number (format: whatsapp:+1234567890 or +1234567890)
         message: Message text to send
 
     Returns:
-        dict: Response from Meta API or None if failed
+        dict: Response from Twilio API or None if failed
     """
     try:
-        # Clean phone number (remove 'whatsapp:' prefix if present)
-        phone_number = to_number.replace('whatsapp:', '')
+        from twilio.rest import Client
 
-        # Meta API endpoint for sending messages
-        url = f"{Config.META_API_BASE_URL}/{Config.META_PHONE_NUMBER_ID}/messages"
+        # Twilio credentials
+        account_sid = Config.TWILIO_ACCOUNT_SID
+        auth_token = Config.TWILIO_AUTH_TOKEN
+        twilio_number = Config.TWILIO_WHATSAPP_NUMBER
 
-        # Headers with access token
-        headers = {
-            "Authorization": f"Bearer {Config.META_WHATSAPP_TOKEN}",
-            "Content-Type": "application/json"
+        # Asegurar que twilio_number tenga prefijo whatsapp:
+        if not twilio_number.startswith('whatsapp:'):
+            twilio_number = f'whatsapp:{twilio_number}'
+
+        # Clean phone number and ensure whatsapp: prefix
+        phone_number = to_number.replace('whatsapp:', '').strip()
+        if phone_number and not phone_number.startswith('+'):
+            phone_number = '+' + phone_number
+        phone_number = f'whatsapp:{phone_number}'
+
+        # Create Twilio client
+        client = Client(account_sid, auth_token)
+
+        # Send message via Twilio
+        twilio_message = client.messages.create(
+            body=message,
+            from_=twilio_number,
+            to=phone_number
+        )
+
+        print(f"✅ Message sent successfully (SID: {twilio_message.sid})")
+
+        # Return message info as dict
+        return {
+            'sid': twilio_message.sid,
+            'status': twilio_message.status,
+            'to': phone_number
         }
-
-        # Message payload (Meta Cloud API format)
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": phone_number,
-            "type": "text",
-            "text": {
-                "preview_url": False,
-                "body": message
-            }
-        }
-
-        # Send message via Meta Cloud API
-        response = requests.post(url, headers=headers,
-                                 json=payload, timeout=10)
-
-        if response.status_code == 200:
-            response_data = response.json()
-            message_id = response_data.get('messages', [{}])[
-                0].get('id', 'unknown')
-            print(f"✅ Message sent successfully (Message ID: {message_id})")
-            return response_data
-        else:
-            print(f"❌ Error sending message: HTTP {response.status_code}")
-            print(f"   Response: {response.text}")
-            return None
 
     except Exception as e:
         print(f"❌ Exception sending message: {e}")
