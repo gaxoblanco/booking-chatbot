@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Psivale - Centro de Psicología. Próximamente en línea.">
-    <title>Psivale - Sitio en Construcción</title>
+    <meta name="description" content="Psivale - Centro de Psicología profesional. Conectamos psicólogos con personas que buscan bienestar emocional.">
+    <meta name="keywords" content="psicología, salud mental, bienestar emocional, terapia online, psicólogos">
+    <meta name="author" content="Psivale">
+    <title>Psivale - Centro de Psicología</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -30,7 +32,7 @@
             border-radius: 24px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
             padding: 60px 40px;
-            max-width: 600px;
+            max-width: 700px;
             width: 100%;
             text-align: center;
             animation: fadeIn 0.8s ease-out;
@@ -87,9 +89,56 @@
             line-height: 1.8;
             margin-bottom: 40px;
         }
+        
         .highlight {
             color: #5C6BC0;
             font-weight: 600;
+        }
+
+        /* Nueva sección: Sobre nosotros */
+        .about-section {
+            background: linear-gradient(135deg, #F5F7FA 0%, #E8EAF6 100%);
+            padding: 30px;
+            border-radius: 16px;
+            margin: 40px 0;
+            text-align: left;
+        }
+
+        .about-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2C3E50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .about-text {
+            font-size: 1rem;
+            color: #546E7A;
+            line-height: 1.8;
+            margin-bottom: 15px;
+        }
+
+        .about-list {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+
+        .about-list li {
+            padding: 10px 0 10px 30px;
+            position: relative;
+            color: #546E7A;
+            line-height: 1.6;
+        }
+
+        .about-list li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #7986CB;
+            font-weight: bold;
+            font-size: 1.2rem;
         }
 
         .cta-section {
@@ -118,6 +167,37 @@
             background: linear-gradient(90deg, #7986CB, #9FA8DA);
             margin: 30px auto;
             border-radius: 2px;
+        }
+
+        /* Información de la empresa */
+        .company-info {
+            background: #FAFAFA;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 30px 0;
+            text-align: left;
+        }
+
+        .company-info-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .company-detail {
+            display: flex;
+            align-items: flex-start;
+            margin: 12px 0;
+            font-size: 0.95rem;
+            color: #546E7A;
+        }
+
+        .company-detail strong {
+            min-width: 120px;
+            color: #5C6BC0;
+            font-weight: 600;
         }
 
         .contact-info {
@@ -169,6 +249,39 @@
             color: #5C6BC0;
         }
 
+        .policies-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #E0E0E0;
+        }
+
+        .policies-link {
+            display: inline-flex;
+            align-items: center;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #F5F5F5 0%, #EEEEEE 100%);
+            color: #5C6BC0;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+            gap: 8px;
+        }
+
+        .policies-link:hover {
+            background: linear-gradient(135deg, #7986CB 0%, #5C6BC0 100%);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(121, 134, 203, 0.3);
+        }
+
+        .policies-link svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
         .footer {
             margin-top: 40px;
             padding-top: 20px;
@@ -198,9 +311,22 @@
             .contact-item {
                 font-size: 1rem;
             }
+
+            .about-section,
+            .company-info {
+                padding: 20px;
+            }
+
+            .company-detail {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .company-detail strong {
+                min-width: auto;
+            }
         }
 
-        /* Loading animation */
         .loading-dots {
             display: inline-flex;
             gap: 4px;
@@ -238,12 +364,10 @@
         <!-- Logo -->
         <img src="logo.jpeg" alt="Psivale Logo" class="logo" onerror="this.style.display='none'">
 
-        <!-- Subtítulo -->
-        <div class="subtitle">
-            <!-- Título principal -->
-            <h1>Psivale</h1>
-            <h3>Sitio en construcción</h3>
-        </div>
+        <!-- Título principal -->
+        <h1>Psivale</h1>
+        
+        <div class="subtitle">Centro de Psicología</div>
 
         <!-- Descripción -->
         <p class="description">
@@ -252,12 +376,52 @@
 
         <div class="divider"></div>
 
+        <!-- Nueva sección: Sobre nosotros -->
+        <div class="about-section">
+            <h2 class="about-title">¿Qué es Psivale?</h2>
+            <p class="about-text">
+                Somos una plataforma dedicada a facilitar el acceso a servicios de salud mental de calidad. 
+                Nuestro objetivo es crear un puente entre profesionales certificados y personas que necesitan 
+                apoyo psicológico.
+            </p>
+            <ul class="about-list">
+                <li>Profesionales certificados y verificados</li>
+                <li>Atención personalizada y confidencial</li>
+                <li>Plataforma accesible y fácil de usar</li>
+                <li>Compromiso con el bienestar emocional</li>
+            </ul>
+        </div>
+
+        <!-- Información de la empresa -->
+        <div class="company-info">
+            <h3 class="company-info-title">Información Empresarial</h3>
+            <div class="company-detail">
+                <strong>Razón Social:</strong>
+                <span>Psivale - Servicios de Psicología</span>
+            </div>
+            <div class="company-detail">
+                <strong>Actividad:</strong>
+                <span>Plataforma de conexión entre profesionales de la salud mental y usuarios</span>
+            </div>
+            <div class="company-detail">
+                <strong>Ubicación:</strong>
+                <span>Formosa, Argentina</span>
+            </div>
+            <div class="company-detail">
+                <strong>Estado:</strong>
+                <span>Próximamente disponible - En fase de lanzamiento</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- Call to Action para profesionales -->
         <div class="cta-section">
             <div class="cta-title">¿Eres profesional de la salud mental?</div>
             <p class="cta-text">
-                Estamos dando los primeros pasos y nos encantaría contar con vos. 
-                Sumate como profesional pionero y ayudanos a hacer que la ayuda psicológica sea más accesible y cercana.
+                Estamos en fase de lanzamiento y nos encantaría contar con vos. 
+                Sumate como profesional pionero y ayudanos a hacer que la ayuda psicológica 
+                sea más accesible y cercana para todos.
             </p>
         </div>
 
@@ -283,14 +447,34 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                         <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
                     </svg>
-                    +54 937 0463 0012
+                    +54 3704969801
+                </a>
+            </div>
+
+            <!-- WhatsApp -->
+            <div class="contact-item">
+                <a href="https://wa.me/5493704630012">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    </svg>
+                    WhatsApp
                 </a>
             </div>
         </div>
 
+        <!-- Sección de Políticas -->
+        <div class="policies-section">
+            <a href="politicas.html" class="policies-link" aria-label="Ver políticas y términos">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                </svg>
+                Políticas y Términos
+            </a>
+        </div>
+
         <!-- Footer -->
         <div class="footer">
-            © 2026 Psivale. Todos los derechos reservados.
+            © 2025 Psivale. Todos los derechos reservados.
         </div>
     </div>
 </body>
