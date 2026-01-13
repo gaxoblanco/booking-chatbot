@@ -10,7 +10,7 @@ services:
   # ==================================================
   # WHATSAPP WEBHOOK SERVICE
   # ==================================================
-  whatsapp-bot:
+  whatsapp-bot-tester:
     # Build from local Dockerfile
     # Context es la raíz del proyecto, no docker/
     build:
@@ -18,14 +18,14 @@ services:
       dockerfile: docker/Dockerfile
 
     # Container name
-    container_name: whatsapp-webhook
+    container_name: whatsapp-tester
 
     # Restart policy
     restart: unless-stopped
 
     # Port mapping: host:container
     ports:
-      - "5000:5000"
+      - "50001:5000"
 
     # Environment variables from .env file
     env_file:
@@ -37,11 +37,14 @@ services:
       # Access keys configuration
       - MASTER_ACCESS_KEY=${MASTER_ACCESS_KEY:-}
       - ALLOW_KEY_REUSE=${ALLOW_KEY_REUSE:-false}
+      # Environment mode (development/production)
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - FLASK_ENV=${FLASK_ENV:-development}
 
     # Volume mounts (desde raíz del proyecto)
     volumes:
       # Mount database (persistent storage)
-      - ../data/database.db:/app/data/database.db
+      - ../data:/app/data
 
       # Mount source code for hot reload in development
       # Comment out for production
@@ -67,13 +70,13 @@ services:
 
     # Network mode
     networks:
-      - whatsapp-network
+      - whatsapp-tester-network
 
 # ==================================================
 # NETWORKS
 # ==================================================
 networks:
-  whatsapp-network:
+  whatsapp-tester-network:
     driver: bridge
 
 # ==================================================
