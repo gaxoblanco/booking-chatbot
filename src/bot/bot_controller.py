@@ -276,7 +276,7 @@ class BotController:
             # ===== ESTADOS DE CLIENTE =====
             # TODO: Mover estos handlers a client_handler.py
             ConversationState.CLIENT_MAIN_MENU: self.handle_client_main_menu,
-            ConversationState.CLIENT_NEW_USER_MENU: self.handle_client_new_user_menu,
+            ConversationState.CLIENT_NEW_USER_MENU: self.handle_client_main_menu,  # Usar el mismo handler
             ConversationState.CLIENT_FILTER_ZONA: self.handle_client_filter_zona,
             ConversationState.CLIENT_FILTER_FECHA: self.handle_client_filter_fecha,
             ConversationState.CLIENT_FILTER_HORA: self.handle_client_filter_hora,
@@ -285,6 +285,12 @@ class BotController:
             ConversationState.CLIENT_SHOW_RESULTS: self.handle_client_show_results,
             ConversationState.CLIENT_VIEW_DETAIL: self.handle_client_view_detail,
 
+            # Estados de reserva del cliente
+            ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING: self.client_handler.handle_client_view_detail_with_booking,
+            ConversationState.CLIENT_CONFIRM_BOOKING: self.client_handler.handle_client_confirm_booking,
+            ConversationState.CLIENT_BOOKING_CONFIRMED: self.client_handler.handle_client_booking_confirmed,
+            
+
             # Estados de multi-filtro del cliente
             ConversationState.CLIENT_MULTIFILTER_MENU: self.handle_client_multifilter_menu,
             ConversationState.CLIENT_MULTIFILTER_ZONA: self.handle_client_multifilter_zona,
@@ -292,6 +298,7 @@ class BotController:
             ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
             ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
             ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
+            ConversationState.CLIENT_MULTIFILTER_ESPECIALIDAD: self.handle_client_multifilter_especialidad,
             ConversationState.CLIENT_SEARCH_QUICK: self.handle_client_search_quick,
             # Estados de gestión de citas del cliente
             ConversationState.CLIENT_VIEW_APPOINTMENTS: self.handle_client_view_appointments,
@@ -537,6 +544,10 @@ class BotController:
     def handle_client_multifilter_prepaga(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
         return self.client_handler.handle_client_multifilter_prepaga(session, message)
+    
+    def handle_client_multifilter_especialidad(self, session: SessionData, message: str) -> str:
+        """Delegar a client_handler."""
+        return self.client_handler.handle_client_multifilter_especialidad(session, message)
 
     def handle_client_multifilter_sexo(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
