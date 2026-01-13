@@ -16,6 +16,9 @@ Este archivo contiene ~800 líneas de lógica específica del cliente.
 """
 
 from datetime import date
+
+from requests import session
+from src.services.user_service import user_service
 from src.config.domain_config import DomainConfig
 from src.core.states import ConversationState, SessionData, UserRole
 from src.messages.messages_common import common_messages
@@ -57,15 +60,17 @@ class ClientHandler:
     def handle_client_main_menu(self, session: SessionData, message: str) -> str:
         """
         Maneja menú principal del cliente.
-
+        
+        NOTA: Ahora usa el mismo menú que CLIENT_NEW_USER_MENU para consistencia.
+        
         Opciones:
-        1. Buscar para hoy
-        2. Búsqueda avanzada (paso a paso)
-        3. Búsqueda rápida (todo en 1 mensaje)
-        4. Virtual (sesiones online)
-        5. Presencial (por zona)
-        0. Volver
+        1. Buscar profesional (Búsqueda asistida paso a paso)
+        2. Ver disponibles mañana
+        3. Información del centro
+        0. Volver al inicio
         """
+        from src.services.user_service import user_service
+        
         # Validar comandos especiales
         message_lower = message.lower().strip()
 
@@ -82,61 +87,111 @@ class ClientHandler:
             else:
                 greeting = "¡Hola! 👋\n\n"
 
-            return greeting + client_messages.CLIENT_MAIN_MENU
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+            
+            return greeting + welcome_msg
 
         if message_lower in ['menu', 'menú', 'volver']:
-            return client_messages.CLIENT_MAIN_MENU
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+            return welcome_msg
 
-        # Detectar si viene de cancelación exitosa
-        just_cancelled = session.get_temp('just_cancelled_appointment')
-        if just_cancelled:
-            # Limpiar flag
-            session.store_temp('just_cancelled_appointment', False)
-
+        # === OPCIONES DEL MENÚ ===
+        
         if message == '1':
-            # Buscar para hoy
-            today = date.today()
-            session.clear_temp()
-            session.store_temp('fecha', today)
-            session.store_temp('fecha_str', today.strftime("%d/%m/%Y"))
-            session.transition_to(ConversationState.CLIENT_FILTER_HORA)
-
-            return client_messages.CLIENT_SEARCH_TODAY_CONFIRM.format(
-                today_date=today.strftime("%d/%m/%Y")
-            )
-
-        elif message == '2':
-            # Búsqueda avanzada (paso a paso)
+            # Opción 1: Búsqueda asistida paso a paso
+            print(f"[CLIENT] Búsqueda asistida: {session.phone_number}")
+            
             session.clear_temp()
             session.store_temp('filters', {})
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return self.format_multifilter_menu(session)
 
+        elif message == '2':
+            # Opción 2: Ver disponibles mañana
+            print(f"[CLIENT] Disponibles mañana: {session.phone_number}")
+            
+            from datetime import date, timedelta
+
+            tomorrow = date.today() + timedelta(days=1)
+            tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+            tomorrow_formatted = tomorrow.strftime("%d/%m/%Y")
+
+            session.store_temp('search_date', tomorrow_str)
+            session.store_temp('search_date_formatted', tomorrow_formatted)
+
+            # ✅ CORRECCIÓN: Usar el método correcto con date_str
+            results = client_service.search_professionals_by_filters(
+                date_str=tomorrow_str,
+                limit=10
+            )
+
+            # Log search
+            search_id = analytics_service.log_search(
+                client_phone=session.phone_number,
+                search_type='tomorrow',
+                search_params={'fecha': tomorrow_formatted},
+                result_count=len(results),
+                session_id=session.phone_number
+            )
+            session.store_temp('current_search_id', search_id)
+            session.store_temp('search_results', results)
+
+            # Transicionar al estado de resultados
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+
+            # Si no hay resultados
+            if len(results) == 0:
+                return client_messages.CLIENT_NO_RESULTS
+
+            # Formatear y mostrar resultados
+            formatted = client_service.format_results_list(results)
+            return formatted
+        
         elif message == '3':
-            # Búsqueda rápida (todo en 1 mensaje)
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_SEARCH_QUICK)
-            return client_messages.CLIENT_SEARCH_QUICK_FORMAT
+            # Opción 3: Información del centro
+            print(f"[CLIENT] Info del centro: {session.phone_number}")
 
-        elif message == '4':
-            # Mis Citas - transicionar y cargar lista (sin pasar el mensaje)
-            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
-            return self.handle_client_view_appointments(session, '')
-
-        elif message == '5':
-            # Presencial - PREGUNTAR ZONA
-            session.clear_temp()
-            session.store_temp('modality', 'presencial')
-            session.transition_to(ConversationState.CLIENT_FILTER_ZONA)
-            return client_messages.CLIENT_ASK_ZONA
+            info_message = user_service.get_center_info()
+            return info_message
 
         elif message == '0':
-            session.reset()
-            return common_messages.WELCOME
+            # Volver al inicio - regenerar el mismo menú
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+            return welcome_msg
 
         else:
-            return common_messages.INVALID_DATE + "\n\n" + client_messages.CLIENT_MAIN_MENU
-
+            # Opción inválida
+            invalid_msg = common_messages.INVALID_OPTION + "\n\n"
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+            return invalid_msg + welcome_msg
     def handle_client_new_user_menu(self, session: SessionData, message: str) -> str:
         """
         Maneja menú especial para usuarios nuevos.
@@ -215,13 +270,24 @@ class ClientHandler:
             return info_message
 
         elif message == '0':
-            # Volver al inicio
+            # Volver al menú de bienvenida (regenerar mensaje)
             print(
                 f"[CLIENT] Usuario nuevo → Volver inicio: {session.phone_number}")
-
-            session.reset()
-            session.transition_to(ConversationState.ROLE_SELECTION)
-            return common_messages.WELCOME
+            
+            from src.services.user_service import user_service
+            
+            # Mantener el rol de cliente, solo regenerar el mensaje de bienvenida
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+            
+            # Mantener en el mismo estado CLIENT_NEW_USER_MENU
+            return welcome_msg
 
         else:
             # Opción inválida - volver a mostrar el menú
@@ -504,41 +570,18 @@ class ClientHandler:
         Permite al usuario ir agregando filtros uno por uno,
         y cuando tenga los que necesita, ejecutar la búsqueda.
         """
-        if message == '1':
-            # Zona
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_ZONA)
-            zone_options = client_messages.format_zone_options()
-            return client_messages.CLIENT_ASK_ZONA.format(
-                zone_options=zone_options
-            )
+        # Mostrar menú inicial si es start
+        if message == 'start':
+            return self.format_multifilter_menu(session)
 
-        elif message == '2':
-            # Disponibilidad (Fecha + Hora)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_FECHA)
-            return client_messages.CLIENT_ASK_FECHA
-
-        elif message == '3':
-            # Prepaga
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_PREPAGA)
-            return client_messages.CLIENT_ASK_PREPAGA
-
-        elif message == '4':
-            # Sexo
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_SEXO)
-            return client_messages.CLIENT_ASK_SEXO
-
-        elif message == '5':
-            # Especialidad
-            return "📋 Especialidad (próximamente)\n\nEscribe 'menu' para volver."
-
-        elif message.lower() in ['buscar', 'search', '6']:
-            # Ejecutar búsqueda con filtros aplicados
+        # Opción 9: Buscar con filtros actuales
+        if message == '9':
             filters = session.get_temp('filters', {})
 
             if not filters:
-                return "⚠️ No hay filtros aplicados.\n\n" + self.format_multifilter_menu(session)
+                return "⚠️ No has seleccionado ningún filtro.\n\n" + self.format_multifilter_menu(session)
 
-            # Build search parameters
+            # Construir parámetros de búsqueda
             search_params = {}
             if 'zona' in filters:
                 search_params['zone'] = filters['zona']
@@ -546,12 +589,14 @@ class ClientHandler:
                 search_params['accept_prepaga'] = filters['prepaga']
             if 'sexo' in filters:
                 search_params['gender'] = filters['sexo']
+            if 'fecha' in filters:
+                search_params['available_date'] = filters['fecha']
 
-            # Search professionals
+            # Buscar profesionales
             results = client_service.search_professionals_by_filters(
                 **search_params, limit=10)
 
-            # Log search
+            # Log de búsqueda
             search_id = analytics_service.log_search(
                 client_phone=session.phone_number,
                 search_type='multifilter',
@@ -561,22 +606,61 @@ class ClientHandler:
             )
             session.store_temp('current_search_id', search_id)
 
-            # Store results
+            # Guardar resultados
             session.store_temp('search_results', results)
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
-            # Format and return
+            # Formatear y retornar
             if len(results) == 0:
                 return client_messages.CLIENT_NO_RESULTS
 
             formatted = client_service.format_results_list(results)
-            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
             return formatted
 
+        # Opción 0: Volver al menú cliente
         elif message == '0':
+            
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
+            
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None
+            })
+            
+            return welcome_msg
 
+        # Opción 1: Zona
+        elif message == '1':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_ZONA)
+            return client_messages.CLIENT_ASK_ZONA
+
+        # Opción 2: Disponibilidad
+        elif message == '2':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_FECHA)
+            return client_messages.CLIENT_ASK_FECHA
+
+        # Opción 3: Prepaga
+        elif message == '3':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_PREPAGA)
+            return client_messages.CLIENT_ASK_PREPAGA
+
+        # Opción 4: Sexo/Género
+        elif message == '4':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_SEXO)
+            return client_messages.CLIENT_ASK_SEXO
+
+        # Opción 5: Especialidad (TODO: implement)
+        elif message == '5':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_ESPECIALIDAD)
+            category_options = client_messages.format_category_options()
+            return client_messages.CLIENT_ASK_ESPECIALIDAD.format(
+                category_options=category_options
+            )
         else:
             return common_messages.INVALID_OPTION + "\n\n" + self.format_multifilter_menu(session)
 
@@ -731,6 +815,36 @@ class ClientHandler:
             )
         else:
             return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_SEXO
+
+        session.store_temp('filters', filters)
+        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
+            filter_name=filter_display,
+            menu=self.format_multifilter_menu(session)
+        )
+
+    def handle_client_multifilter_especialidad(self, session: SessionData, message: str) -> str:
+        """Maneja filtro de especialidad en modo multi-filtro."""
+        # Check for back command FIRST
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+
+        filters = session.get_temp('filters', {})
+
+        # Obtener las opciones de categorías desde DomainConfig
+        from src.config.domain_config import DomainConfig
+        categories = DomainConfig.CATEGORIES
+
+        # Validar que el mensaje sea un número válido
+        if message in categories:
+            especialidad_label = categories[message]
+            filters['especialidad'] = especialidad_label
+            filter_display = f"{DomainConfig.CATEGORY_LABEL}: {especialidad_label}"
+        else:
+            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_ESPECIALIDAD.format(
+                category_options=client_messages.format_category_options()
+            )
 
         session.store_temp('filters', filters)
         session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
@@ -1035,6 +1149,7 @@ class ClientHandler:
         El usuario puede:
         - Seleccionar un número para ver detalle
         - Volver al menú
+        - Si no hay resultados: modificar filtros o ver todos
         """
         # Check for back command
         if message == '0':
@@ -1042,17 +1157,50 @@ class ClientHandler:
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return client_messages.CLIENT_MAIN_MENU
 
-        # Validate input is a number
+        # Get results from session
+        results = session.get_temp('search_results', [])
+
+        # Si NO hay resultados, manejar opciones especiales
+        if not results or len(results) == 0:
+            if message == '1':
+                # Modificar filtros - volver al menú de filtros
+                session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+                return self.format_multifilter_menu(session)
+            
+            elif message == '2':
+                # Ver todos los profesionales (sin filtros)
+                print("[CLIENT] User requested: Show all professionals (no filters)")
+                
+                # Buscar SIN filtros
+                all_results = client_service.search_professionals_by_filters(limit=10)
+                
+                # Log search
+                search_id = analytics_service.log_search(
+                    client_phone=session.phone_number,
+                    search_type='all',
+                    search_params={},
+                    result_count=len(all_results),
+                    session_id=session.phone_number
+                )
+                session.store_temp('current_search_id', search_id)
+                session.store_temp('search_results', all_results)
+                
+                # Format and return
+                if len(all_results) == 0:
+                    return "😔 No hay profesionales registrados en el sistema.\n\nEscribe '0' para volver al menú."
+                
+                formatted = client_service.format_results_list(all_results)
+                return formatted
+            
+            else:
+                # Opción inválida cuando no hay resultados
+                return client_messages.CLIENT_NO_RESULTS
+
+        # FLUJO NORMAL: Hay resultados, validar selección numérica
         try:
             selection = int(message)
         except ValueError:
             return "⚠️ Por favor, ingresá un número válido.\n\nEscribe '0' para volver."
-
-        # Get results from session
-        results = session.get_temp('search_results', [])
-
-        if not results:
-            return client_messages.CLIENT_NO_RESULTS
 
         # Validate selection
         if selection < 1 or selection > len(results):
@@ -1070,12 +1218,24 @@ class ClientHandler:
             analytics_service.log_contact(
                 search_id=search_id,
                 professional_phone=professional['phone'],
-                contact_method='view_profile'
+                result_position=selection
             )
 
-        # Transition and show detail
-        session.transition_to(ConversationState.CLIENT_VIEW_DETAIL)
-        return client_service.format_professional_detail(professional)
+        search_date = session.get_temp('search_date')
+    
+        if search_date:
+            # Hay fecha específica → Mostrar horarios para agendar
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+            return client_service.format_professional_detail(
+                professional,
+                target_date=search_date,
+                show_booking=True
+            )
+        else:
+            # No hay fecha → Mostrar detalle normal
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL)
+            return client_service.format_professional_detail(professional)
+
 
     def handle_client_view_detail(self, session: SessionData, message: str) -> str:
         """
@@ -1102,15 +1262,6 @@ class ClientHandler:
 
             if not professional:
                 return "⚠️ Error: No hay profesional seleccionado.\n\nEscribe 'menu' para volver."
-
-            # Log contact
-            search_id = session.get_temp('current_search_id')
-            if search_id:
-                analytics_service.log_contact(
-                    search_id=search_id,
-                    professional_phone=professional['phone'],
-                    contact_method='whatsapp'
-                )
 
             # Return contact info
             contact_message = f"📱 Contacto:\n\n"
@@ -1894,3 +2045,208 @@ class ClientHandler:
             status_badge=status_badge,
             options=options
         )
+
+    # ==========================================
+    # CLIENT - BOOKING FLOW
+    # ==========================================
+
+    def handle_client_view_detail_with_booking(self, session: SessionData, message: str) -> str:
+        """
+        Handle detail view with specific time slots for booking.
+        User can select a numbered time slot or go back.
+        """
+        from src.services.professional_service import professional_service
+        
+        # Check for back
+        if message == '0':
+            results = session.get_temp('search_results', [])
+            if results:
+                formatted = client_service.format_results_list(results)
+                session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+                
+                search_date_formatted = session.get_temp('search_date_formatted', '')
+                return f"""Volviendo a los resultados...
+
+✅ Profesionales disponibles para {search_date_formatted}:
+
+{formatted}
+
+Responde con el número para ver detalles.
+O escribe '0' para volver al menú."""
+            else:
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                return client_messages.CLIENT_MAIN_MENU
+        
+        # Get data
+        professional = session.get_temp('selected_professional')
+        search_date = session.get_temp('search_date')
+        
+        if not professional or not search_date:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: Sesión expirada.\n\n" + client_messages.CLIENT_MAIN_MENU
+        
+        # Validate numeric input
+        try:
+            selection = int(message)
+        except ValueError:
+            return "⚠️ Por favor, ingresa el número del horario que deseas agendar.\n\nEscribe '0' para volver."
+        
+        # Get available slots
+        slots = professional_service.get_available_slots(
+            professional['phone'],
+            search_date,
+            duration_minutes=50
+        )
+        
+        if not slots:
+            return "❌ No hay horarios disponibles.\n\nEscribe '0' para volver."
+        
+        # Validate selection
+        if selection < 1 or selection > len(slots):
+            return f"⚠️ Número inválido. Elegí entre 1 y {len(slots)}.\n\nEscribe '0' para volver."
+        
+        # Get selected slot
+        selected_slot = slots[selection - 1]
+        
+        # Store booking info
+        session.store_temp('selected_slot', selected_slot)
+        session.store_temp('booking_date', search_date)
+        session.store_temp('booking_start_time', selected_slot['start_time'])
+        session.store_temp('booking_end_time', selected_slot['end_time'])
+        
+        # Transition to confirmation
+        session.transition_to(ConversationState.CLIENT_CONFIRM_BOOKING)
+        
+        # Format confirmation message
+        from datetime import datetime
+        date_obj = datetime.strptime(search_date, "%Y-%m-%d")
+        date_formatted = date_obj.strftime("%d/%m/%Y")
+        day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        day_name = day_names[date_obj.weekday()]
+        
+        prof_name = professional.get('name', 'Profesional')
+        prof_phone = professional.get('phone', '')
+        
+        return f"""✅ CONFIRMAR AGENDAMIENTO
+{'=' * 40}
+
+👨‍⚕️ Profesional: {prof_name}
+📅 Fecha: {day_name} {date_formatted}
+⏰ Horario: {selected_slot['start_time']} - {selected_slot['end_time']}
+📱 Contacto: {prof_phone}
+
+¿Confirmas esta cita?
+
+1️⃣ Sí, confirmar agendamiento
+0️⃣ No, volver atrás
+
+⚠️ El profesional recibirá tu solicitud y deberá confirmarla."""
+
+    def handle_client_confirm_booking(self, session: SessionData, message: str) -> str:
+        """
+        Handle booking confirmation.
+        User must confirm with '1' or cancel with '0'.
+        """
+        from datetime import datetime
+        
+        # Check for cancellation
+        if message == '0':
+            professional = session.get_temp('selected_professional')
+            search_date = session.get_temp('search_date')
+            
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+            return client_service.format_professional_detail(
+                professional,
+                target_date=search_date,
+                show_booking=True
+            )
+        
+        # Validate confirmation
+        if message != '1':
+            return "⚠️ Por favor, ingresa:\n\n1️⃣ Para confirmar\n0️⃣ Para cancelar"
+        
+        # Get booking data
+        professional = session.get_temp('selected_professional')
+        booking_date = session.get_temp('booking_date')
+        booking_start_time = session.get_temp('booking_start_time')
+        booking_end_time = session.get_temp('booking_end_time')
+        
+        if not all([professional, booking_date, booking_start_time, booking_end_time]):
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "❌ Error: Información incompleta.\n\n" + client_messages.CLIENT_MAIN_MENU
+        
+        # TODO: Aquí crear el appointment en la BD cuando implementes persistencia
+        # from src.services.appointment_service import appointment_service
+        # appointment_id = appointment_service.create_appointment(...)
+        
+        # Por ahora, solo simulamos
+        appointment_id = "DEMO_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        
+        print(f"[CLIENT] ✅ Agendamiento simulado:")
+        print(f"         Cliente: {session.phone}")
+        print(f"         Profesional: {professional['phone']}")
+        print(f"         Fecha: {booking_date}")
+        print(f"         Horario: {booking_start_time} - {booking_end_time}")
+        print(f"         ID: {appointment_id}")
+        
+        session.store_temp('appointment_id', appointment_id)
+        session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRMED)
+        
+        # Format success message
+        date_obj = datetime.strptime(booking_date, "%Y-%m-%d")
+        date_formatted = date_obj.strftime("%d/%m/%Y")
+        day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        day_name = day_names[date_obj.weekday()]
+        
+        prof_name = professional.get('name', 'Profesional')
+        prof_phone = professional.get('phone', '')
+        
+        return f"""✅ ¡CITA AGENDADA CON ÉXITO!
+{'=' * 40}
+
+Tu solicitud ha sido enviada al profesional.
+
+📋 RESUMEN DE LA CITA:
+
+👨‍⚕️ Profesional: {prof_name}
+📅 Fecha: {day_name} {date_formatted}
+⏰ Horario: {booking_start_time} - {booking_end_time}
+📱 Contacto: {prof_phone}
+
+📌 Estado: Pendiente de confirmación
+
+El profesional recibirá tu solicitud y te confirmará la cita en breve.
+
+¿Qué deseas hacer?
+
+1️⃣ Ver mis citas
+2️⃣ Nueva búsqueda
+0️⃣ Menú principal"""
+
+    def handle_client_booking_confirmed(self, session: SessionData, message: str) -> str:
+        """
+        Handle post-booking options.
+        """
+        if message == '1':
+            # Ver mis citas
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.handle_client_view_appointments(session, 'start')
+        
+        elif message == '2':
+            # Nueva búsqueda
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+        
+        elif message == '0':
+            # Menú principal
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+        
+        else:
+            return "⚠️ Opción inválida.\n\n1️⃣ Ver mis citas\n2️⃣ Nueva búsqueda\n0️⃣ Menú principal"
