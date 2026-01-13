@@ -88,6 +88,43 @@ conn.close()
 fi
 
 # ==================================================
+# SEED TEST DATA (DEVELOPMENT ONLY)
+# ==================================================
+# Check if we're in development mode
+if [ "$FLASK_ENV" = "development" ] || [ "$ENVIRONMENT" = "development" ] || [ "$ENVIRONMENT" = "dev" ]; then
+    echo "🌱 Development mode detected - checking test data..."
+    
+    # Check if we have test professionals
+    PROF_COUNT=$(python -c "
+import sqlite3
+conn = sqlite3.connect('data/database.db')
+cursor = conn.cursor()
+cursor.execute('SELECT COUNT(*) FROM professionals')
+count = cursor.fetchone()[0]
+conn.close()
+print(count)
+")
+    
+    if [ "$PROF_COUNT" -lt 3 ]; then
+        echo "📝 Seeding test professionals..."
+        
+        # Run seed script
+        python scripts/seed_test_data.py
+        
+        if [ $? -eq 0 ]; then
+            echo "✅ Test professionals created successfully"
+        else
+            echo "⚠️  Warning: Could not create test professionals"
+            echo "   Run manually: docker-compose exec whatsapp-bot python scripts/seed_test_data.py"
+        fi
+    else
+        echo "✅ Test data already exists ($PROF_COUNT professionals)"
+    fi
+    
+    echo ""
+fi
+
+# ==================================================
 # ACCESS KEYS CONFIGURATION
 # ==================================================
 echo "🔑 Sistema de Claves de Acceso:"
@@ -126,6 +163,9 @@ echo "  📱 WhatsApp Bot Webhook"
 echo "  🌐 Port: 5000"
 echo "  🔑 Sistema: Claves de Acceso"
 echo "  📦 Dominio: $DOMAIN_PRESET"
+if [ "$FLASK_ENV" = "development" ] || [ "$ENVIRONMENT" = "development" ]; then
+    echo "  🔧 Modo: Development"
+fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
