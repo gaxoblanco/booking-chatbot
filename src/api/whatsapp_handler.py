@@ -52,7 +52,7 @@ def home():
         'status': 'running',
         'service': 'WhatsApp Bot Webhook',
         'endpoints': {
-            'webhook': '/webhook (POST)',
+            'webhook': '/webhook-demo (POST)',
             'health': '/ (GET)'
         }
     }, 200

@@ -10,7 +10,7 @@ services:
   # ==================================================
   # WHATSAPP WEBHOOK SERVICE
   # ==================================================
-  whatsapp-bot-tester:
+  whatsapp-demo:
     # Build from local Dockerfile
     # Context es la raíz del proyecto, no docker/
     build:
@@ -18,14 +18,14 @@ services:
       dockerfile: docker/Dockerfile
 
     # Container name
-    container_name: whatsapp-tester
+    container_name: whatsapp-demo
 
     # Restart policy
     restart: unless-stopped
 
     # Port mapping: host:container
     ports:
-      - "50001:5000"
+      - "5001:5000"
 
     # Environment variables from .env file
     env_file:
@@ -70,13 +70,13 @@ services:
 
     # Network mode
     networks:
-      - whatsapp-tester-network
+      - whatsapp-demo-network
 
 # ==================================================
 # NETWORKS
 # ==================================================
 networks:
-  whatsapp-tester-network:
+  whatsapp-demo-network:
     driver: bridge
 
 # ==================================================
