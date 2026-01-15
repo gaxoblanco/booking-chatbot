@@ -324,54 +324,53 @@ class UserService:
     def get_center_info(self) -> str:
         """
         Genera mensaje con información del centro/negocio.
-
-        Usa configuración del dominio para mostrar información
-        relevante del negocio.
-
+        
+        SIMPLE: La mayoría del texto es directo, solo usa variables
+        esenciales de DomainConfig para adaptarse al dominio.
+        
         Returns:
             Mensaje con información del centro
         """
         from src.config.domain_config import DomainConfig
+        
+        # Obtener valores básicos con fallbacks
+        business_name = getattr(DomainConfig, 'BUSINESS_NAME', 'Nuestro Centro')
+        tagline = getattr(DomainConfig, 'WELCOME_TAGLINE', 'Conectamos profesionales con clientes')
+        prof_plural = getattr(DomainConfig, 'PROFESSIONAL_TITLE_PLURAL_LOWER', 'profesionales')
+        
+        message = f"""📋 *{business_name}*
 
-        message = f"{DomainConfig.EMOJI_PROFESSIONAL} *{DomainConfig.BUSINESS_NAME}*\n\n"
+    *Sobre Nosotros*
+    {tagline}
 
-        # Información básica
-        message += f"📋 *Sobre Nosotros*\n"
-        message += f"{DomainConfig.WELCOME_TAGLINE}\n\n"
+    *Servicios*
+    ✅ Búsqueda de {prof_plural} por zona
+    ✅ Agenda online
+    ✅ Confirmación instantánea
+    ✅ Atención presencial y virtual
 
-        # Especialidades/Categorías disponibles
-        if DomainConfig.CATEGORIES:
-            message += f"{DomainConfig.EMOJI_CATEGORY} *{DomainConfig.CATEGORY_LABEL_PLURAL}*\n"
-            for key, value in DomainConfig.CATEGORIES.items():
-                message += f"• {value}\n"
-            message += "\n"
+    *¿Cómo funciona?*
+    1. Elegís el {prof_plural[:-1]} que necesitás
+    2. Seleccionás fecha y horario
+    3. Confirmás tu turno
+    4. ¡Listo! Recibís la confirmación
 
-        # Zonas de atención
-        if DomainConfig.ZONES:
-            message += f"{DomainConfig.EMOJI_LOCATION} *Zonas de Atención*\n"
-            for key, value in DomainConfig.ZONES.items():
-                message += f"• {value}\n"
-            message += "\n"
+    *Contacto*
+    📧 info@ejemplo.com
+    📱 +54 11 1234-5678
+    🌐 www.ejemplo.com
 
-        # Información adicional
-        if DomainConfig.CUSTOM_FIELD_1_ENABLED:
-            message += f"✅ {DomainConfig.CUSTOM_FIELD_1_LABEL} disponible\n"
+    *Horarios*
+    Lun-Vie: 9:00 - 18:00
+    Sábados: 9:00 - 13:00
 
-        if hasattr(DomainConfig, 'CUSTOM_FIELD_2_ENABLED') and DomainConfig.CUSTOM_FIELD_2_ENABLED:
-            message += f"✅ {DomainConfig.CUSTOM_FIELD_2_LABEL} disponible\n"
-
-        message += "\n"
-        message += "💬 *¿Cómo funciona?*\n"
-        message += f"1. Buscás {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} según tus preferencias\n"
-        message += f"2. Ves perfiles y {DomainConfig.SLOT_NAME_PLURAL} disponibles\n"
-        message += f"3. Agendás tu {DomainConfig.APPOINTMENT_NAME}\n"
-        message += "4. Recibís confirmación instantánea\n\n"
-
-        message += "¿Querés buscar ahora?\n"
-        message += "1️⃣ Sí, buscar\n"
-        message += "0️⃣ Volver al menú"
+    ¿Querés buscar ahora?
+    1️⃣ Sí, buscar
+    0️⃣ Volver al menú"""
 
         return message
+
+
 
 
 # === SINGLETON ===
