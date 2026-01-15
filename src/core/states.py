@@ -105,6 +105,12 @@ class ConversationState(Enum):
     # Results
     CLIENT_SHOW_RESULTS = "client_show_results"  # Display search results
     CLIENT_VIEW_DETAIL = "client_view_detail"  # Show professional detail
+    CLIENT_SEARCH_TYPE = "client_search_type" # Choose search type again
+
+    # CLIENT - Booking Flow  ← AGREGAR ESTOS 3
+    CLIENT_VIEW_DETAIL_WITH_BOOKING = "client_view_detail_with_booking"
+    CLIENT_CONFIRM_BOOKING = "client_confirm_booking"
+    CLIENT_BOOKING_CONFIRMED = "client_booking_confirmed"
 
     # ==========================================
     # CLIENT - APPOINTMENT BOOKING STATES
