@@ -18,20 +18,7 @@ class ClientMessages:
     # CLIENT - MAIN MENU
     # ==========================================
 
-    CLIENT_MAIN_MENU = f"""{DomainConfig.EMOJI_CLIENT} *Menú Cliente*
-
-{DomainConfig.CLIENT_WELCOME}
-
-Buscar {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} disponibles:
-
-1️⃣ Buscar para Hoy
-2️⃣ Búsqueda Avanzada (Paso a Paso)
-3️⃣ Búsqueda Rápida (Todo en 1 mensaje)
-4️⃣ Mis {DomainConfig.APPOINTMENT_NAME_PLURAL}
-
-0️⃣ Volver al inicio
-
-Responde con el número de opción."""
+    CLIENT_MAIN_MENU = None  
 
     CLIENT_WELCOME_WITH_APPOINTMENTS = f"""👋 ¡Hola {{name}}!
 
