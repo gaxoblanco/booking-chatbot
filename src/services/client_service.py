@@ -625,16 +625,17 @@ class ClientService:
             else:
                 return "Consultar disponibilidad"
 
-    def format_professional_detail(self, prof: Dict) -> str:
+    def format_professional_detail(self, prof: Dict, target_date: str = None, show_booking: bool = False) -> str:
         """
         Format complete professional details for display.
-        Shows full contact info, schedule, and specific free slots.
-
+        
         Args:
-            prof: Professional dictionary with schedule info
-
+            prof: Professional dictionary
+            target_date: Optional date to show specific slots (YYYY-MM-DD)
+            show_booking: If True, show numbered slots for booking
+            
         Returns:
-            Formatted detailed view
+            Formatted professional detail string
         """
         output = f"👨‍⚕️ {prof['name']}\n"
         output += "=" * 40 + "\n\n"
@@ -665,44 +666,50 @@ class ClientService:
         # Availability section
         output += "⏰ DISPONIBILIDAD:\n\n"
 
-        # Available days this week (from weekly schedule)
-        output += self._format_weekly_availability(prof['phone'])
-        output += "\n"
-
-        # Specific free slots (next 14 days)
-        if prof.get('free_slots'):
-            output += "🆓 HORARIOS LIBRES CONFIRMADOS:\n"
-            from datetime import datetime, timedelta
-
-            today = datetime.now().date()
-            two_weeks = today + timedelta(days=14)
-
-            count = 0
-            for slot in prof['free_slots']:
-                slot_date = datetime.strptime(slot['date'], "%Y-%m-%d").date()
-
-                if today <= slot_date <= two_weeks:
-                    day_name = ['Lun', 'Mar', 'Mié', 'Jue',
-                                'Vie', 'Sáb', 'Dom'][slot_date.weekday()]
-                    output += f"   ✅ {day_name} {slot_date.day:02d}/{slot_date.month:02d} {slot['start_time']}-{slot['end_time']}\n"
-                    count += 1
-
-                    if count >= 5:  # Show max 5 slots
-                        remaining = len([s for s in prof['free_slots']
-                                         if today <= datetime.strptime(s['date'], "%Y-%m-%d").date() <= two_weeks]) - 5
-                        if remaining > 0:
-                            output += f"   ... y {remaining} horarios más\n"
-                        break
-
-            if count == 0:
-                output += "   No hay horarios libres confirmados en las próximas 2 semanas.\n"
-
+        if show_booking and target_date:
+            # Modo booking: mostrar horarios específicos del día
+            output += self._format_date_specific_slots(prof['phone'], target_date)
+        else:
+            # Modo normal: mostrar disponibilidad semanal
+            output += self._format_weekly_availability(prof['phone'])
             output += "\n"
 
-        # Simplified call to action
-        output += "💬 Click en el link de WhatsApp para contactar\n\n"
-        output += "1️⃣ Nueva búsqueda\n"
-        output += "0️⃣ Volver al menú"
+            # Specific free slots (next 14 days)
+            if prof.get('free_slots'):
+                output += "🆓 HORARIOS LIBRES CONFIRMADOS:\n"
+                from datetime import datetime, timedelta
+
+                today = datetime.now().date()
+                two_weeks = today + timedelta(days=14)
+
+                count = 0
+                for slot in prof['free_slots']:
+                    slot_date = datetime.strptime(slot['date'], "%Y-%m-%d").date()
+
+                    if today <= slot_date <= two_weeks:
+                        day_name = ['Lun', 'Mar', 'Mié', 'Jue',
+                                    'Vie', 'Sáb', 'Dom'][slot_date.weekday()]
+                        output += f"   ✅ {day_name} {slot_date.day:02d}/{slot_date.month:02d} {slot['start_time']}-{slot['end_time']}\n"
+                        count += 1
+
+                        if count >= 5:  # Show max 5 slots
+                            remaining = len([s for s in prof['free_slots']
+                                            if today <= datetime.strptime(s['date'], "%Y-%m-%d").date() <= two_weeks]) - 5
+                            if remaining > 0:
+                                output += f"   ... y {remaining} horarios más\n"
+                            break
+
+                if count == 0:
+                    output += "   No hay horarios libres confirmados en las próximas 2 semanas.\n"
+
+                output += "\n"
+
+        # Footer - MODIFICADO
+        if not (show_booking and target_date):
+            # Solo mostrar link en modo normal
+            output += "💬 Click en el link de WhatsApp para contactar\n\n"
+            output += "1️⃣ Nueva búsqueda\n"
+            output += "0️⃣ Volver al menú"
 
         return output
 
@@ -739,6 +746,54 @@ class ClientService:
                 output += f"   ❌ {day_names[day]} - Ocupado ({hours})\n"
 
         return output
+
+    def _format_date_specific_slots(self, phone: str, target_date: str) -> str:
+        """
+        Format specific slots for a date with numbered options.
+        
+        Args:
+            phone: Professional's phone
+            target_date: Date in YYYY-MM-DD format
+            
+        Returns:
+            Formatted slots string with numbers
+        """
+        from src.services.professional_service import professional_service
+        from datetime import datetime
+        
+        # Get available slots for the date
+        slots = professional_service.get_available_slots(
+            phone, 
+            target_date, 
+            duration_minutes=50
+        )
+        
+        # Format date for display
+        date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+        date_formatted = date_obj.strftime("%d/%m/%Y")
+        day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        day_name = day_names[date_obj.weekday()]
+        
+        # Build output
+        output = f"⏰ HORARIOS DISPONIBLES PARA {day_name.upper()} {date_formatted}:\n\n"
+        
+        if not slots:
+            output += "❌ No hay horarios disponibles para esta fecha.\n\n"
+            output += "Puedes:\n"
+            output += "• Contactar al profesional por WhatsApp para coordinar\n"
+            output += "• Ver otros profesionales disponibles\n\n"
+            output += "Escribe '0' para volver a los resultados."
+            return output
+        
+        # List numbered slots
+        for idx, slot in enumerate(slots, 1):
+            output += f"{idx}️⃣ {slot['start_time']} - {slot['end_time']}\n"
+        
+        output += "\nResponde con el número para agendar ese horario.\n"
+        output += "O escribe '0' para volver."
+        
+        return output
+
     # ==========================================
     # PRIVATE HELPERS
     # ==========================================
