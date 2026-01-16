@@ -55,7 +55,8 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 # Create necessary directories
 RUN mkdir -p /app/data/certificates && \
-    mkdir -p /app/data
+    mkdir -p /app/data && \
+    mkdir -p /app/src/integrations/google_calendar_service/config/google
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \

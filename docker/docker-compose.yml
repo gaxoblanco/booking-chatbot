@@ -53,6 +53,9 @@ services:
       # Mount scripts (if needed for debugging)
       - ../scripts:/app/scripts
 
+      # ⭐ NUEVO: Mount Google Calendar credentials
+      - ../src/integrations/google_calendar_service:/app/src/integrations/google_calendar_service
+
     # Health check
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
