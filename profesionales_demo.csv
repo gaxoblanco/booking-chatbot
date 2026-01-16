@@ -1,0 +1,6 @@
+phone,name,email,calendar_email,zone,gender,accept_prepaga,category
++5491100000001,Dr. Juan Pérez,juan.perez@saludconecta.com,gax0blanco93@gmail.com,norte,m,1,Médico General
++5491100000002,Dra. María González,maria.gonzalez@saludconecta.com,gax0blanco93@gmail.com,sur,f,1,Cardióloga
++5491100000003,Dr. Carlos Rodríguez,carlos.rodriguez@saludconecta.com,gax0blanco93@gmail.com,norte,m,0,Traumatólogo
++5491100000004,Dra. Ana Martínez,ana.martinez@saludconecta.com,gax0blanco93@gmail.com,sur,f,1,Pediatra
++5491100000005,Dr. Luis Fernández,luis.fernandez@saludconecta.com,gax0blanco93@gmail.com,norte,m,1,Psiquiatra
