@@ -93,7 +93,13 @@ class Database:
                     
                     -- Timestamps
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                           
+                    -- GOOGLE CALENDAR INTEGRATION
+                    calendar_id TEXT,
+                    working_hours TEXT,
+                    slot_duration INTEGER DEFAULT 60,
+                    timezone TEXT DEFAULT 'America/Argentina/Buenos_Aires'
                 )
             """)
 
@@ -220,6 +226,7 @@ class Database:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS appointments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    google_event_id TEXT,
                     
                     -- Referencias
                     client_phone TEXT NOT NULL,
@@ -531,198 +538,6 @@ class Database:
         """
         prof = self.get_professional(phone)
         return prof is not None and prof.get('certificate_path') is not None
-
-    # ==========================================
-    # WEEKLY SCHEDULE OPERATIONS
-    # ==========================================
-
-    def add_weekly_schedule(self, phone: str, day_of_week: int,
-                            start_time: str, end_time: str) -> bool:
-        """
-        Add recurring busy hours for a specific day of week.
-
-        Args:
-            phone: Professional's phone
-            day_of_week: Day number (0=Monday, 6=Sunday)
-            start_time: Start time in HH:MM format
-            end_time: End time in HH:MM format
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO weekly_schedule 
-                    (professional_phone, day_of_week, start_time, end_time, is_busy)
-                    VALUES (?, ?, ?, ?, 1)
-                    ON CONFLICT(professional_phone, day_of_week, start_time, end_time) 
-                    DO UPDATE SET is_busy = 1
-                """, (phone, day_of_week, start_time, end_time))
-
-            print(
-                f"[DB] ✅ Weekly schedule added: {phone}, day {day_of_week}, {start_time}-{end_time}")
-            return True
-        except Exception as e:
-            print(f"[DB] ❌ Error adding weekly schedule: {e}")
-            return False
-
-    def get_weekly_schedule(self, phone: str) -> List[Dict]:
-        """
-        Get all weekly schedules for a professional.
-
-        Args:
-            phone: Professional's phone
-
-        Returns:
-            List of schedule dictionaries
-        """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT * FROM weekly_schedule 
-                    WHERE professional_phone = ? AND is_busy = 1
-                    ORDER BY day_of_week, start_time
-                """, (phone,))
-
-                return [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"[DB] ❌ Error getting weekly schedule: {e}")
-            return []
-
-    def remove_weekly_schedule(self, phone: str, day_of_week: int,
-                               start_time: str, end_time: str) -> bool:
-        """
-        Remove a recurring busy schedule.
-
-        Args:
-            phone: Professional's phone
-            day_of_week: Day number
-            start_time: Start time
-            end_time: End time
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    DELETE FROM weekly_schedule 
-                    WHERE professional_phone = ? 
-                    AND day_of_week = ? 
-                    AND start_time = ? 
-                    AND end_time = ?
-                """, (phone, day_of_week, start_time, end_time))
-
-            print(
-                f"[DB] ✅ Weekly schedule removed: {phone}, day {day_of_week}")
-            return True
-        except Exception as e:
-            print(f"[DB] ❌ Error removing weekly schedule: {e}")
-            return False
-
-    # ==========================================
-    # SPECIFIC FREE SLOTS OPERATIONS
-    # ==========================================
-
-    def add_free_slot(self, phone: str, date: str,
-                      start_time: str, end_time: str) -> bool:
-        """
-        Mark a specific date/time as FREE (overrides weekly schedule).
-
-        Args:
-            phone: Professional's phone
-            date: Date in YYYY-MM-DD format
-            start_time: Start time in HH:MM format
-            end_time: End time in HH:MM format
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO specific_free_slots 
-                    (professional_phone, date, start_time, end_time)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(professional_phone, date, start_time, end_time) 
-                    DO NOTHING
-                """, (phone, date, start_time, end_time))
-
-            print(
-                f"[DB] ✅ Free slot added: {phone}, {date} {start_time}-{end_time}")
-            return True
-        except Exception as e:
-            print(f"[DB] ❌ Error adding free slot: {e}")
-            return False
-
-    def get_free_slots(self, phone: str, from_date: str = None) -> List[Dict]:
-        """
-        Get all specific free slots for a professional.
-
-        Args:
-            phone: Professional's phone
-            from_date: Optional start date filter (YYYY-MM-DD)
-
-        Returns:
-            List of free slot dictionaries
-        """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-
-                if from_date:
-                    cursor.execute("""
-                        SELECT * FROM specific_free_slots 
-                        WHERE professional_phone = ? AND date >= ?
-                        ORDER BY date, start_time
-                    """, (phone, from_date))
-                else:
-                    cursor.execute("""
-                        SELECT * FROM specific_free_slots 
-                        WHERE professional_phone = ?
-                        ORDER BY date, start_time
-                    """, (phone,))
-
-                return [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"[DB] ❌ Error getting free slots: {e}")
-            return []
-
-    def remove_free_slot(self, phone: str, date: str,
-                         start_time: str, end_time: str) -> bool:
-        """
-        Remove a specific free slot.
-
-        Args:
-            phone: Professional's phone
-            date: Date in YYYY-MM-DD format
-            start_time: Start time
-            end_time: End time
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    DELETE FROM specific_free_slots 
-                    WHERE professional_phone = ? 
-                    AND date = ? 
-                    AND start_time = ? 
-                    AND end_time = ?
-                """, (phone, date, start_time, end_time))
-
-            print(f"[DB] ✅ Free slot removed: {phone}, {date}")
-            return True
-        except Exception as e:
-            print(f"[DB] ❌ Error removing free slot: {e}")
-            return False
 
     # ==========================================
     # SEARCH OPERATIONS
@@ -1634,6 +1449,31 @@ class Database:
         except Exception as e:
             print(f"[DB] ❌ Error checking slot availability: {e}")
             return False
+
+    def get_professional_calendar_config(self, phone: str) -> Optional[Dict]:
+            """
+            Obtiene configuración de Google Calendar del profesional.
+            
+            Args:
+                phone: Teléfono del profesional
+                
+            Returns:
+                Dict con calendar_id, working_hours, slot_duration, timezone o None
+            """
+            try:
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT calendar_id, working_hours, slot_duration, timezone
+                        FROM professionals
+                        WHERE phone = ?
+                    """, (phone,))
+                    
+                    row = cursor.fetchone()
+                    return dict(row) if row else None
+            except Exception as e:
+                print(f"[DB] ❌ Error getting calendar config: {e}")
+                return None
 
 
 # Global database instance
