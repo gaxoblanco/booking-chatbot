@@ -7,14 +7,14 @@
 
 1. [Visión General](#visión-general)
 2. [Estructura del Proyecto](#estructura-del-proyecto)
-3. [Capas de la Aplicación](#capas-de-la-aplicación)
-4. [Flujo de Datos](#flujo-de-datos)
-5. [Base de Datos](#base-de-datos)
-6. [Guía de Desarrollo](#guía-de-desarrollo)
-7. [Convenciones de Código](#convenciones-de-código)
-8. [Testing](#testing)
-9. [Deployment](#deployment)
-10. [Troubleshooting](#troubleshooting)
+3. [Integraciones Externas](#integraciones-externas)
+4. [Capas de la Aplicación](#capas-de-la-aplicación)
+5. [Flujo de Datos](#flujo-de-datos)
+6. [Base de Datos](#base-de-datos)
+7. [Guía de Desarrollo](#guía-de-desarrollo)
+8. [Convenciones de Código](#convenciones-de-código)
+9. [Testing](#testing)
+10. [Deployment](#deployment)
 
 ---
 
@@ -22,10 +22,10 @@
 
 ### **¿Qué es este proyecto?**
 
-Sistema de gestión de citas y reservas para un centro de psicología, implementado como un bot conversacional de WhatsApp. Permite:
+Sistema de gestión de citas y reservas para centros de salud, implementado como un bot conversacional de WhatsApp. Permite:
 
-- **Clientes**: Buscar y reservar citas con profesionales
-- **Profesionales**: Gestionar horarios y disponibilidad
+- **Clientes**: Buscar profesionales con disponibilidad en tiempo real y reservar citas
+- **Profesionales**: Gestionar horarios a través de Google Calendar
 - **Centro**: Analytics y gestión centralizada
 
 ### **Stack Tecnológico**
@@ -43,13 +43,16 @@ Sistema de gestión de citas y reservas para un centro de psicología, implement
 │     Bot Logic (State Machine)       │
 └──────────────┬──────────────────────┘
                │
-┌──────────────▼──────────────────────┐
-│     Services Layer                  │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│     SQLite Database                 │
-└─────────────────────────────────────┘
+    ┌──────────┴──────────┐
+    │                     │
+┌───▼─────────┐   ┌──────▼──────────┐
+│  Services   │   │  Google Calendar │
+│   Layer     │   │   Integration    │
+└───┬─────────┘   └──────┬──────────┘
+    │                     │
+┌───▼─────────────────────▼──────────┐
+│     SQLite Database                │
+└────────────────────────────────────┘
 ```
 
 **Tecnologías:**
@@ -57,6 +60,7 @@ Sistema de gestión de citas y reservas para un centro de psicología, implement
 - **Framework**: Flask (webhook)
 - **Messaging**: Twilio WhatsApp API
 - **Database**: SQLite
+- **Calendar**: Google Calendar API (Service Account)
 - **Container**: Docker + Docker Compose
 - **Testing**: pytest
 
@@ -72,20 +76,56 @@ booking-chatbot/
 │   ├── 📁 bot/                          # Lógica conversacional del bot
 │   │   ├── __init__.py
 │   │   ├── bot_controller.py            # Orquestador principal (~300 líneas)
-│   │   ├── client_handler.py            # Handler de flujo de clientes (~500 líneas)
+│   │   ├── client_handler.py            # Handler de flujo de clientes (~2280 líneas)
 │   │   ├── professional_handler.py      # Handler de flujo de profesionales (~800 líneas)
 │   │   └── admin_handler.py             # Handler de administración (~200 líneas)
 │   │
 │   ├── 📁 services/                     # Servicios de lógica de negocio
 │   │   ├── __init__.py
-│   │   ├── client_service.py            # Servicios para clientes (búsqueda)
-│   │   ├── professional_service.py      # Servicios para profesionales (registro, horarios)
+│   │   ├── user_service.py              # Identificación y contexto de usuarios
+│   │   ├── client_service.py            # Búsqueda de profesionales con Google Calendar
+│   │   ├── professional_service.py      # Gestión de profesionales y horarios
 │   │   ├── analytics_service.py         # Métricas y analytics
 │   │   └── appointment_service.py       # Gestión de citas (CRUD, confirmaciones)
 │   │
+│   ├── 📁 integrations/                 # ⭐ Integraciones externas
+│   │   │
+│   │   └── 📁 google_calendar_service/  # ⭐ Google Calendar Integration
+│   │       ├── __init__.py
+│   │       ├── google_calendar_service.py      # Interfaz principal
+│   │       │
+│   │       ├── 📁 auth/                 # Autenticación
+│   │       │   ├── __init__.py
+│   │       │   └── auth_manager.py      # Gestión de Service Account
+│   │       │
+│   │       ├── 📁 calendar/             # Operaciones de calendario
+│   │       │   ├── __init__.py
+│   │       │   ├── calendar_client.py   # Cliente base de Google Calendar API
+│   │       │   ├── availability_checker.py  # Cálculo de disponibilidad
+│   │       │   └── event_manager.py     # Gestión de eventos (crear/cancelar)
+│   │       │
+│   │       ├── 📁 config/               # Configuración
+│   │       │   ├── __init__.py
+│   │       │   └── settings.py          # Parámetros de Google Calendar
+│   │       │
+│   │       ├── 📁 models/               # Modelos de datos
+│   │       │   ├── __init__.py
+│   │       │   └── time_slot.py         # Representación de slots de tiempo
+│   │       │
+│   │       ├── 📁 utils/                # Utilidades
+│   │       │   ├── __init__.py
+│   │       │   └── timezone_helper.py   # Manejo de zonas horarias
+│   │       │
+│   │       ├── 📁 tests/                # Tests del módulo
+│   │       │   ├── __init__.py
+│   │       │   ├── test_connection.py
+│   │       │   └── test_availability.py
+│   │       │
+│   │       └── requirements.txt         # Dependencias específicas
+│   │
 │   ├── 📁 database/                     # Capa de acceso a datos
 │   │   ├── __init__.py
-│   │   └── database.py                  # Conexión y operaciones de BD
+│   │   └── database.py                  # Conexión y operaciones de BD (~1481 líneas)
 │   │
 │   ├── 📁 api/                          # Capa de presentación (webhooks)
 │   │   ├── __init__.py
@@ -95,19 +135,22 @@ booking-chatbot/
 │   │   ├── __init__.py
 │   │   ├── settings.py                  # Settings generales (env vars, etc.)
 │   │   ├── domain_config.py             # Configuración de dominios/presets
-|   |   ├── filter_config.py             # Configuración de filtros de búsqueda
-│   │   └── setup_domain.py              # Script de configuración de dominio
-│   ├── messages/
-│   │   ├── __init__.py            # Exporta todo
-│   │   ├── messages_common.py              # Mensajes comunes
-│   │   ├── messages_client.py              # Flujo cliente
-│   │   ├── messages_professional.py        # Flujo profesional
-│   │   └── messages_appointments.py        # Sistema de citas
+│   │   ├── filter_config.py             # Configuración de filtros de búsqueda
+│   │   │
+│   │   └── 📁 google/                   # ⭐ Configuración de Google Calendar
+│   │       ├── service-account.json     # ⭐ Credenciales de Service Account (gitignored)
+│   │       └── service-account.json.example  # Template de credenciales
+│   │
+│   ├── 📁 messages/                     # Templates de mensajes
+│   │   ├── __init__.py
+│   │   ├── messages_common.py           # Mensajes comunes
+│   │   ├── messages_client.py           # Flujo cliente
+│   │   ├── messages_professional.py     # Flujo profesional
+│   │   └── messages_appointments.py     # Sistema de citas
 │   │
 │   └── 📁 core/                         # Componentes core compartidos
 │       ├── __init__.py
 │       ├── states.py                    # State machine y gestión de sesiones
-│       ├── messages.py                  # Templates de mensajes
 │       └── validators.py                # Validaciones de entrada
 │
 ├── 📁 tests/                            # Tests automatizados
@@ -123,24 +166,29 @@ booking-chatbot/
 │   ├── migrate_db.py                    # Migraciones de BD
 │   ├── verify_db.py                     # Verificar estructura de BD
 │   ├── setup_domain.py                  # Configurar dominio
-│   └── seed_data.py                     # Datos de prueba
+│   ├── seed_professionals.py            # Datos de prueba de profesionales
+│   ├── load_professionals_from_csv.py   # ⭐ Carga masiva desde CSV
+│   └── configure_google_calendar.py     # ⭐ Configurar Google Calendar para profesionales
 │
 ├── 📁 docker/                           # Configuración Docker
 │   ├── Dockerfile                       # Imagen Docker
 │   ├── docker-compose.yml               # Orquestación de servicios
-│   └── docker-entrypoint.sh             # Script de inicio del container
+│   └── docker-entrypoint.sh             # ⭐ Script de inicio (carga automática de CSV)
 │
 ├── 📁 data/                             # Datos persistentes
-│   ├── database.db                      # Base de datos SQLite
+│   ├── booking.db                       # Base de datos SQLite
 │   └── certificates/                    # Certificados de profesionales
 │       └── {phone}/                     # Un directorio por profesional
 │
 ├── 📁 docs/                             # Documentación
 │   ├── ARCHITECTURE.md                  # Este archivo
+│   ├── GOOGLE_CALENDAR_SERVICE.md       # ⭐ Documentación de Google Calendar
 │   ├── DATABASE.md                      # Esquema de base de datos
 │   ├── API.md                           # Documentación de API
+│   ├── README_WHATSAPP.md               # Guía de WhatsApp/Twilio
 │   └── DEPLOYMENT.md                    # Guía de deployment
 │
+├── profesionales_demo.csv               # ⭐ CSV con profesionales de prueba (raíz)
 ├── .env                                 # Variables de entorno (gitignored)
 ├── .env.example                         # Template de variables de entorno
 ├── .gitignore                           # Archivos ignorados por git
@@ -150,10 +198,132 @@ booking-chatbot/
 ```
 
 ### **Métricas del Proyecto:**
-- **Total líneas de código**: ~10,000
-- **Archivos Python**: ~25
-- **Archivo más grande**: ~800 líneas
-- **Modularidad**: Alta (archivos pequeños y enfocados)
+- **Total líneas de código**: ~12,000+
+- **Archivos Python**: ~35+
+- **Archivo más grande**: ~2,280 líneas (client_handler.py)
+- **Modularidad**: Alta (separación de concerns)
+- **Integraciones**: Google Calendar API, Twilio WhatsApp API
+
+---
+
+## 🔗 INTEGRACIONES EXTERNAS
+
+### **1. Google Calendar API** ⭐ NUEVO
+
+**Propósito:** Gestión de disponibilidad y reservas en tiempo real
+
+**Ubicación:** `src/integrations/google_calendar_service/`
+
+**Flujo de integración:**
+```
+1. Cliente busca profesionales disponibles
+   ↓
+2. client_service consulta availability_checker
+   ↓
+3. availability_checker obtiene eventos de Google Calendar
+   ↓
+4. Calcula slots libres (horario laboral - eventos ocupados)
+   ↓
+5. Retorna slots disponibles al cliente
+   ↓
+6. Cliente selecciona slot y confirma
+   ↓
+7. event_manager crea evento en Google Calendar
+   ↓
+8. Profesional recibe notificación automática de Google
+```
+
+**Componentes principales:**
+- **GoogleCalendarService**: Interfaz unificada (fachada)
+- **AuthManager**: Autenticación con Service Account
+- **CalendarClient**: Cliente base de Google Calendar API
+- **AvailabilityChecker**: Cálculo de disponibilidad en tiempo real
+- **EventManager**: Creación y gestión de eventos (citas)
+
+**Configuración requerida:**
+1. Proyecto en Google Cloud Console
+2. Google Calendar API habilitada
+3. Service Account creada
+4. Archivo `config/google/service-account.json`
+5. Calendarios compartidos con Service Account
+
+**Ver documentación completa:** `docs/GOOGLE_CALENDAR_SERVICE.md`
+
+---
+
+### **2. Twilio WhatsApp API**
+
+**Propósito:** Interfaz conversacional con usuarios
+
+**Ubicación:** `src/api/whatsapp_handler.py`
+
+**Configuración requerida:**
+- Account SID
+- Auth Token  
+- WhatsApp Sandbox Number (desarrollo)
+- WhatsApp Business Number (producción)
+
+**Ver documentación completa:** `docs/README_WHATSAPP.md`
+
+---
+
+## 📊 CARGA DE DATOS
+
+### **CSV de Profesionales** ⭐ NUEVO
+
+**Ubicación:** `profesionales_demo.csv` (raíz del proyecto)
+
+**Formato del CSV:**
+```csv
+phone,name,email,zone,gender,calendar_id,working_hours,slot_duration,specialties
++5491112345678,Dra. María González,maria@example.com,norte,f,maria.gonzalez@gmail.com,"{""start"": ""09:00"", ""end"": ""18:00""}",50,TCC|Ansiedad|Depresión
++5491187654321,Lic. Juan Pérez,juan@example.com,sur,m,juan.perez@gmail.com,"{""start"": ""10:00"", ""end"": ""19:00""}",60,Terapia de Pareja|Familia
+```
+
+**Campos obligatorios:**
+- `phone`: Teléfono con código de país (+549...)
+- `name`: Nombre completo
+- `email`: Email de contacto
+- `calendar_id`: Email del calendario de Google ⭐ CRÍTICO
+- `zone`: norte|sur|este|oeste|centro
+- `gender`: m|f|otro
+
+**Campos opcionales:**
+- `working_hours`: JSON con horario laboral
+- `slot_duration`: Duración de slots en minutos (default: 50)
+- `specialties`: Especialidades separadas por |
+- `prepagas`: Obras sociales aceptadas
+- `address`: Dirección física
+- `bio`: Biografía
+
+**Carga automática en Docker:**
+
+El script `docker-entrypoint.sh` detecta automáticamente el CSV en modo desarrollo:
+
+```bash
+# 1. Montar CSV en docker-compose.yml
+volumes:
+  - ./profesionales_demo.csv:/app/data/profesionales_demo.csv
+
+# 2. Iniciar contenedor (carga automática)
+docker-compose up
+
+# 3. Verificar carga
+docker exec whatsapp-demo sqlite3 /app/data/booking.db \
+  "SELECT phone, name, calendar_id FROM professionals;"
+```
+
+**Carga manual:**
+```bash
+# Copiar CSV al contenedor
+docker cp profesionales_demo.csv whatsapp-demo:/app/data/
+
+# Ejecutar script de carga
+docker exec whatsapp-demo python scripts/load_professionals_from_csv.py \
+  /app/data/profesionales_demo.csv
+```
+
+**Script de carga:** `scripts/load_professionals_from_csv.py`
 
 ---
 
@@ -185,20 +355,6 @@ booking-chatbot/
 7. Twilio envía respuesta a usuario en WhatsApp
 ```
 
-**Ejemplo de código:**
-```python
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    phone = request.form.get('From')
-    message = request.form.get('Body')
-    
-    # Llamar al bot
-    response = bot.process_message(phone, message)
-    
-    # Enviar respuesta
-    return send_whatsapp_message(phone, response)
-```
-
 ---
 
 ### **2. Capa Bot (Lógica Conversacional)**
@@ -211,42 +367,41 @@ def webhook():
 
 #### **bot_controller.py** (Orquestador)
 - Punto de entrada único: `process_message(phone, message)`
-- Decide qué handler usar según el rol del usuario
-- Gestiona la sesión del usuario
-
-```python
-class Bot:
-    def process_message(self, phone, message):
-        session = session_manager.get_session(phone)
-        
-        if session.role == UserRole.CLIENT:
-            return self.client_handler.handle(phone, message, session)
-        elif session.role == UserRole.PROFESSIONAL:
-            return self.professional_handler.handle(phone, message, session)
-        else:
-            return self._identify_user(phone, message)
-```
+- Identifica tipo de usuario con `user_service`
+- Delega a handler correspondiente según rol
 
 #### **client_handler.py** (Flujo Clientes)
-- Maneja todos los estados relacionados con clientes
-- Estados: `CLIENT_SEARCH_*`, `CLIENT_BOOKING_*`
-- Usa `client_service` para operaciones
+- Maneja búsqueda de profesionales con disponibilidad en tiempo real ⭐
+- Estados: `CLIENT_SEARCH_*`, `CLIENT_BOOKING_*`, `CLIENT_VIEW_*`
+- Usa `client_service` para búsquedas con Google Calendar
 
 #### **professional_handler.py** (Flujo Profesionales)
-- Maneja todos los estados relacionados con profesionales
+- Maneja registro y configuración de profesionales
+- Configuración de Google Calendar
 - Estados: `PROF_*`
-- Usa `professional_service` para operaciones
-
-#### **admin_handler.py** (Funciones Admin)
-- Funciones administrativas (verificación, stats, etc.)
 
 **State Machine:**
 ```
-Estados del Cliente:
-IDLE → CLIENT_SEARCH_TYPE → CLIENT_SEARCH_ZONE → CLIENT_VIEW_RESULTS → ...
+Estados del Cliente (con Google Calendar):
+IDLE 
+  → CLIENT_MAIN_MENU
+  → CLIENT_SEARCH_DATE (¿Para cuándo?)
+  → CLIENT_SEARCH_TIME (¿Mañana/Tarde/Noche?)
+  → CLIENT_SEARCH_ZONA (¿Dónde?)
+  → CLIENT_SHOW_RESULTS (Lista con slots disponibles) ⭐
+  → CLIENT_VIEW_DETAIL (Detalle + todos los horarios) ⭐
+  → CLIENT_BOOKING_CONFIRM_NAME
+  → CLIENT_BOOKING_CONFIRM_EMAIL
+  → CLIENT_BOOKING_FINAL_CONFIRMATION
+  → [Crear evento en Google Calendar] ⭐
 
 Estados del Profesional:
-IDLE → PROF_MENU → PROF_REGISTER → PROF_INFO_* → PROF_SCHEDULE → ...
+IDLE 
+  → PROF_MENU 
+  → PROF_REGISTER 
+  → PROF_SETUP_CALENDAR (Configurar Google Calendar) ⭐
+  → PROF_SCHEDULE 
+  → ...
 ```
 
 ---
@@ -255,506 +410,195 @@ IDLE → PROF_MENU → PROF_REGISTER → PROF_INFO_* → PROF_SCHEDULE → ...
 
 **Ubicación:** `src/services/`
 
-**Responsabilidad:** Implementar casos de uso y lógica de negocio
+**Responsabilidad:** Implementar lógica de negocio y orquestar operaciones
 
-**Componentes:**
+**Servicios principales:**
 
-#### **client_service.py**
-```python
-class ClientService:
-    def search_professionals(filters) -> List[Dict]
-    def get_professional_details(phone) -> Dict
-    def calculate_availability(professional, date) -> List[TimeSlot]
-```
+#### **user_service.py**
+- Identificación de usuarios (profesional/cliente/nuevo)
+- Detección de intención en mensajes
+- Generación de mensajes de bienvenida contextuales
 
-#### **professional_service.py**
-```python
-class ProfessionalService:
-    def register_professional(data) -> bool
-    def update_schedule(phone, schedule) -> bool
-    def save_certificate(phone, file_path) -> bool
-    def get_profile(phone) -> Dict
-```
+#### **client_service.py** ⭐ ACTUALIZADO
+- Búsqueda de profesionales con disponibilidad en tiempo real
+- Integración con Google Calendar vía `professional_service`
+- Formateo de resultados con slots disponibles
+- Métodos principales:
+  - `search_professionals_by_filters()` - Busca y filtra por disponibilidad
+  - `format_search_results_with_slots()` - Formatea lista con horarios
+  - `format_professional_detail_with_slots()` - Muestra detalle completo
 
-#### **appointment_service.py** (Nuevo)
-```python
-class AppointmentService:
-    def create_appointment(client, professional, datetime) -> int
-    def confirm_appointment(appointment_id) -> bool
-    def cancel_appointment(appointment_id, reason) -> bool
-    def get_upcoming_appointments(phone, role) -> List[Dict]
-    def send_reminder(appointment_id) -> bool
-```
+#### **professional_service.py** ⭐ ACTUALIZADO
+- Gestión de profesionales y perfiles
+- Integración directa con GoogleCalendarService
+- Métodos principales:
+  - `get_available_slots()` - Obtiene slots desde Google Calendar
+  - `setup_google_calendar()` - Configura calendario para profesional
+  - `validate_calendar_access()` - Verifica acceso al calendario
 
-#### **analytics_service.py**
-```python
-class AnalyticsService:
-    def log_search(client_phone, search_params) -> None
-    def log_contact(client_phone, professional_phone) -> None
-    def get_professional_metrics(phone) -> Dict
-    def get_system_stats() -> Dict
-```
-
-**Principio:** Los servicios NO conocen detalles de WhatsApp, solo lógica de negocio.
+#### **appointment_service.py** (Pendiente FASE 2)
+- Creación de citas en Google Calendar
+- Sincronización bidireccional
+- Cancelaciones y reprogramaciones
 
 ---
 
-### **4. Capa Database (Persistencia)**
+### **4. Capa Integrations (Servicios Externos)** ⭐ NUEVO
+
+**Ubicación:** `src/integrations/`
+
+**Responsabilidad:** Integración con APIs externas
+
+#### **google_calendar_service/** ⭐
+
+**Estructura modular:**
+```
+google_calendar_service/
+├── google_calendar_service.py    # Fachada/Interfaz principal
+├── auth/
+│   └── auth_manager.py            # Service Account authentication
+├── calendar/
+│   ├── calendar_client.py         # Cliente base de Calendar API
+│   ├── availability_checker.py    # Cálculo de disponibilidad
+│   └── event_manager.py           # Crear/cancelar eventos
+├── models/
+│   └── time_slot.py               # Modelo de slot de tiempo
+└── utils/
+    └── timezone_helper.py         # Manejo de zonas horarias
+```
+
+**Uso desde servicios:**
+```python
+from src.integrations.google_calendar_service import GoogleCalendarService
+
+calendar_service = GoogleCalendarService()
+
+# Obtener slots disponibles
+slots = calendar_service.get_available_slots(
+    calendar_id='profesional@gmail.com',
+    date='2025-01-17',
+    working_hours={'start': '09:00', 'end': '18:00'},
+    slot_duration_minutes=50
+)
+
+# Crear cita
+event = calendar_service.create_appointment(
+    calendar_id='profesional@gmail.com',
+    start_datetime='2025-01-17T14:00:00-03:00',
+    end_datetime='2025-01-17T14:50:00-03:00',
+    client_name='Juan Pérez',
+    client_phone='+5491112345678'
+)
+```
+
+---
+
+### **5. Capa Database (Persistencia)**
 
 **Ubicación:** `src/database/`
 
-**Responsabilidad:** Acceso a datos, CRUD operations
+**Responsabilidad:** Acceso a datos y operaciones CRUD
 
-**Componentes:**
+**Base de datos:** SQLite (`data/booking.db`)
 
-#### **database.py**
-- Clase `Database` con métodos CRUD
-- Gestión de conexiones SQLite
-- Context manager para transacciones
+**Tablas principales:**
+- `professionals` - Datos de profesionales + `calendar_id` ⭐
+- `clients` - Datos de clientes
+- `appointments` - Citas (con `google_event_id` para sincronización) ⭐
+- `client_searches` - Analytics de búsquedas
+- `weekly_schedule` - Horarios semanales (DEPRECADO en favor de Google Calendar)
+- `specific_free_slots` - Slots específicos (DEPRECADO)
 
-```python
-class Database:
-    def get_connection(self):
-        """Context manager para conexiones"""
-        
-    def add_professional(phone, name, ...) -> bool
-    def get_professional(phone) -> Dict
-    def update_professional(...) -> bool
-    
-    def create_appointment(...) -> int
-    def get_appointment(id) -> Dict
-    def update_appointment_status(...) -> bool
-    
-    # ... más métodos CRUD
+**Campos nuevos en `professionals`:**
+```sql
+calendar_id TEXT,              -- Email del calendario de Google ⭐
+working_hours TEXT,            -- JSON: {"start": "09:00", "end": "18:00"}
+slot_duration INTEGER,         -- Duración de slots en minutos
+timezone TEXT,                 -- Zona horaria (America/Argentina/Buenos_Aires)
 ```
 
-**Patrón de uso:**
-```python
-with db.get_connection() as conn:
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM ...")
-    result = cursor.fetchall()
+**Campos nuevos en `appointments` (Pendiente FASE 2):**
+```sql
+google_event_id TEXT,          -- ID del evento en Google Calendar ⭐
+status TEXT,                   -- confirmed|cancelled|rescheduled
 ```
 
 ---
 
-### **5. Capa Core (Componentes Compartidos)**
+## 🚀 SETUP Y DEPLOYMENT
 
-**Ubicación:** `src/core/`
+### **Desarrollo Local con Docker**
 
-**Responsabilidad:** Componentes usados por todas las capas
-
-#### **states.py**
-```python
-class ConversationState(Enum):
-    IDLE = "idle"
-    CLIENT_SEARCH_TYPE = "client_search_type"
-    PROF_MENU = "prof_menu"
-    # ... más estados
-
-class UserRole(Enum):
-    UNKNOWN = "unknown"
-    CLIENT = "client"
-    PROFESSIONAL = "professional"
-    ADMIN = "admin"
-
-class SessionManager:
-    def get_session(phone) -> SessionData
-    def update_state(phone, new_state) -> None
-```
-
-#### **messages.py**
-```python
-class Messages:
-    WELCOME = "¡Hola! Soy el asistente de {business_name}..."
-    CLIENT_SEARCH_MENU = "¿Cómo quieres buscar?..."
-    # ... templates de mensajes
-```
-
-#### **validators.py**
-```python
-def validate_phone(phone) -> bool
-def validate_email(email) -> bool
-def validate_date(date_str) -> bool
-def validate_time_range(time_str) -> Tuple[str, str]
-```
-
----
-
-### **6. Capa Config (Configuración)**
-
-**Ubicación:** `src/config/`
-
-**Responsabilidad:** Configuración y settings
-
-#### **settings.py**
-```python
-class Config:
-    TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-    TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-    WHATSAPP_NUMBER = os.getenv('WHATSAPP_NUMBER')
-    DATABASE_PATH = 'data/database.db'
-    CERTIFICATES_DIR = 'data/certificates'
-```
-
-#### **domain_config.py**
-- Presets de configuración por dominio (PSICOLOGIA, SALUD, etc.)
-- Personalización de mensajes y terminología
-
----
-
-## 🔄 FLUJO DE DATOS
-
-### **Flujo Completo: Cliente busca y reserva cita**
-
-```
-1. USUARIO (WhatsApp)
-   ↓ "Hola, busco psicólogo"
-   
-2. TWILIO API
-   ↓ POST /webhook
-   
-3. whatsapp_handler.py
-   ↓ Extrae phone + message
-   
-4. bot_controller.py
-   ↓ process_message(phone, message)
-   ↓ Identifica rol: CLIENT
-   
-5. client_handler.py
-   ↓ handle(phone, message, session)
-   ↓ Estado actual: IDLE
-   ↓ Cambiar a: CLIENT_SEARCH_TYPE
-   
-6. client_service.py
-   ↓ get_search_options()
-   
-7. messages.py
-   ↓ Formatear menú de búsqueda
-   
-8. whatsapp_handler.py
-   ↓ Enviar respuesta
-   
-9. TWILIO API
-   ↓ Mensaje a WhatsApp
-   
-10. USUARIO (WhatsApp)
-    ↓ Ve menú de opciones
-```
-
-### **Flujo de Reserva de Cita:**
-
-```
-Usuario selecciona profesional + fecha/hora
-   ↓
-client_handler.py (valida disponibilidad)
-   ↓
-appointment_service.py (crea cita)
-   ↓
-database.py (INSERT en appointments)
-   ↓
-appointment_service.py (envía notificación al profesional)
-   ↓
-analytics_service.py (log de contacto)
-   ↓
-Respuesta al cliente: "Cita creada, pendiente confirmación"
-```
-
----
-
-## 🗄️ BASE DE DATOS
-
-### **Esquema Actual (8 tablas):**
-
-#### **1. professionals**
-```sql
-Campos principales:
-- phone (PK)
-- name, email, zone, gender
-- certificate_path
-- bio, fee_range
-- session_duration_minutes, buffer_time_minutes
-- is_active, is_accepting_new_patients
-- Métricas: total_views, total_contacts
-```
-
-#### **2. clients**
-```sql
-Campos principales:
-- phone (PK)
-- name, email, age, gender
-- preferred_zone, preferred_gender
-- has_prepaga, prepaga_name
-- first_time_patient, is_active
-```
-
-#### **3. appointments**
-```sql
-Campos principales:
-- id (PK)
-- client_phone (FK), professional_phone (FK)
-- appointment_date, start_time, end_time
-- session_type, modality
-- status (pendiente_confirmacion, confirmada, completada, cancelada, etc.)
-- notes, cancellation_reason
-- reminder_sent
-```
-
-#### **4. appointment_history**
-```sql
-Auditoría de cambios en appointments
-- appointment_id (FK)
-- previous_status, new_status
-- previous_date, new_date
-- changed_by, change_reason
-```
-
-#### **5. notifications**
-```sql
-Registro de notificaciones enviadas
-- recipient_phone, recipient_type
-- notification_type (reminder, confirmation, etc.)
-- status (pending, sent, delivered, failed)
-- appointment_id (FK)
-```
-
-#### **6. weekly_schedule**
-```sql
-Horarios ocupados recurrentes
-- professional_phone (FK)
-- day_of_week (0-6)
-- start_time, end_time
-- is_busy
-```
-
-#### **7. specific_free_slots**
-```sql
-Horarios libres específicos
-- professional_phone (FK)
-- date, start_time, end_time
-```
-
-#### **8. client_searches**
-```sql
-Analytics de búsquedas
-- client_phone
-- search_type, search_params
-- result_count
-- professional_contacted (FK)
-```
-
-**Ver más detalles en:** `docs/DATABASE.md`
-
----
-
-## 💻 GUÍA DE DESARROLLO
-
-### **Setup del Ambiente Local**
-
+#### **1. Configurar Google Calendar:**
 ```bash
-# 1. Clonar repositorio
-git clone <repo-url>
-cd booking-chatbot
+# Copiar credenciales de Service Account
+cp service-account.json config/google/
 
-# 2. Crear entorno virtual
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# o
-venv\Scripts\activate  # Windows
-
-# 3. Instalar dependencias
-pip install -r requirements.txt
-
-# 4. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
-
-# 5. Inicializar base de datos
-python scripts/init_db.py
-
-# 6. Verificar instalación
-python scripts/verify_db.py
-pytest tests/
+# Verificar que los profesionales compartan sus calendarios
+# con: booking-service@proyecto.iam.gserviceaccount.com
 ```
 
-### **Desarrollo con Docker (Recomendado)**
-
+#### **2. Preparar CSV de profesionales:**
 ```bash
-# 1. Construir y levantar
-docker-compose -f docker/docker-compose.yml up --build
-
-# 2. Ver logs
-docker-compose -f docker/docker-compose.yml logs -f
-
-# 3. Ejecutar comandos dentro del container
-docker-compose exec whatsapp-bot python scripts/verify_db.py
-
-# 4. Detener
-docker-compose -f docker/docker-compose.yml down
+# Asegurarse que profesionales_demo.csv tiene calendar_id
+# Ejemplo:
+# phone,name,email,calendar_id,...
+# +5491112345678,María González,maria@ex.com,maria.gonzalez@gmail.com,...
 ```
 
-### **Agregar Nueva Funcionalidad**
-
-**Ejemplo: Agregar sistema de reviews**
-
-1. **Crear tabla en database.py:**
-```python
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS reviews (
-        id INTEGER PRIMARY KEY,
-        client_phone TEXT,
-        professional_phone TEXT,
-        rating INTEGER CHECK(rating BETWEEN 1 AND 5),
-        comment TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (client_phone) REFERENCES clients(phone),
-        FOREIGN KEY (professional_phone) REFERENCES professionals(phone)
-    )
-""")
+#### **3. Configurar docker-compose.yml:**
+```yaml
+services:
+  whatsapp-demo:
+    environment:
+      - FLASK_ENV=development  # Activa carga automática de CSV
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./profesionales_demo.csv:/app/data/profesionales_demo.csv  # ⭐
 ```
 
-2. **Crear servicio en src/services/review_service.py:**
-```python
-class ReviewService:
-    def create_review(self, client_phone, professional_phone, rating, comment):
-        # Lógica de negocio
-        pass
-    
-    def get_professional_reviews(self, professional_phone):
-        pass
+#### **4. Iniciar:**
+```bash
+cd docker
+docker-compose up --build
 ```
 
-3. **Agregar estados en src/core/states.py:**
-```python
-class ConversationState(Enum):
-    # ... estados existentes
-    CLIENT_REVIEW_RATING = "client_review_rating"
-    CLIENT_REVIEW_COMMENT = "client_review_comment"
-```
+**El entrypoint automáticamente:**
+1. Inicializa la BD
+2. Carga profesionales desde CSV (si BD vacía)
+3. Valida configuración de Google Calendar
+4. Muestra estadísticas
 
-4. **Agregar handler en src/bot/client_handler.py:**
-```python
-def _handle_review_flow(self, phone, message, session):
-    if session.state == ConversationState.CLIENT_REVIEW_RATING:
-        # Manejar rating
-        pass
-    elif session.state == ConversationState.CLIENT_REVIEW_COMMENT:
-        # Manejar comentario
-        pass
-```
+#### **5. Verificar:**
+```bash
+# Ver profesionales cargados
+docker exec whatsapp-demo sqlite3 /app/data/booking.db \
+  "SELECT phone, name, calendar_id FROM professionals;"
 
-5. **Agregar tests en tests/test_review_service.py:**
-```python
-def test_create_review():
-    # Test unitario
-    pass
-
-def test_review_flow_integration():
-    # Test de integración
-    pass
-```
-
----
-
-## 📏 CONVENCIONES DE CÓDIGO
-
-### **Estilo de Código:**
-
-```python
-# 1. Imports ordenados
-from datetime import datetime  # Standard library
-import os
-
-from flask import Flask, request  # Third party
-
-from src.core.states import session_manager  # Local imports
-from src.services.client_service import client_service
-
-# 2. Naming conventions
-class ClientService:  # PascalCase para clases
-    def search_professionals(self):  # snake_case para funciones
-        pass
-
-CONSTANT_VALUE = "value"  # UPPER_CASE para constantes
-
-# 3. Docstrings
-def process_message(phone: str, message: str) -> str:
-    """
-    Process incoming message from user.
-    
-    Args:
-        phone: User's phone number
-        message: Text message from user
-        
-    Returns:
-        Bot's response message
-    """
-    pass
-
-# 4. Type hints
-def create_appointment(
-    client_phone: str,
-    professional_phone: str,
-    date: datetime
-) -> int:
-    pass
-
-# 5. Max line length: 100 caracteres
-```
-
-### **Estructura de Archivos:**
-
-```python
-"""
-Module docstring explaining purpose.
-"""
-
-# Imports
-import ...
-
-# Constants
-CONSTANT_1 = "value"
-
-# Classes
-class MyClass:
-    pass
-
-# Functions
-def my_function():
-    pass
-
-# Main execution
-if __name__ == "__main__":
-    pass
-```
-
-### **Git Commit Messages:**
-
-```
-feat: Add appointment reminder system
-fix: Resolve timezone issue in scheduling
-docs: Update architecture documentation
-refactor: Split bot.py into handlers
-test: Add integration tests for booking flow
-chore: Update dependencies
+# Ver logs
+docker-compose logs -f
 ```
 
 ---
 
 ## 🧪 TESTING
 
-### **Estructura de Tests:**
+### **Tests de Google Calendar:**
 
-```
-tests/
-├── test_bot.py              # Tests del bot
-├── test_database.py         # Tests de BD
-├── test_services.py         # Tests de servicios
-├── test_integration.py      # Tests de integración
-└── test_bot_interactive.py  # Tests manuales interactivos
+```bash
+# Tests unitarios (no requieren API)
+pytest tests/integrations/google_calendar/ -m "not integration"
+
+# Tests de integración (requieren credenciales)
+pytest tests/integrations/google_calendar/ -m integration
+
+# Script de prueba manual
+docker exec whatsapp-demo python \
+  src/integrations/google_calendar_service/tests/test_availability.py
 ```
 
-### **Ejecutar Tests:**
+### **Tests del bot:**
 
 ```bash
 # Todos los tests
@@ -765,277 +609,68 @@ pytest tests/test_services.py
 
 # Con coverage
 pytest --cov=src tests/
-
-# Verbose
-pytest -v tests/
-
-# Solo tests que fallan
-pytest --lf tests/
-```
-
-### **Escribir Tests:**
-
-```python
-# tests/test_appointment_service.py
-import pytest
-from src.services.appointment_service import AppointmentService
-
-@pytest.fixture
-def appointment_service():
-    return AppointmentService()
-
-def test_create_appointment(appointment_service):
-    # Arrange
-    client_phone = "+5491112345678"
-    professional_phone = "+5491187654321"
-    date = "2024-12-15"
-    
-    # Act
-    appointment_id = appointment_service.create_appointment(
-        client_phone, professional_phone, date, "14:00", "15:00"
-    )
-    
-    # Assert
-    assert appointment_id > 0
-    assert appointment_service.get_appointment(appointment_id) is not None
-```
-
-### **Coverage Objetivo:**
-
-- **Unit tests**: >80%
-- **Integration tests**: Flujos críticos completos
-- **Manual tests**: Flows de usuario end-to-end
-
----
-
-## 🚀 DEPLOYMENT
-
-### **Ambiente de Desarrollo:**
-
-```bash
-# Local con Flask dev server
-python src/api/whatsapp_handler.py
-
-# Docker development
-docker-compose -f docker/docker-compose.yml up
-```
-
-### **Ambiente de Producción:**
-
-**1. Preparar imagen:**
-```bash
-docker build -f docker/Dockerfile -t whatsapp-bot:latest .
-```
-
-**2. Configurar variables de entorno:**
-```bash
-# Crear .env con credenciales de producción
-TWILIO_ACCOUNT_SID=<prod-sid>
-TWILIO_AUTH_TOKEN=<prod-token>
-DOMAIN_PRESET=PSICOLOGIA
-FLASK_ENV=production
-```
-
-**3. Usar Gunicorn (production server):**
-
-En `docker/Dockerfile`, cambiar:
-```dockerfile
-# Comentar:
-# CMD ["bash", "docker/docker-entrypoint.sh"]
-
-# Descomentar:
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "src.api.whatsapp_handler:app"]
-```
-
-**4. Deploy a servidor:**
-```bash
-# Ejemplo con docker-compose en servidor
-scp -r . user@server:/opt/whatsapp-bot/
-ssh user@server
-cd /opt/whatsapp-bot
-docker-compose -f docker/docker-compose.yml up -d
-```
-
-**5. Configurar Twilio webhook:**
-- Ir a Twilio Console
-- Configurar webhook URL: `https://tu-dominio.com/webhook`
-- Método: POST
-
-### **Monitoreo:**
-
-```bash
-# Ver logs
-docker-compose logs -f whatsapp-bot
-
-# Verificar salud del container
-docker-compose ps
-docker inspect whatsapp-webhook
-
-# Entrar al container
-docker-compose exec whatsapp-bot bash
-
-# Verificar BD
-docker-compose exec whatsapp-bot python scripts/verify_db.py
 ```
 
 ---
 
-## 🔧 TROUBLESHOOTING
+## 📝 PRÓXIMOS PASOS (ROADMAP)
 
-### **Problema: Bot no responde**
+### **FASE 1: Mostrar Horarios Disponibles** ✅ COMPLETADO
+- [x] Implementar `get_available_slots()` en GoogleCalendarService
+- [x] Integrar con `client_service.search_professionals_by_filters()`
+- [x] Formatear resultados con slots en `client_handler`
+- [x] Testing de búsqueda con disponibilidad real
+
+### **FASE 2: Crear Turnos** 🚧 EN PROGRESO
+- [ ] Implementar `create_appointment()` en GoogleCalendarService
+- [ ] Crear `appointment_service.py`
+- [ ] Agregar tabla `appointments` con `google_event_id`
+- [ ] Flujo completo de reserva en `client_handler`
+- [ ] Sincronización bidireccional
+
+### **FASE 3: Gestión de Turnos**
+- [ ] Cancelar turnos (BD + Google Calendar)
+- [ ] Reprogramar turnos
+- [ ] Vista "Mis Turnos" para clientes
+- [ ] Vista de agenda para profesionales
+
+### **FASE 4: Notificaciones**
+- [ ] Email de confirmación
+- [ ] Recordatorios automáticos (24hs, 1hr antes)
+- [ ] Notificaciones por WhatsApp
+
+---
+
+## 🔑 VARIABLES DE ENTORNO
 
 ```bash
-# 1. Verificar que el container está corriendo
-docker-compose ps
+# Twilio WhatsApp
+TWILIO_ACCOUNT_SID=ACxxxx
+TWILIO_AUTH_TOKEN=xxxx
+TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
 
-# 2. Ver logs del container
-docker-compose logs -f whatsapp-bot
+# Dominio
+DOMAIN_PRESET=PSICOLOGIA  # o SALUD, BELLEZA, etc.
 
-# 3. Verificar webhook de Twilio
-# - Revisar que la URL esté correcta
-# - Verificar que el servidor sea accesible públicamente
+# Ambiente
+FLASK_ENV=development  # Activa carga automática de CSV
+ENVIRONMENT=development
 
-# 4. Probar endpoint manualmente
-curl -X POST http://localhost:5000/webhook \
-  -d "From=whatsapp:+5491112345678" \
-  -d "Body=Hola"
-```
-
-### **Problema: Error de imports**
-
-```python
-# Error: ModuleNotFoundError: No module named 'src'
-
-# Solución 1: Verificar PYTHONPATH
-export PYTHONPATH=/app:$PYTHONPATH
-
-# Solución 2: Ejecutar con -m
-python -m src.api.whatsapp_handler
-
-# Solución 3: Verificar __init__.py
-# Asegurar que todas las carpetas tienen __init__.py
-```
-
-### **Problema: Base de datos corrupta**
-
-```bash
-# 1. Backup de BD actual
-cp data/database.db data/database.db.backup
-
-# 2. Verificar integridad
-sqlite3 data/database.db "PRAGMA integrity_check"
-
-# 3. Si está corrupta, recrear
-rm data/database.db
-python scripts/init_db.py
-
-# 4. Si necesitas recuperar datos
-# Usar el backup y migrar manualmente
-```
-
-### **Problema: Estado de sesión incorrecto**
-
-```python
-# Limpiar sesión de un usuario específico
-from src.core.states import session_manager
-
-phone = "+5491112345678"
-session_manager.reset_session(phone)
-```
-
-### **Logs útiles:**
-
-```bash
-# Logs de aplicación
-docker-compose logs -f whatsapp-bot | grep ERROR
-
-# Logs de BD
-docker-compose exec whatsapp-bot sqlite3 data/database.db ".log on"
-
-# Logs de Twilio
-# Ver en Twilio Console > Monitor > Logs
+# Google Calendar (opcional, se usa service-account.json)
+# GOOGLE_CREDENTIALS_PATH=config/google/service-account.json
 ```
 
 ---
 
-## 📚 RECURSOS ADICIONALES
+## 📚 DOCUMENTACIÓN ADICIONAL
 
-### **Documentación Relacionada:**
-
-- `README.md` - Guía de inicio rápido
-- `docs/DATABASE.md` - Esquema detallado de BD
-- `docs/API.md` - Documentación de endpoints
-- `docs/DEPLOYMENT.md` - Guía completa de deployment
-
-### **Enlaces Externos:**
-
-- [Twilio WhatsApp API](https://www.twilio.com/docs/whatsapp)
-- [Flask Documentation](https://flask.palletsprojects.com/)
-- [SQLite Documentation](https://www.sqlite.org/docs.html)
-- [pytest Documentation](https://docs.pytest.org/)
+- **Google Calendar Integration:** `docs/GOOGLE_CALENDAR_SERVICE.md`
+- **WhatsApp/Twilio Setup:** `docs/README_WHATSAPP.md`
+- **Database Schema:** `docs/DATABASE.md` (pendiente actualizar)
+- **API Reference:** `docs/API.md`
 
 ---
 
-## ✅ CHECKLIST DE MANTENIMIENTO
-
-### **Diario:**
-- [ ] Revisar logs de errores
-- [ ] Monitorear uso de recursos (CPU, memoria)
-- [ ] Verificar que el bot responde
-
-### **Semanal:**
-- [ ] Backup de base de datos
-- [ ] Revisar métricas de uso (analytics)
-- [ ] Actualizar dependencias si hay vulnerabilidades
-
-### **Mensual:**
-- [ ] Ejecutar suite completa de tests
-- [ ] Revisar y actualizar documentación
-- [ ] Planificar nuevas features según feedback
-
-### **Trimestral:**
-- [ ] Auditoría de seguridad
-- [ ] Optimización de performance
-- [ ] Refactoring de código legacy
-
----
-
-## 🎯 MEJORES PRÁCTICAS
-
-### **DO:**
-✅ Mantener archivos pequeños (<800 líneas)
-✅ Usar type hints en funciones públicas
-✅ Escribir tests para nueva funcionalidad
-✅ Documentar decisiones de arquitectura
-✅ Hacer commits atómicos y descriptivos
-✅ Revisar logs regularmente
-✅ Hacer backups antes de cambios mayores
-
-### **DON'T:**
-❌ Hardcodear credenciales en el código
-❌ Hacer cambios sin tests
-❌ Ignorar warnings de dependencias
-❌ Mezclar lógica de negocio con presentación
-❌ Commit de código sin probar
-❌ Dejar TODOs sin ticket asociado
-❌ Modificar BD en producción sin backup
-
----
-
-## 📞 CONTACTO Y SOPORTE
-
-**Mantenedores:**
-- Equipo de Desarrollo: dev@psivale.com.ar
-
-**Reportar Issues:**
-- GitHub Issues: [repo-url]/issues
-- Email urgencias: urgencias@psivale.com.ar
-
-**Contribuir:**
-Ver `docs/CONTRIBUTING.md` para guías de contribución
-
----
-
-**Última actualización:** Diciembre 2024
-**Versión:** 2.0
-**Estado:** Producción
+**Versión:** 2.0  
+**Última actualización:** 2025-01-16  
+**Autor:** Booking Chatbot Project
