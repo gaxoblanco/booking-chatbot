@@ -229,19 +229,32 @@ class AppointmentCalendarService:
             
             # 3. Guardar en BD local con referencia a Google Calendar
             logger.info("Guardando cita en BD local...")
-            appointment_id = self.db.create_appointment({
-                'professional_phone': professional_phone,
-                'client_phone': client_phone,
-                'client_name': client_name,
-                'date': date,
-                'start_time': start_time,
-                'end_time': end_time,
-                'appointment_type': appointment_type,
-                'google_event_id': google_event_id,  # ⭐ IMPORTANTE
-                'status': 'confirmed',
-                'notes': notes,
-                'created_at': datetime.now().isoformat()
-            })
+            # Calculate duration
+            from datetime import datetime as dt
+            duration = int((dt.strptime(end_time, '%H:%M') - 
+                          dt.strptime(start_time, '%H:%M')).seconds / 60)
+            
+            # Map appointment_type to valid session_type
+            session_type_map = {
+                'Consulta': 'primera_vez',
+                'primera_vez': 'primera_vez',
+                'seguimiento': 'seguimiento',
+                'evaluacion': 'evaluacion'
+            }
+            session_type = session_type_map.get(appointment_type, 'primera_vez')
+            
+            appointment_id = self.db.create_appointment(
+                client_phone=client_phone,
+                professional_phone=professional_phone,
+                appointment_date=date,
+                start_time=start_time,
+                end_time=end_time,
+                duration_minutes=duration,
+                session_type=session_type,  # ✅ Mapped value
+                modality='presencial',
+                google_event_id=google_event_id,  # ⭐ IMPORTANTE
+                notes=notes
+            )
             
             logger.info(
                 f"Cita creada exitosamente. "
