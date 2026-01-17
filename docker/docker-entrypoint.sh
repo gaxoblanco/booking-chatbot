@@ -25,23 +25,15 @@ elif grep -q "^load_preset(" src/config/domain_config.py; then
     CONFIGURED_DOMAIN=$(grep "^load_preset(" src/config/domain_config.py | sed "s/load_preset('\(.*\)')/\1/")
     echo "✅ Domain already configured: $CONFIGURED_DOMAIN"
 else
-    echo "❌ Error: Domain not configured"
-    echo ""
-    echo "Por favor configura el dominio de una de estas formas:"
-    echo ""
-    echo "1. Variable de entorno en .env:"
-    echo "   DOMAIN_PRESET=PSICOLOGIA"
-    echo ""
-    echo "2. O ejecuta manualmente:"
-    echo "   docker-compose exec whatsapp-bot python scripts/setup_domain.py"
-    echo ""
-    exit 1
+    echo "⚠️  Warning: Domain not configured, usando configuración por defecto"
 fi
+
+echo ""
 
 # ==================================================
 # DATABASE INITIALIZATION
 # ==================================================
-if [ ! -f "data/database.db" ]; then
+if [ ! -f "database.db" ]; then
     echo "📄 Initializing database..."
     python scripts/init_db.py
     
@@ -50,31 +42,16 @@ if [ ! -f "data/database.db" ]; then
         exit 1
     fi
     
-    echo ""
-    echo "📊 Database tables created:"
-    python -c "
-import sqlite3
-conn = sqlite3.connect('data/database.db')
-cursor = conn.cursor()
-cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name')
-tables = [row[0] for row in cursor.fetchall()]
-expected = ['professionals', 'weekly_schedule', 'specific_free_slots', 'client_searches', 'clients', 'appointments', 'appointment_history', 'notifications']
-print(f'  ✅ Total: {len(tables)} tablas')
-for table in expected:
-    if table in tables:
-        print(f'  ✅ {table}')
-    else:
-        print(f'  ❌ {table} - FALTA')
-conn.close()
-"
-    echo ""
+    echo "✅ Database initialized successfully"
 else
     echo "✅ Database already exists"
-    echo ""
-    echo "📊 Database tables:"
-    python -c "
+fi
+
+echo ""
+echo "📊 Database tables:"
+python -c "
 import sqlite3
-conn = sqlite3.connect('data/database.db')
+conn = sqlite3.connect('database.db')
 cursor = conn.cursor()
 cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name')
 tables = [row[0] for row in cursor.fetchall()]
@@ -84,72 +61,119 @@ for table in tables:
     print(f'  ✅ {table}: {count} registros')
 conn.close()
 "
-    echo ""
-fi
+echo ""
 
 # ==================================================
-# SEED TEST DATA (DEVELOPMENT ONLY)
+# AUTO-LOAD PROFESSIONALS FROM CSV (DEVELOPMENT)
 # ==================================================
-# Check if we're in development mode
 if [ "$FLASK_ENV" = "development" ] || [ "$ENVIRONMENT" = "development" ] || [ "$ENVIRONMENT" = "dev" ]; then
-    echo "🌱 Development mode detected - checking test data..."
+    echo "🔧 Modo desarrollo detectado"
     
-    # Check if we have test professionals
+    # Check current professional count
     PROF_COUNT=$(python -c "
 import sqlite3
-conn = sqlite3.connect('data/database.db')
+conn = sqlite3.connect('database.db')
+cursor = conn.cursor()
+cursor.execute('SELECT COUNT(*) FROM professionals')
+count = cursor.fetchone()[0]
+conn.close()
+print(count)
+" 2>/dev/null || echo "0")
+    
+    echo "📊 Profesionales actuales: $PROF_COUNT"
+    
+    # Try to find CSV file in multiple locations
+    CSV_FILES=(
+        "/app/data/profesionales_demo.csv"
+        "/app/data/profesionales.csv"
+        "/app/profesionales_demo.csv"
+        "/app/profesionales.csv"
+    )
+    
+    CSV_FOUND=""
+    for CSV_FILE in "${CSV_FILES[@]}"; do
+        if [ -f "$CSV_FILE" ]; then
+            CSV_FOUND="$CSV_FILE"
+            break
+        fi
+    done
+    
+    if [ -n "$CSV_FOUND" ]; then
+        echo "📂 CSV encontrado: $CSV_FOUND"
+        
+        if [ "$PROF_COUNT" -eq "0" ]; then
+            echo "📥 Cargando profesionales desde CSV..."
+            python scripts/load_professionals_from_csv.py "$CSV_FOUND"
+            
+            if [ $? -eq 0 ]; then
+                echo "✅ Profesionales cargados exitosamente"
+                
+                # Show count after loading
+                NEW_COUNT=$(python -c "
+import sqlite3
+conn = sqlite3.connect('database.db')
 cursor = conn.cursor()
 cursor.execute('SELECT COUNT(*) FROM professionals')
 count = cursor.fetchone()[0]
 conn.close()
 print(count)
 ")
-    
-    if [ "$PROF_COUNT" -lt 3 ]; then
-        echo "📝 Seeding test professionals..."
-        
-        # Run seed script
-        python scripts/seed_test_data.py
-        
-        if [ $? -eq 0 ]; then
-            echo "✅ Test professionals created successfully"
+                echo "📊 Total profesionales: $NEW_COUNT"
+            else
+                echo "❌ Error al cargar profesionales"
+            fi
         else
-            echo "⚠️  Warning: Could not create test professionals"
-            echo "   Run manually: docker-compose exec whatsapp-bot python scripts/seed_test_data.py"
+            echo "⏭️  Ya hay $PROF_COUNT profesionales registrados"
+            echo "💡 Para recargar, elimina database.db y reinicia"
         fi
     else
-        echo "✅ Test data already exists ($PROF_COUNT professionals)"
+        echo "⚠️  No se encontró CSV de profesionales"
+        echo "💡 Monta el archivo en:"
+        echo "   - /app/data/profesionales_demo.csv"
+        echo "   - O copia con: docker cp profesionales.csv whatsapp-demo:/app/data/"
     fi
     
     echo ""
 fi
 
 # ==================================================
-# ACCESS KEYS CONFIGURATION
+# GOOGLE CALENDAR CONFIGURATION CHECK
 # ==================================================
-echo "🔑 Sistema de Claves de Acceso:"
+echo "🗓️  Google Calendar:"
+if [ -f "config/google/service-account.json" ]; then
+    echo "  ✅ Service Account configurado"
+    
+    # Quick validation of professionals with calendar_id
+    CALENDAR_COUNT=$(python -c "
+import sqlite3
+conn = sqlite3.connect('database.db')
+cursor = conn.cursor()
+cursor.execute(\"SELECT COUNT(*) FROM professionals WHERE calendar_id IS NOT NULL AND calendar_id != ''\")
+count = cursor.fetchone()[0]
+conn.close()
+print(count)
+" 2>/dev/null || echo "0")
+    
+    echo "  📊 Profesionales con Google Calendar: $CALENDAR_COUNT"
+    
+    if [ "$CALENDAR_COUNT" -eq "0" ] && [ "$PROF_COUNT" -gt "0" ]; then
+        echo "  ⚠️  Ningún profesional tiene calendar_id configurado"
+        echo "  💡 Verifica que el CSV tenga columna 'calendar_id'"
+    fi
+else
+    echo "  ⚠️  Service Account no configurado"
+    echo "  💡 Coloca service-account.json en config/google/"
+fi
+
 echo ""
 
-# Check if master key is configured
+# ==================================================
+# ACCESS KEYS CONFIGURATION (DEPRECATED - OPCIONAL)
+# ==================================================
+# Este sistema de claves puede ser opcional o removido
 if [ -n "$MASTER_ACCESS_KEY" ]; then
-    echo "  ✅ Master key configurada: ${MASTER_ACCESS_KEY:0:4}****"
-else
-    echo "  ⚠️  Master key no configurada (opcional)"
-    echo "     Configura MASTER_ACCESS_KEY en .env para testing"
+    echo "🔑 Master access key: configurada"
 fi
-
-# Check if professional keys are configured
-if [ -n "$PROFESSIONAL_ACCESS_KEYS" ]; then
-    echo "  ✅ Claves de profesionales configuradas"
-else
-    echo "  ⚠️  Claves de profesionales no configuradas"
-    echo "     Configura PROFESSIONAL_ACCESS_KEYS en config.py"
-fi
-
-echo ""
-echo "💡 Para generar nuevas claves, usa:"
-echo "   docker-compose exec whatsapp-bot python scripts/generate_access_keys.py"
-echo ""
 
 # ==================================================
 # STARTUP
@@ -158,15 +182,16 @@ echo ""
 echo "✅ Setup complete!"
 echo "🚀 Starting application..."
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "┌────────────────────────────────────────┐"
 echo "  📱 WhatsApp Bot Webhook"
 echo "  🌐 Port: 5000"
-echo "  🔑 Sistema: Claves de Acceso"
-echo "  📦 Dominio: $DOMAIN_PRESET"
+echo "  📦 Dominio: ${DOMAIN_PRESET:-DEFAULT}"
 if [ "$FLASK_ENV" = "development" ] || [ "$ENVIRONMENT" = "development" ]; then
     echo "  🔧 Modo: Development"
+    echo "  📊 Profesionales: $PROF_COUNT"
+    echo "  🗓️  Con Calendar: $CALENDAR_COUNT"
 fi
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "└────────────────────────────────────────┘"
 echo ""
 
 # Start the application
