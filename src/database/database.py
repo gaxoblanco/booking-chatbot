@@ -581,7 +581,6 @@ class Database:
                     params.append(online_sessions)
 
                 # Only verified professionals (with certificate)
-                query += " AND certificate_path IS NOT NULL"
 
                 query += " ORDER BY total_contacts DESC, name ASC"
 
@@ -903,11 +902,12 @@ class Database:
         duration_minutes: int = 50,
         session_type: str = 'primera_vez',
         modality: str = 'presencial',
+        google_event_id: str = None,  # ⭐ NUEVO PARÁMETRO
         notes: str = None
     ) -> Optional[int]:
         """
         Create a new appointment.
-
+        
         Args:
             client_phone: Client's phone
             professional_phone: Professional's phone
@@ -917,8 +917,9 @@ class Database:
             duration_minutes: Duration in minutes
             session_type: Type ('primera_vez', 'seguimiento', 'evaluacion')
             modality: Modality ('presencial', 'virtual', 'ambas')
+            google_event_id: Google Calendar event ID (for sync) ⭐ NUEVO
             notes: Optional notes
-
+        
         Returns:
             appointment_id if successful, None if failed
         """
@@ -929,15 +930,15 @@ class Database:
                     INSERT INTO appointments (
                         client_phone, professional_phone, appointment_date,
                         start_time, end_time, duration_minutes,
-                        session_type, modality, notes, status
+                        session_type, modality, google_event_id, notes, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente_confirmacion')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente_confirmacion')
                 """, (client_phone, professional_phone, appointment_date,
-                      start_time, end_time, duration_minutes,
-                      session_type, modality, notes))
-
+                    start_time, end_time, duration_minutes,
+                    session_type, modality, google_event_id, notes))
+                
                 appointment_id = cursor.lastrowid
-
+                
                 # Crear registro en historial
                 cursor.execute("""
                     INSERT INTO appointment_history (
@@ -945,11 +946,13 @@ class Database:
                     )
                     VALUES (?, 'pendiente_confirmacion', 'client', 'Cita creada')
                 """, (appointment_id,))
-
-            print(f"[DB] ✅ Appointment created: #{appointment_id}")
+            
+            print(f"[DB] ✅ Appointment created: #{appointment_id} (Google ID: {google_event_id})")
             return appointment_id
         except Exception as e:
             print(f"[DB] ❌ Error creating appointment: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_appointment(self, appointment_id: int) -> Optional[Dict]:
