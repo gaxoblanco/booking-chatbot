@@ -1169,40 +1169,23 @@ class ProfessionalHandler:
     # ==========================================
 
     def handle_prof_manage_free_slots(self, session: SessionData, message: str) -> str:
-        """Show menu to manage free slots."""
-        from src.services.professional_service import professional_service
+        """
+        DEPRECATED: Manual schedule management removed.
+        Now uses Google Calendar exclusively.
+        """
+        # Volver al menú principal
+        session.transition_to(ConversationState.PROF_MAIN_MENU)
+        
+        return """⚠️ *Funcionalidad Actualizada*
 
-        if message == '1':
-            # Add new free slot
-            session.transition_to(ConversationState.PROF_FREE_SLOT_DATE)
-            return professional_messages.PROF_FREE_SLOT_ASK_DATE
+    La gestión de horarios ahora es automática mediante Google Calendar.
 
-        elif message == '2':
-            # Delete free slot
-            free_slots = professional_service.get_free_slots(
-                session.phone_number, future_only=True)
+    📅 *Para gestionar tu disponibilidad:*
+    1. Ve a Google Calendar
+    2. Bloquea horarios ocupados creando eventos
+    3. Los espacios libres se muestran automáticamente
 
-            if not free_slots:
-                return "âŒ No tienes horarios libres activos.\n\n" + professional_messages.PROF_MAIN_MENU
-
-            # Show slots with numbers
-            msg = "ðŸ“… ELIMINAR HORARIO LIBRE\n\n"
-            msg += "Horarios libres activos:\n\n"
-            for idx, slot in enumerate(free_slots, 1):
-                msg += f"{idx}ï¸âƒ£ {slot['date']} {slot['start_time']}-{slot['end_time']}\n"
-            msg += "\n0ï¸âƒ£ Cancelar\n\n"
-            msg += "Selecciona el nÃºmero del horario a eliminar:"
-
-            session.store_temp('free_slots_list', free_slots)
-            session.transition_to(ConversationState.PROF_DELETE_FREE_SLOT)
-            return msg
-
-        elif message == '0':
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return professional_messages.PROF_MAIN_MENU
-
-        else:
-            return common_messages.INVALID_OPTION
+    _Escribe *0* para volver al menú_"""
 
     def handle_prof_delete_free_slot(self, session: SessionData, message: str) -> str:
         """Handle deleting a free slot."""
@@ -1241,6 +1224,125 @@ class ProfessionalHandler:
 
         except ValueError:
             return "âŒ Por favor, ingresa el nÃºmero del horario a eliminar."
+
+    def handle_prof_setup_calendar_email(self, session: SessionData, message: str) -> str:
+        """
+        Solicita el email del calendario de Google.
+        """
+        from src.messages.messages_professional import professional_messages
+        
+        # Validar formato de email básico
+        if '@' not in message or '.' not in message:
+            return """⚠️ Email inválido.
+
+    Por favor, envía tu email de Google Calendar.
+    Ejemplo: profesional@gmail.com"""
+        
+        email = message.strip().lower()
+        
+        # Guardar temporalmente
+        session.store_temp('calendar_email', email)
+        session.transition_to(ConversationState.PROF_SETUP_CALENDAR_CONFIRM)
+        
+        # Obtener email de Service Account
+        from src.integrations.google_calendar_service import GoogleCalendarService
+        calendar_service = GoogleCalendarService()
+        service_account_email = calendar_service.get_service_account_email()
+        
+        return f"""📧 Email recibido: {email}
+
+    ⚠️ IMPORTANTE: Debes compartir tu calendario de Google con:
+
+    📮 {service_account_email}
+
+    📋 PASOS PARA COMPARTIR:
+
+    1. Abre Google Calendar: https://calendar.google.com
+    2. En "Mis calendarios", click en ⋮ de tu calendario
+    3. "Configuración y uso compartido"
+    4. "Compartir con personas específicas" > "+ Agregar personas"
+    5. Pega: {service_account_email}
+    6. Permisos: "Hacer cambios en eventos"
+    7. Click "Enviar"
+
+    ⏱️ Espera 1-2 minutos para que se propaguen los permisos.
+
+    Cuando hayas compartido el calendario, responde:
+    1️⃣ Ya compartí el calendario (validar acceso)
+    0️⃣ Cancelar y volver"""
+
+    def handle_prof_setup_calendar_confirm(self, session: SessionData, message: str) -> str:
+        """
+        Valida el acceso al calendario.
+        """
+        from src.services.professional_service import professional_service
+        
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            from src.messages.messages_professional import professional_messages
+            return professional_messages.PROF_MAIN_MENU
+        
+        if message != '1':
+            return "⚠️ Por favor responde:\n\n1️⃣ Ya compartí el calendario\n0️⃣ Cancelar"
+        
+        calendar_email = session.get_temp('calendar_email')
+        
+        if not calendar_email:
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return "❌ Error: Email no encontrado. Intenta nuevamente desde el menú."
+        
+        # Validar acceso
+        print(f"[PROF_HANDLER] Validando acceso a calendario: {calendar_email}")
+        
+        result = professional_service.setup_google_calendar(
+            phone=session.phone_number,
+            calendar_email=calendar_email
+        )
+        
+        if result['success']:
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            
+            from src.messages.messages_professional import professional_messages
+            
+            return f"""✅ ¡CALENDARIO CONFIGURADO!
+
+    Tu calendario de Google ha sido vinculado exitosamente.
+
+    📧 Calendario: {calendar_email}
+
+    Ahora:
+    ✅ Los clientes verán tu disponibilidad real
+    ✅ Las citas se crearán automáticamente en tu calendario
+    ✅ Aparecerás en las búsquedas
+
+    {professional_messages.PROF_MAIN_MENU}"""
+        
+        elif result['message'] == 'no_access':
+            return f"""❌ NO TENGO ACCESO A TU CALENDARIO
+
+    Verifica que hayas compartido el calendario correctamente.
+
+    Pasos:
+    1. Google Calendar → https://calendar.google.com
+    2. Configuración del calendario
+    3. Compartir con: {calendar_service.get_service_account_email()}
+    4. Permisos: "Hacer cambios en eventos"
+
+    ⏱️ Si recién compartiste, espera 1-2 minutos.
+
+    ¿Qué deseas hacer?
+    1️⃣ Intentar validar nuevamente
+    0️⃣ Cancelar y volver al menú"""
+        
+        else:
+            return """❌ Error al configurar el calendario.
+
+    Intenta nuevamente más tarde.
+
+    0️⃣ Volver al menú"""
     # ==========================================
     # PROFESSIONAL - CARGAR SEMANA (WEEKLY SCHEDULE)
     # ==========================================
@@ -1307,54 +1409,70 @@ class ProfessionalHandler:
             configured_days=configured_days
         )
 
-    def handle_prof_week_more(self, session: SessionData, message: str) -> str:
-        """Handle whether to add more days to weekly schedule."""
-        if message == '1':
-            # Add another day
-            session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_DAY)
-            return professional_messages.PROF_WEEK_ASK_DAY
-
-        elif message == '2':
-            # Finish and save
-            week_schedule = session.get_temp('week_schedule', {})
-
-            # Type check to satisfy Pylance
-            if not isinstance(week_schedule, dict):
-                week_schedule = {}
-
-            # Build schedules list
-            schedules = []
-            for day, data in week_schedule.items():
-                schedules.append({
-                    'day_of_week': day,
-                    'start_time': data['start'],
-                    'end_time': data['end']
-                })
-
-            # Save to database
-            professional_service.add_multiple_weekly_schedules(
-                session.phone_number,
-                schedules
-            )
-
-            # Format summary
-            schedule_summary = "\n".join([
-                f"â€¢ {data['day_name']}: {data['start']} - {data['end']}"
-                for day, data in sorted(week_schedule.items())
-            ])
-
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-
-            return professional_messages.PROF_WEEK_SUCCESS.format(
-                schedule_summary=schedule_summary
-            ) + "\n\n" + professional_messages.PROF_MAIN_MENU
-
-        elif message == '0':
-            # Cancel and go back to menu
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return common_messages.OPERATION_CANCELLED + "\n\n" + professional_messages.PROF_MAIN_MENU
-
-        else:
-            return common_messages.INVALID_OPTION
+    def _format_next_available_days(self, phone: str, days_to_check: int = 7, max_to_show: int = 5) -> str:
+        """
+        Format next available days with slot counts.
+        Uses Google Calendar to check real availability.
+        
+        Args:
+            phone: Professional's phone
+            days_to_check: How many days ahead to check (default 7)
+            max_to_show: Maximum days to display (default 5)
+        
+        Returns:
+            Formatted string with available days
+        """
+        from datetime import datetime, timedelta
+        
+        try:
+            prof = self.db.get_professional(phone)
+            if not prof or not prof.get('calendar_id'):
+                return "   Consultar disponibilidad directamente\n"
+            
+            today = datetime.now().date()
+            available_days = []
+            
+            day_names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+            
+            # Buscar próximos días con disponibilidad
+            for day_offset in range(days_to_check):
+                check_date = today + timedelta(days=day_offset)
+                date_str = check_date.strftime("%Y-%m-%d")
+                
+                # Contar slots disponibles ese día
+                from src.services.professional_service import professional_service
+                slots = professional_service.get_available_slots(
+                    professional_phone=phone,
+                    date=date_str,
+                    duration_minutes=50
+                )
+                
+                if slots:
+                    day_name = day_names[check_date.weekday()]
+                    date_formatted = f"{check_date.day:02d}/{check_date.month:02d}"
+                    slot_count = len(slots)
+                    
+                    available_days.append({
+                        'day_name': day_name,
+                        'date': date_formatted,
+                        'slot_count': slot_count,
+                        'date_str': date_str
+                    })
+                    
+                    # Limitar cantidad mostrada
+                    if len(available_days) >= max_to_show:
+                        break
+            
+            # Formatear salida
+            if not available_days:
+                return "   No hay horarios disponibles en los próximos días\n"
+            
+            output = "📅 PRÓXIMOS DÍAS DISPONIBLES:\n"
+            for day_info in available_days:
+                output += f"   ✅ {day_info['day_name']} {day_info['date']} - {day_info['slot_count']} horarios\n"
+            
+            return output
+            
+        except Exception as e:
+            print(f"[CLIENT] ⚠️ Error formatting next available days: {e}")
+            return "   Consultar disponibilidad directamente\n"
