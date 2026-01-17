@@ -260,326 +260,10 @@ class ProfessionalService:
             print(f"[PROF_SERVICE] ❌ Error getting certificate path: {e}")
             return None
 
-    # ==========================================
-    # WEEKLY SCHEDULE MANAGEMENT
-    # ==========================================
-
-    def add_weekly_busy_hours(self, phone: str, day_of_week: int,
-                              start_time: str, end_time: str) -> bool:
-        """
-        Add recurring busy hours for a specific day of week.
-        This schedule repeats every week.
-
-        Args:
-            phone: Professional's phone
-            day_of_week: Day number (0=Monday, 6=Sunday)
-            start_time: Start time in HH:MM format (e.g., "09:00")
-            end_time: End time in HH:MM format (e.g., "17:00")
-
-        Returns:
-            True if successful
-
-        Example:
-            >>> # Mark every Monday 9am-5pm as busy
-            >>> service.add_weekly_busy_hours("+5491112345678", 0, "09:00", "17:00")
-            True
-        """
-        try:
-            success = self.db.add_weekly_schedule(
-                phone, day_of_week, start_time, end_time)
-
-            if success:
-                day_names = ['Lunes', 'Martes', 'Miércoles',
-                             'Jueves', 'Viernes', 'Sábado', 'Domingo']
-                print(
-                    f"[PROF_SERVICE] ✅ Weekly schedule added: {day_names[day_of_week]} {start_time}-{end_time}")
-
-            return success
-
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error adding weekly schedule: {e}")
-            return False
-
-    def add_multiple_weekly_schedules(self, phone: str, schedules: List[Dict]) -> Tuple[int, int]:
-        """
-        Add multiple weekly schedules at once.
-        Useful for "quick setup" where user provides full week.
-
-        Args:
-            phone: Professional's phone
-            schedules: List of dictionaries with:
-                - day_of_week: int (0-6)
-                - start_time: str (HH:MM)
-                - end_time: str (HH:MM)
-
-        Returns:
-            Tuple of (success_count, total_count)
-
-        Example:
-            >>> schedules = [
-            ...     {"day_of_week": 0, "start_time": "09:00", "end_time": "17:00"},
-            ...     {"day_of_week": 2, "start_time": "09:00", "end_time": "17:00"},
-            ... ]
-            >>> service.add_multiple_weekly_schedules("+5491112345678", schedules)
-            (2, 2)
-        """
-        try:
-            success_count = 0
-
-            for schedule in schedules:
-                if self.add_weekly_busy_hours(
-                    phone,
-                    schedule['day_of_week'],
-                    schedule['start_time'],
-                    schedule['end_time']
-                ):
-                    success_count += 1
-
-            print(
-                f"[PROF_SERVICE] ✅ Added {success_count}/{len(schedules)} weekly schedules")
-            return (success_count, len(schedules))
-
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error adding multiple schedules: {e}")
-            return (0, len(schedules))
-
-    def get_weekly_schedule(self, phone: str) -> List[Dict]:
-        """
-        Get all weekly recurring schedules for professional.
-
-        Args:
-            phone: Professional's phone
-
-        Returns:
-            List of schedule dictionaries
-        """
-        try:
-            return self.db.get_weekly_schedule(phone)
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error getting weekly schedule: {e}")
-            return []
-
-    def remove_weekly_schedule(self, phone: str, day_of_week: int,
-                               start_time: str, end_time: str) -> bool:
-        """
-        Remove a specific weekly recurring schedule.
-
-        Args:
-            phone: Professional's phone
-            day_of_week: Day number
-            start_time: Start time
-            end_time: End time
-
-        Returns:
-            True if successful
-        """
-        try:
-            return self.db.remove_weekly_schedule(phone, day_of_week, start_time, end_time)
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error removing weekly schedule: {e}")
-            return False
-
-    def clear_all_weekly_schedules(self, phone: str) -> bool:
-        """
-        Remove ALL weekly schedules for a professional.
-        Used for "reset" functionality.
-
-        Args:
-            phone: Professional's phone
-
-        Returns:
-            True if successful
-        """
-        try:
-            schedules = self.get_weekly_schedule(phone)
-            success_count = 0
-
-            for schedule in schedules:
-                if self.remove_weekly_schedule(
-                    phone,
-                    schedule['day_of_week'],
-                    schedule['start_time'],
-                    schedule['end_time']
-                ):
-                    success_count += 1
-
-            print(f"[PROF_SERVICE] ✅ Cleared {success_count} weekly schedules")
-            return success_count == len(schedules)
-
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error clearing schedules: {e}")
-            return False
-
-    # ==========================================
-    # SPECIFIC FREE SLOT MANAGEMENT
-    # ==========================================
-
-    def mark_slot_as_free(self, phone: str, date_str: str,
-                          start_time: str, end_time: str) -> bool:
-        """
-        Mark a specific date/time slot as FREE.
-        This OVERRIDES the weekly recurring schedule.
-
-        Use case: Client cancelled, professional has unexpected opening.
-
-        Args:
-            phone: Professional's phone
-            date_str: Date in YYYY-MM-DD format (e.g., "2025-11-15")
-            start_time: Start time in HH:MM format
-            end_time: End time in HH:MM format
-
-        Returns:
-            True if successful
-
-        Example:
-            >>> # Client cancelled Monday 2pm slot
-            >>> service.mark_slot_as_free("+5491112345678", "2025-11-15", "14:00", "15:00")
-            True
-        """
-        try:
-            success = self.db.add_free_slot(
-                phone, date_str, start_time, end_time)
-
-            if success:
-                print(
-                    f"[PROF_SERVICE] ✅ Slot marked as FREE: {date_str} {start_time}-{end_time}")
-
-            return success
-
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error marking slot as free: {e}")
-            return False
-
-    def get_free_slots(self, phone: str, future_only: bool = True) -> List[Dict]:
-        """
-        Get all specific free slots for professional.
-
-        Args:
-            phone: Professional's phone
-            future_only: If True, only return future slots (default)
-
-        Returns:
-            List of free slot dictionaries
-        """
-        try:
-            if future_only:
-                today = datetime.now().strftime("%Y-%m-%d")
-                return self.db.get_free_slots(phone, from_date=today)
-            else:
-                return self.db.get_free_slots(phone)
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error getting free slots: {e}")
-            return []
-
-    def remove_free_slot(self, phone: str, date_str: str,
-                         start_time: str, end_time: str) -> bool:
-        """
-        Remove a specific free slot.
-        Used when slot gets booked or professional changes mind.
-
-        Args:
-            phone: Professional's phone
-            date_str: Date in YYYY-MM-DD format
-            start_time: Start time
-            end_time: End time
-
-        Returns:
-            True if successful
-        """
-        try:
-            return self.db.remove_free_slot(phone, date_str, start_time, end_time)
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error removing free slot: {e}")
-            return False
 
     # ==========================================
     # SCHEDULE VIEWING & FORMATTING
     # ==========================================
-
-    def get_complete_schedule(self, phone: str) -> Dict:
-        """
-        Get complete schedule including weekly and specific free slots.
-
-        Args:
-            phone: Professional's phone
-
-        Returns:
-            Dictionary with:
-                - weekly_schedule: List of recurring schedules
-                - free_slots: List of specific free slots
-                - formatted: Human-readable formatted schedule
-        """
-        try:
-            weekly = self.get_weekly_schedule(phone)
-            free_slots = self.get_free_slots(phone, future_only=True)
-
-            return {
-                'weekly_schedule': weekly,
-                'free_slots': free_slots,
-                'formatted': self.format_schedule(weekly, free_slots)
-            }
-
-        except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error getting complete schedule: {e}")
-            return {
-                'weekly_schedule': [],
-                'free_slots': [],
-                'formatted': "Error al obtener agenda"
-            }
-
-    def format_schedule(self, weekly_schedule: List[Dict], free_slots: List[Dict]) -> str:
-        """
-        Format schedule for WhatsApp display.
-
-        Args:
-            weekly_schedule: List of weekly schedules
-            free_slots: List of specific free slots
-
-        Returns:
-            Formatted string for display
-        """
-        output = "📅 TU AGENDA\n"
-        output += "=" * 40 + "\n\n"
-
-        # Weekly schedule
-        if weekly_schedule:
-            output += "📆 HORARIOS OCUPADOS (Recurrentes):\n"
-
-            # Group by day
-            by_day = {}
-            for schedule in weekly_schedule:
-                day = schedule['day_of_week']
-                if day not in by_day:
-                    by_day[day] = []
-                by_day[day].append(
-                    f"{schedule['start_time']}-{schedule['end_time']}")
-
-            day_names = ['Lunes', 'Martes', 'Miércoles',
-                         'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            for day in range(7):
-                if day in by_day:
-                    output += f"   ❌ {day_names[day]}: {', '.join(by_day[day])}\n"
-                else:
-                    output += f"   ✅ {day_names[day]}: Disponible\n"
-            output += "\n"
-        else:
-            output += "📆 No tienes horarios ocupados recurrentes configurados.\n\n"
-
-        # Specific free slots
-        if free_slots:
-            output += "🆓 HORARIOS LIBRES ESPECÍFICOS:\n"
-            for slot in free_slots[:10]:  # Show max 10
-                output += f"   ✅ {slot['date']} {slot['start_time']}-{slot['end_time']}\n"
-
-            if len(free_slots) > 10:
-                output += f"   ... y {len(free_slots) - 10} más\n"
-            output += "\n"
-        else:
-            output += "🆓 No tienes horarios libres específicos marcados.\n\n"
-
-        output += "💡 Los clientes verán tu disponibilidad basada en esta agenda."
-
-        return output
 
     def format_profile_summary(self, phone: str) -> str:
         """
@@ -659,154 +343,44 @@ class ProfessionalService:
         exclude_appointment_id: int = None
     ) -> List[Dict]:
         """
-        Obtener slots disponibles para un profesional en una fecha específica.
-
-        Genera slots basándose en:
-        1. Horarios libres específicos (specific_free_slots)
-        2. Horario laboral general (9:00-18:00 si no hay weekly_schedule)
-        3. Excluye slots ocupados por citas existentes
-
-        Args:
-            professional_phone: Teléfono del profesional
-            date: Fecha en formato YYYY-MM-DD
-            duration_minutes: Duración de cada slot (default 50 min)
-            exclude_appointment_id: ID de cita a excluir (para reprogramación)
-
-        Returns:
-            Lista de slots disponibles:
-            [
-                {
-                    'start_time': '10:00',
-                    'end_time': '10:50',
-                    'date': '2025-12-15'
-                },
-                ...
-            ]
+        Obtener slots disponibles desde Google Calendar.
         """
-        from datetime import datetime, timedelta
-
+        from src.integrations.google_calendar_service import GoogleCalendarService
+        import json
+        
         try:
-            # Convertir fecha a datetime
-            date_obj = datetime.strptime(date, "%Y-%m-%d")
-            day_of_week = date_obj.weekday()  # 0=Lunes, 6=Domingo
-
-            available_slots = []
-
-            # ==========================================
-            # PASO 1: Verificar slots libres específicos
-            # ==========================================
-            specific_free_slots = self.db.get_free_slots(
-                professional_phone,
-                from_date=date
-            )
-
-            for free_slot in specific_free_slots:
-                if free_slot['date'] == date:
-                    # Este día tiene un slot libre específico
-                    start_time = datetime.strptime(
-                        free_slot['start_time'], "%H:%M")
-                    end_time = datetime.strptime(
-                        free_slot['end_time'], "%H:%M")
-
-                    # Generar slots de duración específica dentro del rango
-                    current_time = start_time
-                    while current_time + timedelta(minutes=duration_minutes) <= end_time:
-                        slot_start = current_time.strftime("%H:%M")
-                        slot_end = (
-                            current_time + timedelta(minutes=duration_minutes)).strftime("%H:%M")
-
-                        # Verificar que el slot no esté ocupado
-                        is_available = self.db.check_slot_availability(
-                            professional_phone,
-                            date,
-                            slot_start,
-                            slot_end,
-                            exclude_appointment_id=exclude_appointment_id
-                        )
-
-                        if is_available:
-                            available_slots.append({
-                                'start_time': slot_start,
-                                'end_time': slot_end,
-                                'date': date
-                            })
-
-                        # Avanzar al siguiente slot (con buffer de 10 min)
-                        current_time += timedelta(minutes=duration_minutes + 10)
-
-            # Si hay slots específicos, solo retornar esos
-            if available_slots:
-                return available_slots
-
-            # ==========================================
-            # PASO 2: Verificar horario semanal
-            # ==========================================
-            weekly_schedule = self.db.get_weekly_schedule(professional_phone)
-
-            # Buscar si este día está en el horario semanal
-            day_schedule = None
-            for schedule in weekly_schedule:
-                if schedule['day_of_week'] == day_of_week and not schedule.get('is_busy', True):
-                    day_schedule = schedule
-                    break
-
-            # Si no hay horario semanal para este día, usar horario por defecto
-            if not day_schedule:
-                # Verificar si el día está marcado como ocupado
-                is_busy_day = any(
-                    s['day_of_week'] == day_of_week and s.get('is_busy', True)
-                    for s in weekly_schedule
-                )
-
-                if is_busy_day:
-                    # Día completamente ocupado en el schedule semanal
-                    return []
-
-                # Día no tiene schedule = usar horario por defecto 9:00-18:00
-                start_time = datetime.strptime("09:00", "%H:%M")
-                end_time = datetime.strptime("18:00", "%H:%M")
+            # Obtener configuración del profesional
+            professional = self.db.get_professional(professional_phone)
+            
+            if not professional:
+                return []
+            
+            calendar_id = professional.get('calendar_id')
+            if not calendar_id:
+                print(f"[PROF_SERVICE] ⚠️ Profesional {professional_phone} sin calendar_id")
+                return []
+            
+            # Obtener working_hours
+            working_hours_json = professional.get('working_hours')
+            if working_hours_json:
+                working_hours = json.loads(working_hours_json)
             else:
-                # Usar horario del schedule semanal
-                start_time = datetime.strptime(
-                    day_schedule['start_time'], "%H:%M")
-                end_time = datetime.strptime(day_schedule['end_time'], "%H:%M")
-
-            # ==========================================
-            # PASO 3: Generar slots dentro del horario
-            # ==========================================
-            current_time = start_time
-            while current_time + timedelta(minutes=duration_minutes) <= end_time:
-                slot_start = current_time.strftime("%H:%M")
-                slot_end = (
-                    current_time + timedelta(minutes=duration_minutes)).strftime("%H:%M")
-
-                # Verificar que el slot no esté ocupado por una cita
-                is_available = self.db.check_slot_availability(
-                    professional_phone,
-                    date,
-                    slot_start,
-                    slot_end,
-                    exclude_appointment_id=exclude_appointment_id
-                )
-
-                if is_available:
-                    available_slots.append({
-                        'start_time': slot_start,
-                        'end_time': slot_end,
-                        'date': date
-                    })
-
-                # Avanzar al siguiente slot (duración + 10 min de buffer)
-                current_time += timedelta(minutes=duration_minutes + 10)
-
-            return available_slots
-
+                working_hours = {'start': '09:00', 'end': '18:00'}
+            
+            # Consultar Google Calendar
+            calendar_service = GoogleCalendarService()
+            slots = calendar_service.get_available_slots(
+                calendar_id=calendar_id,
+                date=date,
+                working_hours=working_hours,
+                slot_duration_minutes=duration_minutes
+            )
+            
+            return slots
+            
         except Exception as e:
-            print(f"[PROF_SERVICE] ❌ Error getting available slots: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[PROF_SERVICE] ❌ Error getting slots from Google Calendar: {e}")
             return []
-
     def get_available_dates_for_reschedule(
         self,
         professional_phone: str,
@@ -916,6 +490,88 @@ class ProfessionalService:
             traceback.print_exc()
             return []
 
+    def validate_calendar_access(self, calendar_id: str) -> bool:
+        """
+        Valida que tengamos acceso al calendario del profesional.
+        
+        Args:
+            calendar_id: Email del calendario de Google
+        
+        Returns:
+            bool: True si tenemos acceso, False si no
+        """
+        try:
+            from src.integrations.google_calendar_service import GoogleCalendarService
+            from datetime import datetime
+            
+            calendar_service = GoogleCalendarService()
+            
+            # Intentar acceder al calendario
+            can_access = calendar_service.check_calendar_access(calendar_id)
+            
+            if can_access:
+                print(f"[PROF_SERVICE] ✅ Acceso validado al calendario: {calendar_id}")
+                return True
+            else:
+                print(f"[PROF_SERVICE] ❌ Sin acceso al calendario: {calendar_id}")
+                return False
+                
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error validando acceso: {e}")
+            return False
+
+    def setup_google_calendar(self, phone: str, calendar_email: str) -> dict:
+        """
+        Configura Google Calendar para un profesional.
+        
+        Args:
+            phone: Teléfono del profesional
+            calendar_email: Email del calendario de Google
+        
+        Returns:
+            dict: {'success': bool, 'message': str}
+        """
+        import json
+        
+        try:
+            # Validar acceso
+            if not self.validate_calendar_access(calendar_email):
+                return {
+                    'success': False,
+                    'message': 'no_access'
+                }
+            
+            # Configurar en la BD
+            working_hours = {'start': '09:00', 'end': '18:00'}
+            
+            success = self.db.execute_query("""
+                UPDATE professionals 
+                SET 
+                    calendar_id = ?,
+                    working_hours = ?,
+                    slot_duration = 60,
+                    timezone = 'America/Argentina/Buenos_Aires'
+                WHERE phone = ?
+            """, (calendar_email, json.dumps(working_hours), phone))
+            
+            if success:
+                print(f"[PROF_SERVICE] ✅ Google Calendar configurado: {phone}")
+                return {
+                    'success': True,
+                    'message': 'configured'
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': 'db_error'
+                }
+                
+        except Exception as e:
+            print(f"[PROF_SERVICE] ❌ Error configurando calendar: {e}")
+            return {
+                'success': False,
+                'message': 'error'
+            }
 
 # Global professional service instance
 professional_service = ProfessionalService()
