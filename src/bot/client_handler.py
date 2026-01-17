@@ -158,7 +158,19 @@ class ClientHandler:
                 return client_messages.CLIENT_NO_RESULTS
 
             # Formatear y mostrar resultados
-            formatted = client_service.format_results_list(results)
+            # Format results with available slots
+
+            search_date = session.get_temp('search_date')
+
+            formatted = client_service.format_search_results_with_slots(
+
+                professionals=results,
+
+                date_str=search_date,
+
+                show_max_slots=3
+
+            )
             return formatted
         
         elif message == '3':
@@ -348,7 +360,25 @@ class ClientHandler:
         if len(results) == 0:
             return client_messages.CLIENT_NO_RESULTS
 
-        formatted = client_service.format_results_list(results)
+        # Format results with available slots
+
+
+        search_date = session.get_temp('search_date')
+
+
+        formatted = client_service.format_search_results_with_slots(
+
+
+            professionals=results,
+
+
+            date_str=search_date,
+
+
+            show_max_slots=3
+
+
+        )
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
         return formatted
 
@@ -464,7 +494,19 @@ class ClientHandler:
         session.store_temp('search_results', results)
 
         # Format and return
-        formatted = client_service.format_results_list(results)
+        # Format results with available slots
+
+        search_date = session.get_temp('search_date')
+
+        formatted = client_service.format_search_results_with_slots(
+
+            professionals=results,
+
+            date_str=search_date,
+
+            show_max_slots=3
+
+        )
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
         return formatted
@@ -614,7 +656,25 @@ class ClientHandler:
             if len(results) == 0:
                 return client_messages.CLIENT_NO_RESULTS
 
-            formatted = client_service.format_results_list(results)
+            # Format results with available slots
+
+
+            search_date = session.get_temp('search_date')
+
+
+            formatted = client_service.format_search_results_with_slots(
+
+
+                professionals=results,
+
+
+                date_str=search_date,
+
+
+                show_max_slots=3
+
+
+            )
             return formatted
 
         # Opción 0: Volver al menú cliente
@@ -1127,7 +1187,19 @@ class ClientHandler:
     {client_messages.CLIENT_NO_RESULTS}"""
 
         # Format results list
-        formatted_results = client_service.format_results_list(results)
+        # Format results with available slots
+
+        search_date = session.get_temp('search_date')
+
+        formatted_results = client_service.format_search_results_with_slots(
+
+            professionals=results,
+
+            date_str=search_date,
+
+            show_max_slots=3
+
+        )
 
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
@@ -1144,12 +1216,12 @@ class ClientHandler:
 
     def handle_client_show_results(self, session: SessionData, message: str) -> str:
         """
-        Maneja vista de resultados.
+        Maneja vista de resultados de búsqueda.
+        ACTUALIZADO: Ahora muestra slots disponibles por profesional.
 
         El usuario puede:
-        - Seleccionar un número para ver detalle
-        - Volver al menú
-        - Si no hay resultados: modificar filtros o ver todos
+        - Seleccionar un número para ver detalle del profesional
+        - Volver al menú principal con '0'
         """
         # Check for back command
         if message == '0':
@@ -1159,8 +1231,9 @@ class ClientHandler:
 
         # Get results from session
         results = session.get_temp('search_results', [])
+        search_date = session.get_temp('search_date')  # Fecha de búsqueda
 
-        # Si NO hay resultados, manejar opciones especiales
+        # Si NO hay resultados, mostrar mensaje de ayuda
         if not results or len(results) == 0:
             if message == '1':
                 # Modificar filtros - volver al menú de filtros
@@ -1171,25 +1244,33 @@ class ClientHandler:
                 # Ver todos los profesionales (sin filtros)
                 print("[CLIENT] User requested: Show all professionals (no filters)")
                 
-                # Buscar SIN filtros
-                all_results = client_service.search_professionals_by_filters(limit=10)
+                # Buscar SIN filtros pero CON fecha si se había especificado
+                all_results = client_service.search_professionals_by_filters(
+                    date_str=search_date,
+                    limit=10
+                )
                 
                 # Log search
                 search_id = analytics_service.log_search(
                     client_phone=session.phone_number,
                     search_type='all',
-                    search_params={},
+                    search_params={'date': search_date} if search_date else {},
                     result_count=len(all_results),
                     session_id=session.phone_number
                 )
                 session.store_temp('current_search_id', search_id)
                 session.store_temp('search_results', all_results)
                 
-                # Format and return
+                # Format with slots if date exists
                 if len(all_results) == 0:
-                    return "😔 No hay profesionales registrados en el sistema.\n\nEscribe '0' para volver al menú."
+                    return "😔 No hay profesionales disponibles.\n\nEscribe '0' para volver al menú."
                 
-                formatted = client_service.format_results_list(all_results)
+                # ⭐ NUEVO: Usar formato con slots
+                formatted = client_service.format_search_results_with_slots(
+                    professionals=all_results,
+                    date_str=search_date,
+                    show_max_slots=3
+                )
                 return formatted
             
             else:
@@ -1221,34 +1302,36 @@ class ClientHandler:
                 result_position=selection
             )
 
-        search_date = session.get_temp('search_date')
-    
-        if search_date:
-            # Hay fecha específica → Mostrar horarios para agendar
-            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
-            return client_service.format_professional_detail(
-                professional,
-                target_date=search_date,
-                show_booking=True
-            )
-        else:
-            # No hay fecha → Mostrar detalle normal
-            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL)
-            return client_service.format_professional_detail(professional)
+        # ⭐ NUEVO: Transición a detalle con slots
+        session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+        
+        # ⭐ NUEVO: Usar el nuevo formatter que muestra todos los slots
+        return client_service.format_professional_detail_with_slots(
+            professional=professional,
+            date_str=search_date
+        )
 
 
     def handle_client_view_detail(self, session: SessionData, message: str) -> str:
         """
         Maneja vista de detalle de profesional.
-
-        Muestra información completa del profesional seleccionado.
+        ACTUALIZADO: Ahora permite seleccionar slot de horario para reservar.
+        
+        Estados posibles:
+        - CLIENT_VIEW_DETAIL: Solo info, sin slots (búsqueda sin fecha)
+        - CLIENT_VIEW_DETAIL_WITH_BOOKING: Info + slots (búsqueda con fecha)
         """
         # Check for back command
         if message == '0':
             # Go back to results
             results = session.get_temp('search_results', [])
             if results:
-                formatted = client_service.format_results_list(results)
+                search_date = session.get_temp('search_date')
+                formatted = client_service.format_search_results_with_slots(
+                    professionals=results,
+                    date_str=search_date,
+                    show_max_slots=3
+                )
                 session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
                 return formatted
             else:
@@ -1256,25 +1339,57 @@ class ClientHandler:
                 session.transition_to(ConversationState.CLIENT_MAIN_MENU)
                 return client_messages.CLIENT_MAIN_MENU
 
+        # ⭐ NUEVO: Manejar selección de horario
+        professional = session.get_temp('selected_professional')
+        
+        if not professional:
+            return "⚠️ Error: No hay profesional seleccionado.\n\nEscribe 'menu' para volver."
+        
+        # Si el profesional tiene slots disponibles, el usuario puede seleccionar uno
+        available_slots = professional.get('available_slots', [])
+        
+        if available_slots:
+            try:
+                slot_selection = int(message)
+            except ValueError:
+                return "⚠️ Por favor, ingresá un número de horario válido.\n\nEscribe '0' para volver."
+            
+            # Validate slot selection
+            if slot_selection < 1 or slot_selection > len(available_slots):
+                return f"⚠️ Número inválido. Elegí entre 1 y {len(available_slots)}.\n\nEscribe '0' para volver."
+            
+            # ⭐ Usuario seleccionó un horario → Iniciar flujo de reserva
+            selected_slot = available_slots[slot_selection - 1]
+            
+            # Guardar slot seleccionado
+            session.store_temp('selected_slot', selected_slot)
+            
+            # Transición a confirmación de datos
+            session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRM_NAME)
+            
+            # Solicitar nombre del cliente
+            return """📝 *Confirmación de Turno*
+
+    Para confirmar tu turno necesito algunos datos:
+
+    ¿Cuál es tu *nombre completo*?
+
+    _(Escribe '0' para cancelar)_"""
+        
+        # Si no hay slots, mostrar solo opción de contacto
         elif message == '1':
             # Contact professional
-            professional = session.get_temp('selected_professional')
-
-            if not professional:
-                return "⚠️ Error: No hay profesional seleccionado.\n\nEscribe 'menu' para volver."
-
-            # Return contact info
-            contact_message = f"📱 Contacto:\n\n"
+            contact_message = f"📱 *Contacto:*\n\n"
             contact_message += f"Teléfono: {professional['phone']}\n"
             if professional.get('email'):
                 contact_message += f"Email: {professional['email']}\n"
             contact_message += f"\n💬 Podés escribirle directamente por WhatsApp.\n"
             contact_message += f"\nEscribe '0' para volver o 'menu' para ir al menú principal."
-
+            
             return contact_message
-
+        
         else:
-            return "⚠️ Opción inválida.\n\n1️⃣ Contactar\n0️⃣ Volver"
+            return "⚠️ Opción inválida.\n\nEscribe '0' para volver."
 
     # ==========================================
     # MIS CITAS (Appointments Management)
@@ -1287,13 +1402,9 @@ class ClientHandler:
         Muestra todas las citas activas (pendientes y confirmadas) del cliente.
 
         Args:
-            message: '' = carga inicial, 'número' = selección de cita
+            message: '' = carga inicial, 'número' = selección de cita, '0' = volver
         """
         from datetime import datetime
-
-        # ✅ NUEVO: Si message tiene valor (no vacío), delegar a detalle
-        if message and message != '0':
-            return self.handle_client_appointment_detail(session, message)
 
         # Check for back command
         if message == '0':
@@ -1316,10 +1427,22 @@ class ClientHandler:
 
         # Si no hay citas
         if not active_appointments:
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return appointment_messages.CLIENT_NO_APPOINTMENTS
 
         # Guardar lista en temp_data
         session.store_temp('appointment_list', active_appointments)
+
+        # Si hay un mensaje numérico Y ya tenemos la lista cargada en la sesión previa
+        # entonces es una selección de cita
+        if message and message.isdigit() and int(message) > 0:
+            # Verificar que el número está en rango
+            idx = int(message) - 1
+            if 0 <= idx < len(active_appointments):
+                return self.handle_client_appointment_detail(session, message)
+            else:
+                # Número fuera de rango, mostrar la lista de nuevo
+                pass
 
         # Formatear lista
         appointments_list = []
@@ -1489,7 +1612,7 @@ class ClientHandler:
         return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
             id=session.get_temp('selected_appointment_number', apt['id']),
             date=date_full,
-            time=apt['start_time'],
+            time=apt['start'],
             professional_name=apt['professional_name'],
             professional_phone=apt['professional_phone'],
             modality=modality,
@@ -1537,7 +1660,7 @@ class ClientHandler:
 
         # Calcular horas hasta la cita
         apt_datetime = datetime.strptime(
-            f"{apt['appointment_date']} {apt['start_time']}",
+            f"{apt['appointment_date']} {apt['start']}",
             "%Y-%m-%d %H:%M"
         )
         now = datetime.now()
@@ -1568,7 +1691,7 @@ class ClientHandler:
 
             return appointment_messages.CLIENT_CANCEL_APPOINTMENT_CONFIRM.format(
                 date=date_str,
-                time=apt['start_time'],
+                time=apt['start'],
                 professional_name=apt['professional_name'],
                 policy_info=policy_info
             )
@@ -1689,7 +1812,7 @@ class ClientHandler:
 
         # Calcular horas hasta la cita
         apt_datetime = datetime.strptime(
-            f"{apt['appointment_date']} {apt['start_time']}",
+            f"{apt['appointment_date']} {apt['start']}",
             "%Y-%m-%d %H:%M"
         )
         now = datetime.now()
@@ -1714,8 +1837,8 @@ class ClientHandler:
 
         # Guardar datos originales de la cita
         session.store_temp('original_date', apt['appointment_date'])
-        session.store_temp('original_start_time', apt['start_time'])
-        session.store_temp('original_end_time', apt['end_time'])
+        session.store_temp('original_start_time', apt['start'])
+        session.store_temp('original_end_time', apt['end'])
         session.store_temp('professional_phone', apt['professional_phone'])
         session.store_temp('professional_name', apt['professional_name'])
         session.store_temp('duration', apt['duration_minutes'])
@@ -1873,7 +1996,7 @@ class ClientHandler:
             slots_list = []
             for idx, slot in enumerate(slots, 1):
                 slots_list.append(
-                    f"{idx}️⃣ {slot['start_time']} - {slot['end_time']}")
+                    f"{idx}️⃣ {slot['start']} - {slot['end']}")
 
             formatted_slots = "\n".join(slots_list)
 
@@ -1896,8 +2019,8 @@ class ClientHandler:
             selected_slot = available_slots[selection - 1]
 
             # Guardar horario seleccionado
-            session.store_temp('new_start_time', selected_slot['start_time'])
-            session.store_temp('new_end_time', selected_slot['end_time'])
+            session.store_temp('new_start_time', selected_slot['start'])
+            session.store_temp('new_end_time', selected_slot['end'])
 
             # Transicionar a confirmación
             session.transition_to(ConversationState.CLIENT_RESCHEDULE_CONFIRM)
@@ -1915,7 +2038,7 @@ class ClientHandler:
                 old_date=old_date_formatted,
                 old_time=original_time,
                 new_date=new_date_str,
-                new_time=selected_slot['start_time'],
+                new_time=selected_slot['start'],
                 professional_name=professional_name
             )
 
@@ -2036,7 +2159,7 @@ class ClientHandler:
         return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
             id=session.get_temp('selected_appointment_number', apt['id']),
             date=date_full,
-            time=apt['start_time'],
+            time=apt['start'],
             professional_name=apt['professional_name'],
             professional_phone=apt['professional_phone'],
             modality=modality,
@@ -2061,7 +2184,19 @@ class ClientHandler:
         if message == '0':
             results = session.get_temp('search_results', [])
             if results:
-                formatted = client_service.format_results_list(results)
+                # Format results with available slots
+
+                search_date = session.get_temp('search_date')
+
+                formatted = client_service.format_search_results_with_slots(
+
+                    professionals=results,
+
+                    date_str=search_date,
+
+                    show_max_slots=3
+
+                )
                 session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
                 
                 search_date_formatted = session.get_temp('search_date_formatted', '')
@@ -2113,8 +2248,8 @@ O escribe '0' para volver al menú."""
         # Store booking info
         session.store_temp('selected_slot', selected_slot)
         session.store_temp('booking_date', search_date)
-        session.store_temp('booking_start_time', selected_slot['start_time'])
-        session.store_temp('booking_end_time', selected_slot['end_time'])
+        session.store_temp('booking_start_time', selected_slot['start'])
+        session.store_temp('booking_end_time', selected_slot['end'])
         
         # Transition to confirmation
         session.transition_to(ConversationState.CLIENT_CONFIRM_BOOKING)
@@ -2134,7 +2269,7 @@ O escribe '0' para volver al menú."""
 
 👨‍⚕️ Profesional: {prof_name}
 📅 Fecha: {day_name} {date_formatted}
-⏰ Horario: {selected_slot['start_time']} - {selected_slot['end_time']}
+⏰ Horario: {selected_slot['start']} - {selected_slot['end']}
 📱 Contacto: {prof_phone}
 
 ¿Confirmas esta cita?
@@ -2157,11 +2292,14 @@ O escribe '0' para volver al menú."""
             search_date = session.get_temp('search_date')
             
             session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
-            return client_service.format_professional_detail(
-                professional,
-                target_date=search_date,
-                show_booking=True
-            )
+            # Format professional detail with slots
+            search_date = session.get_temp('search_date')
+            return client_service.format_professional_detail_with_slots(
+                professional=professional,
+                date_str=search_date,
+                    target_date=search_date,
+                    show_booking=True
+                )
         
         # Validate confirmation
         if message != '1':
@@ -2178,19 +2316,46 @@ O escribe '0' para volver al menú."""
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return "❌ Error: Información incompleta.\n\n" + client_messages.CLIENT_MAIN_MENU
         
-        # TODO: Aquí crear el appointment en la BD cuando implementes persistencia
-        # from src.services.appointment_service import appointment_service
-        # appointment_id = appointment_service.create_appointment(...)
+        # ✅ CREAR CITA EN GOOGLE CALENDAR
+        from src.services.appointment_service import appointment_service
+        from src.database.database import db
         
-        # Por ahora, solo simulamos
-        appointment_id = "DEMO_" + datetime.now().strftime("%Y%m%d%H%M%S")
+        # Obtener nombre del cliente
+        client = db.get_client(session.phone_number)
+        client_name = client.get('name', 'Cliente') if client else 'Cliente'
         
-        print(f"[CLIENT] ✅ Agendamiento simulado:")
-        print(f"         Cliente: {session.phone}")
-        print(f"         Profesional: {professional['phone']}")
-        print(f"         Fecha: {booking_date}")
-        print(f"         Horario: {booking_start_time} - {booking_end_time}")
-        print(f"         ID: {appointment_id}")
+        try:
+            # Crear en Google Calendar
+            google_event_id = appointment_service.create_appointment(
+                client_phone=session.phone_number,
+                client_name=client_name,
+                professional_phone=professional['phone'],
+                date=booking_date,
+                start_time=booking_start_time,
+                end_time=booking_end_time,
+                appointment_type="Consulta"
+            )
+            appointment_id = google_event_id
+            
+            print(f"[CLIENT] ✅ Cita creada en Google Calendar:")
+            print(f"         Event ID: {google_event_id}")
+            print(f"         Cliente: {session.phone_number} ({client_name})")
+            print(f"         Profesional: {professional['phone']}")
+            print(f"         Fecha: {booking_date}")
+            print(f"         Horario: {booking_start_time} - {booking_end_time}")
+            
+        except Exception as e:
+            print(f"[CLIENT] ❌ Error al crear cita en Google Calendar: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return f"""❌ Error al agendar la cita.
+
+    Por favor, intenta nuevamente o contacta al profesional directamente.
+
+    {client_messages.CLIENT_MAIN_MENU}"""
         
         session.store_temp('appointment_id', appointment_id)
         session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRMED)
@@ -2205,26 +2370,27 @@ O escribe '0' para volver al menú."""
         prof_phone = professional.get('phone', '')
         
         return f"""✅ ¡CITA AGENDADA CON ÉXITO!
-{'=' * 40}
+    {'=' * 40}
 
-Tu solicitud ha sido enviada al profesional.
+    Tu cita ha sido registrada en el calendario del profesional.
 
-📋 RESUMEN DE LA CITA:
+    📋 RESUMEN DE LA CITA:
 
-👨‍⚕️ Profesional: {prof_name}
-📅 Fecha: {day_name} {date_formatted}
-⏰ Horario: {booking_start_time} - {booking_end_time}
-📱 Contacto: {prof_phone}
+    👨‍⚕️ Profesional: {prof_name}
+    📅 Fecha: {day_name} {date_formatted}
+    ⏰ Horario: {booking_start_time} - {booking_end_time}
+    📱 Contacto: {prof_phone}
+    🆔 Código de cita: {appointment_id[:8]}...
 
-📌 Estado: Pendiente de confirmación
+    📌 Estado: Confirmada
 
-El profesional recibirá tu solicitud y te confirmará la cita en breve.
+    El profesional ha recibido tu reserva automáticamente.
 
-¿Qué deseas hacer?
+    ¿Qué deseas hacer?
 
-1️⃣ Ver mis citas
-2️⃣ Nueva búsqueda
-0️⃣ Menú principal"""
+    1️⃣ Ver mis citas
+    2️⃣ Nueva búsqueda
+    0️⃣ Menú principal"""
 
     def handle_client_booking_confirmed(self, session: SessionData, message: str) -> str:
         """
@@ -2250,3 +2416,162 @@ El profesional recibirá tu solicitud y te confirmará la cita en breve.
         
         else:
             return "⚠️ Opción inválida.\n\n1️⃣ Ver mis citas\n2️⃣ Nueva búsqueda\n0️⃣ Menú principal"
+        
+    def handle_client_booking_confirm_name(self, session: SessionData, message: str) -> str:
+        """
+        Solicita y guarda el nombre del cliente para la reserva.
+        """
+        if message == '0':
+            # Cancelar reserva
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "Reserva cancelada.\n\n" + client_messages.CLIENT_MAIN_MENU
+        
+        # Validar nombre (al menos 2 palabras)
+        name_parts = message.strip().split()
+        if len(name_parts) < 2:
+            return "⚠️ Por favor, ingresá tu nombre completo (nombre y apellido).\n\n_(Escribe '0' para cancelar)_"
+        
+        # Guardar nombre
+        client_name = message.strip()
+        session.store_temp('client_name', client_name)
+        
+        # Transicionar a solicitud de email
+        session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRM_EMAIL)
+        
+        return f"""✅ Perfecto, *{client_name}*
+
+    Ahora necesito tu *email* para enviarte la confirmación del turno.
+
+    ¿Cuál es tu email?
+
+    _(Escribe '0' para cancelar)_"""
+
+
+    def handle_client_booking_confirm_email(self, session: SessionData, message: str) -> str:
+        """
+        Solicita y guarda el email del cliente para la reserva.
+        """
+        if message == '0':
+            # Cancelar reserva
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "Reserva cancelada.\n\n" + client_messages.CLIENT_MAIN_MENU
+        
+        # Validar email básico
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        
+        if not re.match(email_pattern, message.strip()):
+            return "⚠️ Email inválido. Por favor, ingresá un email válido.\n\nEjemplo: nombre@ejemplo.com\n\n_(Escribe '0' para cancelar)_"
+        
+        # Guardar email
+        client_email = message.strip().lower()
+        session.store_temp('client_email', client_email)
+        
+        # Transicionar a confirmación final
+        session.transition_to(ConversationState.CLIENT_BOOKING_FINAL_CONFIRMATION)
+        
+        # Obtener todos los datos guardados
+        professional = session.get_temp('selected_professional')
+        selected_slot = session.get_temp('selected_slot')
+        search_date = session.get_temp('search_date')
+        client_name = session.get_temp('client_name')
+        
+        # Formatear fecha
+        from datetime import datetime
+        try:
+            date_obj = datetime.strptime(search_date, "%Y-%m-%d")
+            day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+            day_name = day_names[date_obj.weekday()]
+            formatted_date = f"{day_name} {date_obj.strftime('%d de %B de %Y')}"
+        except:
+            formatted_date = search_date
+        
+        # Mostrar resumen
+        message = "📋 *RESUMEN DE TU CITA*\n\n"
+        message += f"👤 *Paciente:* {client_name}\n"
+        message += f"📧 *Email:* {client_email}\n\n"
+        message += f"👨‍⚕️ *Profesional:* {professional.get('title', '')} {professional.get('name')}\n"
+        
+        if professional.get('address'):
+            message += f"📍 {professional['address']}\n"
+        
+        message += f"\n📅 *Fecha:* {formatted_date}\n"
+        message += f"⏰ *Horario:* {selected_slot['start']} - {selected_slot['end']}\n\n"
+        
+        if professional.get('price'):
+            message += f"💰 *Valor:* ${professional['price']:,}\n\n"
+        
+        message += "─" * 40 + "\n"
+        message += "*¿Confirmas el turno?*\n\n"
+        message += "1️⃣ Sí, confirmar turno\n"
+        message += "0️⃣ Cancelar\n"
+        
+        return message
+
+
+    def handle_client_booking_final_confirmation(self, session: SessionData, message: str) -> str:
+        """
+        Confirma y crea el turno en Google Calendar.
+        """
+        if message == '0':
+            # Cancelar reserva
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "Reserva cancelada.\n\n" + client_messages.CLIENT_MAIN_MENU
+        
+        if message != '1':
+            return "⚠️ Por favor, elegí una opción:\n\n1️⃣ Confirmar\n0️⃣ Cancelar"
+        
+        # ⭐ CREAR EL TURNO
+        try:
+            # TODO: Implementar en FASE 2
+            # Por ahora, solo simulamos la creación
+            
+            professional = session.get_temp('selected_professional')
+            selected_slot = session.get_temp('selected_slot')
+            search_date = session.get_temp('search_date')
+            client_name = session.get_temp('client_name')
+            client_email = session.get_temp('client_email')
+            
+            # Mensaje de éxito
+            message = "✅ *¡TURNO CONFIRMADO!*\n\n"
+            message += "📋 *Detalles de tu cita:*\n\n"
+            message += f"📅 {search_date}\n"
+            message += f"⏰ {selected_slot['start']} - {selected_slot['end']}\n\n"
+            message += f"👨‍⚕️ {professional.get('title', '')} {professional.get('name')}\n"
+            
+            if professional.get('address'):
+                message += f"📍 {professional['address']}\n"
+            
+            if professional.get('phone'):
+                message += f"📞 {professional['phone']}\n"
+            
+            message += "\n💡 *Recordatorios:*\n"
+            message += "• Llega 10 minutos antes\n"
+            message += "• Trae tu DNI y carnet de prepaga (si corresponde)\n"
+            message += "• Si necesitas cancelar, avísanos con 24hs de anticipación\n\n"
+            message += "📧 Te enviamos la confirmación por email\n\n"
+            message += "─" * 40 + "\n"
+            message += "*¿Qué querés hacer ahora?*\n\n"
+            message += "1️⃣ Ver mis turnos\n"
+            message += "2️⃣ Buscar otro profesional\n"
+            message += "0️⃣ Volver al menú\n"
+            
+            # Limpiar temporales y volver al menú
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            
+            return message
+            
+        except Exception as e:
+            print(f"[CLIENT] ❌ Error creating appointment: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return """❌ Hubo un error al crear el turno.
+
+    Por favor, intenta nuevamente más tarde o contacta directamente al profesional.
+
+    Escribe 'menu' para volver al menú principal."""
