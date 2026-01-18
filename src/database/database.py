@@ -111,13 +111,13 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     professional_phone TEXT NOT NULL,
                     day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
-                    start_time TEXT NOT NULL,
-                    end_time TEXT NOT NULL,
+                    start TEXT NOT NULL,
+                    end TEXT NOT NULL,
                     is_busy BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     
                     FOREIGN KEY (professional_phone) REFERENCES professionals(phone) ON DELETE CASCADE,
-                    UNIQUE(professional_phone, day_of_week, start_time, end_time)
+                    UNIQUE(professional_phone, day_of_week, start, end)
                 )
             """)
 
@@ -135,12 +135,12 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     professional_phone TEXT NOT NULL,
                     date TEXT NOT NULL,
-                    start_time TEXT NOT NULL,
-                    end_time TEXT NOT NULL,
+                    start TEXT NOT NULL,
+                    end TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     
                     FOREIGN KEY (professional_phone) REFERENCES professionals(phone) ON DELETE CASCADE,
-                    UNIQUE(professional_phone, date, start_time, end_time)
+                    UNIQUE(professional_phone, date, start, end)
                 )
             """)
 
@@ -234,8 +234,8 @@ class Database:
                     
                     -- Detalles de la cita
                     appointment_date DATE NOT NULL,
-                    start_time TEXT NOT NULL,
-                    end_time TEXT NOT NULL,
+                    start TEXT NOT NULL,
+                    end TEXT NOT NULL,
                     duration_minutes INTEGER DEFAULT 50,
                     
                     -- Tipo de sesión
@@ -271,7 +271,7 @@ class Database:
                     FOREIGN KEY (professional_phone) REFERENCES professionals(phone),
                     
                     -- Constraint: No solapamiento de citas del mismo profesional
-                    UNIQUE(professional_phone, appointment_date, start_time)
+                    UNIQUE(professional_phone, appointment_date, start)
                 )
             """)
 
@@ -897,8 +897,8 @@ class Database:
         client_phone: str,
         professional_phone: str,
         appointment_date: str,
-        start_time: str,
-        end_time: str,
+        start: str,
+        end: str,
         duration_minutes: int = 50,
         session_type: str = 'primera_vez',
         modality: str = 'presencial',
@@ -912,8 +912,8 @@ class Database:
             client_phone: Client's phone
             professional_phone: Professional's phone
             appointment_date: Date in YYYY-MM-DD format
-            start_time: Start time in HH:MM format
-            end_time: End time in HH:MM format
+            start: Start time in HH:MM format
+            end: End time in HH:MM format
             duration_minutes: Duration in minutes
             session_type: Type ('primera_vez', 'seguimiento', 'evaluacion')
             modality: Modality ('presencial', 'virtual', 'ambas')
@@ -929,12 +929,12 @@ class Database:
                 cursor.execute("""
                     INSERT INTO appointments (
                         client_phone, professional_phone, appointment_date,
-                        start_time, end_time, duration_minutes,
+                        start, end, duration_minutes,
                         session_type, modality, google_event_id, notes, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente_confirmacion')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmada')
                 """, (client_phone, professional_phone, appointment_date,
-                    start_time, end_time, duration_minutes,
+                    start, end, duration_minutes,
                     session_type, modality, google_event_id, notes))
                 
                 appointment_id = cursor.lastrowid
@@ -944,7 +944,7 @@ class Database:
                     INSERT INTO appointment_history (
                         appointment_id, new_status, changed_by, change_reason
                     )
-                    VALUES (?, 'pendiente_confirmacion', 'client', 'Cita creada')
+                    VALUES (?, 'confirmada', 'system', 'Cita creada y confirmada automáticamente')
                 """, (appointment_id,))
             
             print(f"[DB] ✅ Appointment created: #{appointment_id} (Google ID: {google_event_id})")
@@ -1163,7 +1163,7 @@ class Database:
 
                 # Obtener datos anteriores
                 cursor.execute("""
-                    SELECT appointment_date, start_time, end_time 
+                    SELECT appointment_date, start, end 
                     FROM appointments WHERE id = ?
                 """, (appointment_id,))
                 row = cursor.fetchone()
@@ -1171,15 +1171,15 @@ class Database:
                     return False
 
                 previous_date = row['appointment_date']
-                previous_start = row['start_time']
-                previous_end = row['end_time']
+                previous_start = row['start']
+                previous_end = row['end']
 
                 # Actualizar fecha y hora
                 cursor.execute("""
                     UPDATE appointments 
                     SET appointment_date = ?,
-                        start_time = ?,
-                        end_time = ?,
+                        start = ?,
+                        end = ?,
                         status = 'reagendada',
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
@@ -1208,8 +1208,8 @@ class Database:
         self,
         professional_phone: str,
         appointment_date: str,
-        start_time: str,
-        end_time: str,
+        start: str,
+        end: str,
         exclude_appointment_id: int = None
     ) -> bool:
         """
@@ -1218,8 +1218,8 @@ class Database:
         Args:
             professional_phone: Professional's phone
             appointment_date: Date to check (YYYY-MM-DD)
-            start_time: Start time (HH:MM)
-            end_time: End time (HH:MM)
+            start: Start time (HH:MM)
+            end: End time (HH:MM)
             exclude_appointment_id: Optional appointment ID to exclude from check
 
         Returns:
@@ -1236,15 +1236,15 @@ class Database:
                       AND appointment_date = ?
                       AND status IN ('pendiente_confirmacion', 'confirmada')
                       AND (
-                          (start_time < ? AND end_time > ?) OR
-                          (start_time < ? AND end_time > ?) OR
-                          (start_time >= ? AND end_time <= ?)
+                          (start_time < ? AND end > ?) OR
+                          (start_time < ? AND end > ?) OR
+                          (start_time >= ? AND end <= ?)
                       )
                 """
                 params = [professional_phone, appointment_date,
-                          end_time, start_time,
-                          end_time, end_time,
-                          start_time, end_time]
+                          end, start,
+                          end, end,
+                          start, end]
 
                 if exclude_appointment_id:
                     query += " AND id != ?"
@@ -1395,8 +1395,8 @@ class Database:
         self,
         professional_phone: str,
         date: str,
-        start_time: str,
-        end_time: str,
+        start: str,
+        end: str,
         exclude_appointment_id: int = None
     ) -> bool:
         """
@@ -1405,8 +1405,8 @@ class Database:
         Args:
             professional_phone: Teléfono del profesional
             date: Fecha en formato YYYY-MM-DD
-            start_time: Hora de inicio HH:MM
-            end_time: Hora de fin HH:MM
+            start: Hora de inicio HH:MM
+            end: Hora de fin HH:MM
             exclude_appointment_id: ID de cita a excluir (para reprogramación)
 
         Returns:
@@ -1424,18 +1424,18 @@ class Database:
                     AND appointment_date = ?
                     AND status NOT IN ('cancelada_cliente', 'cancelada_profesional')
                     AND (
-                        (start_time >= ? AND start_time < ?) OR
-                        (end_time > ? AND end_time <= ?) OR
-                        (start_time <= ? AND end_time >= ?)
+                        (start_time >= ? AND start < ?) OR
+                        (end_time > ? AND end <= ?) OR
+                        (start_time <= ? AND end >= ?)
                     )
                 """
 
                 params = [
                     professional_phone,
                     date,
-                    start_time, end_time,
-                    start_time, end_time,
-                    start_time, end_time
+                    start, end,
+                    start, end,
+                    start, end
                 ]
 
                 # Excluir cita específica si se proporciona
