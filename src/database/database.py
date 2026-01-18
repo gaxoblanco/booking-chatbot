@@ -1023,7 +1023,7 @@ class Database:
                     query += " AND a.appointment_date >= ?"
                     params.append(from_date)
 
-                query += " ORDER BY a.appointment_date ASC, a.start_time ASC"
+                query += " ORDER BY a.appointment_date ASC, a.start ASC"
 
                 cursor.execute(query, params)
                 return [dict(row) for row in cursor.fetchall()]
@@ -1068,7 +1068,7 @@ class Database:
                     query += " AND a.appointment_date >= ?"
                     params.append(from_date)
 
-                query += " ORDER BY a.appointment_date ASC, a.start_time ASC"
+                query += " ORDER BY a.appointment_date ASC, a.start ASC"
 
                 cursor.execute(query, params)
                 return [dict(row) for row in cursor.fetchall()]
