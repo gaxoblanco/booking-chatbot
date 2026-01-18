@@ -1402,9 +1402,15 @@ class ClientHandler:
         Muestra todas las citas activas (pendientes y confirmadas) del cliente.
 
         Args:
-            message: '' = carga inicial, 'número' = selección de cita, '0' = volver
+            message: '' = carga inicial, 'número' = selección de cita
         """
         from datetime import datetime
+
+        # ✅ NUEVO: Si message tiene valor (no vacío), delegar a detalle
+        if message and message.isdigit() and int(message) > 0:
+            idx = int(message) - 1
+            if 0 <= idx < len(active_appointments):
+                return self.handle_client_appointment_detail(session, message)
 
         # Check for back command
         if message == '0':
@@ -1427,22 +1433,10 @@ class ClientHandler:
 
         # Si no hay citas
         if not active_appointments:
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return appointment_messages.CLIENT_NO_APPOINTMENTS
 
         # Guardar lista en temp_data
         session.store_temp('appointment_list', active_appointments)
-
-        # Si hay un mensaje numérico Y ya tenemos la lista cargada en la sesión previa
-        # entonces es una selección de cita
-        if message and message.isdigit() and int(message) > 0:
-            # Verificar que el número está en rango
-            idx = int(message) - 1
-            if 0 <= idx < len(active_appointments):
-                return self.handle_client_appointment_detail(session, message)
-            else:
-                # Número fuera de rango, mostrar la lista de nuevo
-                pass
 
         # Formatear lista
         appointments_list = []
@@ -1460,7 +1454,7 @@ class ClientHandler:
                 status_text = "Confirmada"
 
             appointments_list.append(
-                f"{idx}️⃣ {status_emoji} {date_str} - {apt['start_time']}hs\n"
+                f"{idx}️⃣ {status_emoji} {date_str} - {apt['start']}hs\n"
                 f"   {apt['professional_name']}\n"
                 f"   {status_text}"
             )
