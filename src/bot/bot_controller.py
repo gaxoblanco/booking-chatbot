@@ -125,6 +125,7 @@ class BotController:
                     session.set_role(UserRole.CLIENT)
                     session.transition_to(
                         ConversationState.CLIENT_NEW_USER_MENU)  # ✅ Nuevo estado
+                    user_info['phone_number'] = phone_number
                     return user_service.generate_welcome_message(user_info)
 
                 # Generar mensaje personalizado
@@ -133,6 +134,7 @@ class BotController:
                     greeting = f"¡Hola Dr/Dra. {user_info['name']}! 👋" if user_info['name'] else "¡Hola! 👋"
                     return greeting + "\n\n" + professional_messages.PROF_MAIN_MENU
                 else:
+                    user_info['phone_number'] = phone_number
                     return user_service.generate_welcome_message(user_info)
 
             # Usuario nuevo → detectar intención
@@ -157,6 +159,7 @@ class BotController:
                     # Usuario dice "hola" o "busco turno"
                     session.set_role(UserRole.CLIENT)
                     session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                    user_info['phone_number'] = phone_number
                     return user_service.generate_welcome_message(user_info)
 
                 else:
