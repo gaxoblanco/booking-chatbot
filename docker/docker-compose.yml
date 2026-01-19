@@ -44,7 +44,7 @@ services:
     # Volume mounts (desde raíz del proyecto)
     volumes:
       # Mount database (persistent storage)
-      - ../data:/app/data
+      - database:/app/data
 
       # Mount source code for hot reload in development
       # Comment out for production
