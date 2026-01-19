@@ -3,6 +3,8 @@ User Service
 ============
 Servicio para identificación y gestión de usuarios.
 Core del sistema de reconocimiento inteligente.
+
+VERSIÓN CON LOGS DETALLADOS PARA DEBUGGING
 """
 
 import json
@@ -194,73 +196,102 @@ class UserService:
 
     def generate_welcome_message(self, user_info: Dict) -> str:
         """
-        Genera mensaje de bienvenida personalizado según contexto.
-
+        Genera mensaje de bienvenida personalizado.
+        
+        Lógica simple:
+        - Profesionales → Menú profesional
+        - Clientes → Verificar citas → Menú dinámico (3 o 4 opciones)
+        
         Args:
-            user_info: Resultado de identify_user()
-
+            user_info: Debe incluir 'phone_number' para verificar citas
+        
         Returns:
-            Mensaje de bienvenida personalizado
+            Mensaje de bienvenida
         """
-        user_type = user_info['user_type']
-        name = user_info['name']
-        has_appointments = user_info['has_pending_appointments']
-
-        # === PROFESIONAL REGISTRADO ===
+        user_type = user_info.get('user_type', 'new')
+        name = user_info.get('name')
+        phone_number = user_info.get('phone_number', '')
+        
+        print(f"[USER_SERVICE] 🔍 generate_welcome_message()")
+        print(f"[USER_SERVICE]    user_type: {user_type}")
+        print(f"[USER_SERVICE]    name: {name}")
+        print(f"[USER_SERVICE]    phone_number: {phone_number}")
+        
+        # ==========================================
+        # PROFESIONAL
+        # ==========================================
         if user_type == 'professional':
+            print(f"[USER_SERVICE] ✅ Es profesional, mostrando menú profesional")
             greeting = f"¡Hola Dr/Dra. {name}! 👋" if name else "¡Hola! 👋"
-
-            if has_appointments:
-                appointments = user_info['pending_appointments']
-                count = len(appointments)
-
-                message = f"{greeting}\n\n"
-                message += f"📊 Resumen:\n"
-                message += f"• {count} cita{'s' if count > 1 else ''} pendiente{'s' if count > 1 else ''} de confirmación\n\n"
-                message += "¿Qué querés hacer?\n"
-                message += "1️⃣ Ver citas pendientes\n"
-                message += "2️⃣ Gestionar horarios\n"
-                message += "3️⃣ Ver estadísticas\n"
-                message += "4️⃣ Editar perfil\n"
-                return message
-            else:
-                # Usar el menú completo de professional_messages
-                return f"{greeting}\n\nTodo tranquilo por ahora.\n\n" + professional_messages.PROF_MAIN_MENU
-
-        # === CLIENTE REGISTRADO ===
-        elif user_type == 'client':
-            from src.messages.messages_client import client_messages
-            greeting = f"¡Hola {name}! 👋" if name else "¡Hola! 👋"
-
-            if has_appointments:
-                appointments = user_info['pending_appointments']
-                next_appointment = appointments[0]
-
-                message = f"{greeting}\n\n"
-                message += "Tenés una cita próxima:\n"
-                message += f"📅 {next_appointment['date']}\n"
-                message += f"⏰ {next_appointment['time']} hs\n"
-                message += f"👨‍⚕️ Con {next_appointment['professional_name']}\n\n"
-                message += client_messages.CLIENT_MAIN_MENU
-                return message
-            else:
-                # Usar el menú completo de client_messages
-                return f"{greeting}\n\nTodo tranquilo por ahora.\n\n" + client_messages.CLIENT_MAIN_MENU
-
-        # === USUARIO NUEVO ===
+            return f"{greeting}\n\n" + professional_messages.PROF_MAIN_MENU
+        
+        # ==========================================
+        # CLIENTE (registrado o nuevo, da igual)
+        # ==========================================
         else:
-
-            message = f"👋 ¡Bienvenido/a a {DomainConfig.BUSINESS_NAME}!\n\n"
+            print(f"[USER_SERVICE] 👤 Es cliente, verificando citas...")
+            
+            # 1. Verificar si tiene citas (esto aplica para TODOS los clientes)
+            today = datetime.now().strftime("%Y-%m-%d")
+            print(f"[USER_SERVICE]    Fecha hoy: {today}")
+            print(f"[USER_SERVICE]    Consultando: db.get_appointments_by_client('{phone_number}', from_date='{today}')")
+            
+            appointments = db.get_appointments_by_client(
+                client_phone=phone_number,
+                from_date=today
+            )
+            
+            print(f"[USER_SERVICE] 📊 Total citas encontradas: {len(appointments)}")
+            if appointments:
+                for i, apt in enumerate(appointments, 1):
+                    print(f"[USER_SERVICE]    Cita #{i}: {apt.get('appointment_date')} {apt.get('start')} - Status: {apt.get('status')}")
+            
+            # Filtrar solo citas activas
+            active_appointments = [
+                apt for apt in appointments
+                if apt['status'] in ['pendiente_confirmacion', 'confirmada']
+            ]
+            
+            print(f"[USER_SERVICE] ✅ Citas activas (pendiente/confirmada): {len(active_appointments)}")
+            
+            has_appointments = len(active_appointments) > 0
+            count = len(active_appointments)
+            
+            # 2. Saludo (personalizado si tiene nombre, genérico si no)
+            if name:
+                greeting = f"¡Hola {name}! 👋\n\n"
+            else:
+                greeting = f"👋 ¡Bienvenido/a a {DomainConfig.BUSINESS_NAME}!\n\n"
+            
+            # 3. Mensaje base
+            message = greeting
             message += f"{DomainConfig.WELCOME_TAGLINE}\n\n"
             message += "¿Qué querés hacer?\n\n"
+            
+            # 4. Menú dinámico
             message += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
             message += f"   Búsqueda asistida paso a paso\n\n"
+            
             message += f"2️⃣ Ver disponibles mañana\n"
             message += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
-            message += f"3️⃣ Información del centro\n"
-            message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+            
+            if has_appointments:
+                # TIENE CITAS → 4 opciones
+                print(f"[USER_SERVICE] ✅ Mostrando menú CON opción de ver citas ({count} citas)")
+                message += f"3️⃣ Ver mis citas programadas\n"
+                message += f"   Gestionar tus {count} cita{'s' if count > 1 else ''}\n\n"
+                
+                message += f"4️⃣ Información del centro\n"
+                message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+            else:
+                # NO TIENE CITAS → 3 opciones
+                print(f"[USER_SERVICE] ℹ️ Mostrando menú SIN opción de ver citas (0 citas)")
+                message += f"3️⃣ Información del centro\n"
+                message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+            
             message += "Responde con el número de opción."
-
+            
+            print(f"[USER_SERVICE] ✅ Mensaje generado exitosamente")
             return message
 
     def log_action(
@@ -369,8 +400,6 @@ class UserService:
     0️⃣ Volver al menú"""
 
         return message
-
-
 
 
 # === SINGLETON ===
