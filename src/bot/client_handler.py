@@ -16,8 +16,9 @@ Este archivo contiene ~800 líneas de lógica específica del cliente.
 """
 
 from datetime import date
-
+from typing import Dict
 from requests import session
+from src.integrations.appointment_calendar_service import AppointmentCalendarService
 from src.services.user_service import user_service
 from src.config.domain_config import DomainConfig
 from src.core.states import ConversationState, SessionData, UserRole
@@ -61,15 +62,13 @@ class ClientHandler:
         """
         Maneja menú principal del cliente.
         
-        NOTA: Ahora usa el mismo menú que CLIENT_NEW_USER_MENU para consistencia.
-        
-        Opciones:
-        1. Buscar profesional (Búsqueda asistida paso a paso)
-        2. Ver disponibles mañana
-        3. Información del centro
-        0. Volver al inicio
+        Opciones DINÁMICAS según si tiene citas:
+        - CON citas: 1=Buscar, 2=Mañana, 3=Mis citas, 4=Info
+        - SIN citas: 1=Buscar, 2=Mañana, 3=Info
         """
         from src.services.user_service import user_service
+        from datetime import datetime, date, timedelta
+        from src.database.database import db 
         
         # Validar comandos especiales
         message_lower = message.lower().strip()
@@ -93,7 +92,8 @@ class ClientHandler:
                 'is_registered': False,
                 'has_pending_appointments': False,
                 'pending_appointments': [],
-                'profile': None
+                'profile': None,
+                'phone_number': session.phone_number  # ⭐ IMPORTANTE
             })
             
             return greeting + welcome_msg
@@ -105,14 +105,34 @@ class ClientHandler:
                 'is_registered': False,
                 'has_pending_appointments': False,
                 'pending_appointments': [],
-                'profile': None
+                'profile': None,
+                'phone_number': session.phone_number  # ⭐ IMPORTANTE
             })
             return welcome_msg
 
-        # === OPCIONES DEL MENÚ ===
+        # ==========================================
+        # VERIFICAR SI TIENE CITAS (para manejar opciones 3 y 4)
+        # ==========================================
+        today = datetime.now().strftime("%Y-%m-%d")
+        appointments = db.get_appointments_by_client(
+            client_phone=session.phone_number,
+            from_date=today
+        )
         
+        # Filtrar solo citas activas
+        active_appointments = [
+            apt for apt in appointments
+            if apt['status'] in ['pendiente_confirmacion', 'confirmada']
+        ]
+        
+        has_appointments = len(active_appointments) > 0
+        
+        print(f"[CLIENT_MENU] Usuario tiene citas: {has_appointments} ({len(active_appointments)} activas)")
+
+        # ==========================================
+        # OPCIÓN 1: Búsqueda asistida
+        # ==========================================
         if message == '1':
-            # Opción 1: Búsqueda asistida paso a paso
             print(f"[CLIENT] Búsqueda asistida: {session.phone_number}")
             
             session.clear_temp()
@@ -120,12 +140,12 @@ class ClientHandler:
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return self.format_multifilter_menu(session)
 
+        # ==========================================
+        # OPCIÓN 2: Ver disponibles mañana
+        # ==========================================
         elif message == '2':
-            # Opción 2: Ver disponibles mañana
             print(f"[CLIENT] Disponibles mañana: {session.phone_number}")
             
-            from datetime import date, timedelta
-
             tomorrow = date.today() + timedelta(days=1)
             tomorrow_str = tomorrow.strftime("%Y-%m-%d")
             tomorrow_formatted = tomorrow.strftime("%d/%m/%Y")
@@ -133,7 +153,6 @@ class ClientHandler:
             session.store_temp('search_date', tomorrow_str)
             session.store_temp('search_date_formatted', tomorrow_formatted)
 
-            # ✅ CORRECCIÓN: Usar el método correcto con date_str
             results = client_service.search_professionals_by_filters(
                 date_str=tomorrow_str,
                 limit=10
@@ -150,50 +169,77 @@ class ClientHandler:
             session.store_temp('current_search_id', search_id)
             session.store_temp('search_results', results)
 
-            # Transicionar al estado de resultados
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
-            # Si no hay resultados
             if len(results) == 0:
                 return client_messages.CLIENT_NO_RESULTS
 
-            # Formatear y mostrar resultados
-            # Format results with available slots
-
             search_date = session.get_temp('search_date')
-
             formatted = client_service.format_search_results_with_slots(
-
                 professionals=results,
-
                 date_str=search_date,
-
                 show_max_slots=3
-
             )
             return formatted
         
+        # ==========================================
+        # OPCIÓN 3: DINÁMICA (Ver citas O Info)
+        # ==========================================
         elif message == '3':
-            # Opción 3: Información del centro
-            print(f"[CLIENT] Info del centro: {session.phone_number}")
+            if has_appointments:
+                # TIENE CITAS → Opción 3 = Ver mis citas
+                print(f"[CLIENT] Ver mis citas: {session.phone_number}")
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+                return self.handle_client_view_appointments(session, '')
+            else:
+                # NO TIENE CITAS → Opción 3 = Información del centro
+                print(f"[CLIENT] Info del centro: {session.phone_number}")
+                info_message = user_service.get_center_info()
+                return info_message
 
-            info_message = user_service.get_center_info()
-            return info_message
+        # ==========================================
+        # OPCIÓN 4: SOLO SI TIENE CITAS
+        # ==========================================
+        elif message == '4':
+            if has_appointments:
+                # TIENE CITAS → Opción 4 = Información del centro
+                print(f"[CLIENT] Info del centro: {session.phone_number}")
+                info_message = user_service.get_center_info()
+                return info_message
+            else:
+                # NO TIENE CITAS → Opción 4 no existe, es inválida
+                invalid_msg = common_messages.INVALID_OPTION + "\n\n"
+                welcome_msg = user_service.generate_welcome_message({
+                    'user_type': 'new',
+                    'name': None,
+                    'is_registered': False,
+                    'has_pending_appointments': False,
+                    'pending_appointments': [],
+                    'profile': None,
+                    'phone_number': session.phone_number  # ⭐ IMPORTANTE
+                })
+                return invalid_msg + welcome_msg
 
+        # ==========================================
+        # OPCIÓN 0: Volver al inicio
+        # ==========================================
         elif message == '0':
-            # Volver al inicio - regenerar el mismo menú
             welcome_msg = user_service.generate_welcome_message({
                 'user_type': 'new',
                 'name': None,
                 'is_registered': False,
                 'has_pending_appointments': False,
                 'pending_appointments': [],
-                'profile': None
+                'profile': None,
+                'phone_number': session.phone_number  # ⭐ IMPORTANTE
             })
             return welcome_msg
 
+        # ==========================================
+        # OPCIÓN INVÁLIDA
+        # ==========================================
         else:
-            # Opción inválida
             invalid_msg = common_messages.INVALID_OPTION + "\n\n"
             welcome_msg = user_service.generate_welcome_message({
                 'user_type': 'new',
@@ -201,123 +247,94 @@ class ClientHandler:
                 'is_registered': False,
                 'has_pending_appointments': False,
                 'pending_appointments': [],
-                'profile': None
+                'profile': None,
+                'phone_number': session.phone_number  # ⭐ IMPORTANTE
             })
             return invalid_msg + welcome_msg
-    def handle_client_new_user_menu(self, session: SessionData, message: str) -> str:
+
+
+    def generate_welcome_message(self, user_info: Dict) -> str:
         """
-        Maneja menú especial para usuarios nuevos.
-
-        Opciones optimizadas:
-        1. Búsqueda asistida paso a paso
-        2. Ver disponibles mañana (búsqueda rápida)
-        3. Información del centro
-
+        Genera mensaje de bienvenida personalizado.
+        
+        Lógica simple:
+        - Verificar si tiene citas agendadas
+        - Mostrar menú de 3 opciones (sin citas) o 4 opciones (con citas)
+        
         Args:
-            session: Sesión del usuario
-            message: Opción seleccionada
-
+            user_info: Debe incluir 'phone_number' para verificar citas
+        
         Returns:
-            Respuesta según la opción
+            Mensaje de bienvenida con menú dinámico
         """
-        if message == '1':
-            # Opción 1: Búsqueda asistida paso a paso
-            print(
-                f"[CLIENT] Usuario nuevo → Búsqueda asistida: {session.phone_number}")
-
-            session.temp_data.clear()
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-
-            # Iniciar flujo de filtros paso a paso
-            return self.handle_client_multifilter_menu(session, "start")
-
-        elif message == '2':
-            # Opción 2: Búsqueda rápida para mañana
-            print(
-                f"[CLIENT] Usuario nuevo → Disponibles mañana: {session.phone_number}")
-
-            from datetime import date, timedelta
-
-            tomorrow = date.today() + timedelta(days=1)
-            tomorrow_str = tomorrow.strftime("%Y-%m-%d")
-            tomorrow_formatted = tomorrow.strftime("%d/%m/%Y")
-
-            # Guardar fecha en sesión
-            session.temp_data['search_date'] = tomorrow_str
-            session.temp_data['search_filters'] = {'fecha': tomorrow_formatted}
-
-            # Buscar profesionales disponibles mañana
-            results = client_service.search_professionals(
-                available_date=tomorrow_str
-            )
-
-            if not results:
-                # No hay resultados
-                message = f"😔 No encontramos {DomainConfig.PROFESSIONAL_TITLE_PLURAL_LOWER} "
-                message += f"disponibles para mañana ({tomorrow_formatted}).\n\n"
-                message += "¿Qué querés hacer?\n\n"
-                message += "1️⃣ Búsqueda asistida (elegir fecha y filtros)\n"
-                message += "2️⃣ Buscar para otra fecha\n"
-                message += "0️⃣ Volver al menú"
-
-                # Mantener en el mismo estado
-                return message
-
-            # Hay resultados - mostrarlos
-            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-            session.temp_data['search_results'] = results
-
-            return self.format_search_results(results, session)
-
-        elif message == '3':
-            # Opción 3: Información del centro
-            print(
-                f"[CLIENT] Usuario nuevo → Info del centro: {session.phone_number}")
-
-            from src.services.user_service import user_service
-
-            info_message = user_service.get_center_info()
-
-            # Mantener en el mismo estado para que puedan volver a elegir
-            return info_message
-
-        elif message == '0':
-            # Volver al menú de bienvenida (regenerar mensaje)
-            print(
-                f"[CLIENT] Usuario nuevo → Volver inicio: {session.phone_number}")
-            
-            from src.services.user_service import user_service
-            
-            # Mantener el rol de cliente, solo regenerar el mensaje de bienvenida
-            welcome_msg = user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None
-            })
-            
-            # Mantener en el mismo estado CLIENT_NEW_USER_MENU
-            return welcome_msg
-
+        from src.database.database import db
+        from datetime import datetime
+        
+        name = user_info.get('name')
+        phone_number = user_info.get('phone_number', '')
+        
+        # ==========================================
+        # 1. VERIFICAR CITAS ACTIVAS
+        # ==========================================
+        today = datetime.now().strftime("%Y-%m-%d")
+        appointments = db.get_appointments_by_client(
+            client_phone=phone_number,
+            from_date=today
+        )
+        
+        # Filtrar solo citas activas (pendientes o confirmadas)
+        active_appointments = [
+            apt for apt in appointments
+            if apt['status'] in ['pendiente_confirmacion', 'confirmada']
+        ]
+        
+        has_appointments = len(active_appointments) > 0
+        count = len(active_appointments)
+        
+        # ==========================================
+        # 2. CONSTRUIR MENSAJE
+        # ==========================================
+        
+        # Saludo personalizado o genérico
+        if name:
+            greeting = f"¡Hola {name}! 👋\n\n"
         else:
-            # Opción inválida - volver a mostrar el menú
-            from src.services.user_service import user_service
-
-            invalid_msg = common_messages.INVALID_OPTION + "\n\n"
-
-            # Regenerar mensaje de bienvenida
-            welcome_msg = user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None
-            })
-
-            return invalid_msg + welcome_msg
+            greeting = f"👋 ¡Bienvenido/a a {DomainConfig.BUSINESS_NAME}!\n\n"
+        
+        # Mensaje base
+        message = greeting
+        message += f"{DomainConfig.WELCOME_TAGLINE}\n\n"
+        message += "¿Qué querés hacer?\n\n"
+        
+        # ==========================================
+        # 3. MENÚ DINÁMICO
+        # ==========================================
+        
+        # Opción 1: Siempre presente
+        message += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
+        message += f"   Búsqueda asistida paso a paso\n\n"
+        
+        # Opción 2: Siempre presente
+        message += f"2️⃣ Ver disponibles mañana\n"
+        message += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
+        
+        # Opción 3 y 4: Dinámicas según citas
+        if has_appointments:
+            # TIENE CITAS → 4 opciones
+            message += f"3️⃣ Ver mis citas programadas\n"
+            message += f"   Gestionar tus {count} cita{'s' if count > 1 else ''}\n\n"
+            
+            message += f"4️⃣ Información del centro\n"
+            message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+        else:
+            # NO TIENE CITAS → 3 opciones
+            message += f"3️⃣ Información del centro\n"
+            message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+        
+        message += "Responde con el número de opción."
+        
+        return message
+    
     # ==========================================
     # FILTROS INDIVIDUALES (Búsqueda simple)
     # ==========================================
@@ -1400,25 +1417,37 @@ class ClientHandler:
         Maneja vista de lista de citas del cliente.
 
         Muestra todas las citas activas (pendientes y confirmadas) del cliente.
+        
+        ⭐ NUEVA FUNCIONALIDAD: Sincroniza citas desde Google Calendar antes de mostrar.
 
         Args:
-            message: '' = carga inicial, 'número' = selección de cita
+            message: '' = carga inicial, 'número' = selección de cita, '0' = volver
         """
-        from datetime import datetime
+        from datetime import datetime, timedelta
 
-        # ✅ NUEVO: Si message tiene valor (no vacío), delegar a detalle
-        if message and message.isdigit() and int(message) > 0:
-            idx = int(message) - 1
-            if 0 <= idx < len(active_appointments):
-                return self.handle_client_appointment_detail(session, message)
-
-        # Check for back command
+        # ==========================================
+        # 1. VERIFICAR SI QUIERE VOLVER
+        # ==========================================
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
+            
+            # Regenerar menú con phone_number
+            from src.services.user_service import user_service
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
+            return welcome_msg
 
-        # Obtener citas del cliente desde la BD
+        # ==========================================
+        # 2. OBTENER CITAS DESDE LA BD
+        # ==========================================
         today = datetime.now().strftime("%Y-%m-%d")
         appointments = db.get_appointments_by_client(
             client_phone=session.phone_number,
@@ -1435,10 +1464,97 @@ class ClientHandler:
         if not active_appointments:
             return appointment_messages.CLIENT_NO_APPOINTMENTS
 
-        # Guardar lista en temp_data
+        # ==========================================
+        # 3. ⭐ SINCRONIZAR DESDE GOOGLE CALENDAR
+        # ==========================================
+        # Solo sincronizar citas próximas (próximos 7 días) para performance
+        
+        print(f"[CLIENT] 🔄 Sincronizando citas desde Google Calendar...")
+        
+        try:
+            from src.integrations.appointment_calendar_service import AppointmentCalendarService
+            calendar_service = AppointmentCalendarService(db)
+            
+            # Calcular fecha límite (7 días desde hoy)
+            today_dt = datetime.now()
+            limit_date = (today_dt + timedelta(days=7)).strftime("%Y-%m-%d")
+            
+            # Filtrar citas próximas que tengan google_event_id
+            appointments_to_sync = [
+                apt for apt in active_appointments
+                if apt.get('google_event_id') and apt['appointment_date'] <= limit_date
+            ]
+            
+            if appointments_to_sync:
+                print(f"[CLIENT] 🔄 Sincronizando {len(appointments_to_sync)} citas próximas...")
+                
+                # Sincronizar cada cita
+                synced_count = 0
+                for apt in appointments_to_sync:
+                    try:
+                        success = calendar_service.sync_appointment_from_google(apt['id'])
+                        if success:
+                            synced_count += 1
+                    except Exception as e:
+                        print(f"[CLIENT] ⚠️ Error sincronizando cita #{apt['id']}: {e}")
+                
+                print(f"[CLIENT] ✅ {synced_count}/{len(appointments_to_sync)} citas sincronizadas")
+                
+                # ==========================================
+                # 4. RE-CONSULTAR BD DESPUÉS DE SINCRONIZAR
+                # ==========================================
+                # Ahora que sincronizamos, volver a leer de BD para obtener datos actualizados
+                appointments = db.get_appointments_by_client(
+                    client_phone=session.phone_number,
+                    from_date=today
+                )
+                
+                # Re-filtrar citas activas
+                active_appointments = [
+                    apt for apt in appointments
+                    if apt['status'] in ['pendiente_confirmacion', 'confirmada']
+                ]
+                
+                # Verificar de nuevo si hay citas (por si se cancelaron en Google)
+                if not active_appointments:
+                    return appointment_messages.CLIENT_NO_APPOINTMENTS
+            else:
+                print(f"[CLIENT] ℹ️ No hay citas próximas para sincronizar")
+        
+        except Exception as e:
+            # Si falla la sincronización, continuar con datos locales
+            print(f"[CLIENT] ⚠️ Error en sincronización, usando datos locales: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # ==========================================
+        # 5. GUARDAR LISTA EN TEMP_DATA
+        # ==========================================
         session.store_temp('appointment_list', active_appointments)
 
-        # Formatear lista
+        # ==========================================
+        # 6. SI SELECCIONÓ UN NÚMERO, IR A DETALLE
+        # ==========================================
+        if message and message.isdigit() and int(message) > 0:
+            idx = int(message) - 1
+            
+            # Validar que el índice esté en rango
+            if 0 <= idx < len(active_appointments):
+                # Guardar índice seleccionado
+                session.store_temp('selected_appointment_index', idx)
+                
+                # Transicionar a detalle
+                session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
+                
+                # Llamar al handler de detalle
+                return self.handle_client_appointment_detail(session, message)
+            else:
+                # Número fuera de rango
+                return f"⚠️ Número inválido. Elige entre 1 y {len(active_appointments)} o *0* para volver."
+
+        # ==========================================
+        # 7. MOSTRAR LISTA DE CITAS
+        # ==========================================
         appointments_list = []
         for idx, apt in enumerate(active_appointments, 1):
             # Formatear fecha
@@ -1467,155 +1583,112 @@ class ClientHandler:
 
     def handle_client_appointment_detail(self, session: SessionData, message: str) -> str:
         """
-        Maneja detalle de una cita específica.
+        Maneja detalle de una cita específica y sus opciones.
 
-        Muestra información completa y opciones según el estado.
-
+        Distingue entre:
+        - Seleccionar cita #N desde la lista
+        - Ejecutar opciones (1=Reprogramar, 2=Cancelar) desde el detalle
+        
         Args:
-            message: número de cita seleccionada o acción (1=cancelar/reprogramar, 2=cancelar, 0=volver)
+            message: Número de cita, opción seleccionada, o '0' para volver
         """
         from datetime import datetime
-
-        # Check for back command
+        
+        # ==========================================
+        # OPCIÓN 0: VOLVER
+        # ==========================================
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
-
-        # Si viene con opción de reprogramar/cancelar (estando ya en detalle de una cita)
-        if message in ['1', '2', '3']:
-            # Estas son las opciones del menú de detalle
-            appointment_id = session.get_temp('appointment_id')
-
-            if appointment_id:
-                apt = db.get_appointment(appointment_id)
-
-                if apt:
-                    # ===== PARA CITAS PENDIENTES =====
-                    if apt['status'] == 'pendiente_confirmacion':
-                        if message == '1':
-                            # Reprogramar
-                            session.transition_to(
-                                ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-                            return self.handle_client_reschedule_appointment(session, '1')
-                        elif message == '2':
-                            # Cancelar
-                            session.transition_to(
-                                ConversationState.CLIENT_CANCEL_APPOINTMENT)
-                            return self.handle_client_cancel_appointment(session, '1')
-
-                    # ===== PARA CITAS CONFIRMADAS =====
-                    elif apt['status'] == 'confirmada':
-                        if message == '1':
-                            # Reprogramar
-                            session.transition_to(
-                                ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-                            return self.handle_client_reschedule_appointment(session, '1')
-                        elif message == '2':
-                            # Cancelar
-                            session.transition_to(
-                                ConversationState.CLIENT_CANCEL_APPOINTMENT)
-                            return self.handle_client_cancel_appointment(session, '1')
-        # Si es primera vez (viene de lista de citas), obtener cita por índice
-        appointment_list = session.get_temp('appointment_list')
-
-        if not appointment_list:
-            # NO limpiar temp_data todavía - lo necesitamos para saber qué cita fue
-            # session.clear_temp()  # ← Comentar esto
-
-            # Transicionar a estado de éxito con opciones
-            session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
-
-            return appointment_messages.CLIENT_APPOINTMENT_CANCELLED
-
-        # Validar que el número esté en rango
+            
+            # Regenerar menú con phone_number
+            from src.services.user_service import user_service
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
+            return welcome_msg
+        
+        # ==========================================
+        # VERIFICAR SI YA ESTAMOS EN DETALLE
+        # ==========================================
+        # Si appointment_id existe, significa que ya mostramos el detalle
+        # y el usuario está eligiendo una OPCIÓN (1=Reprogramar, 2=Cancelar)
+        appointment_id = session.get_temp('appointment_id')
+        
+        if appointment_id:
+            # ✅ YA ESTAMOS EN DETALLE → message es una OPCIÓN
+            
+            # OPCIÓN 1: REPROGRAMAR
+            if message == '1':
+                print(f"[CLIENT] Iniciando reprogramación: {session.phone_number}")
+                
+                # Transicionar a reprogramación
+                session.transition_to(ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
+                
+                # Llamar al handler de reprogramación
+                return self.handle_client_reschedule_appointment(session, '1')
+            
+            # OPCIÓN 2: CANCELAR
+            elif message == '2':
+                print(f"[CLIENT] Iniciando cancelación: {session.phone_number}")
+                
+                # Transicionar a cancelación
+                session.transition_to(ConversationState.CLIENT_CANCEL_APPOINTMENT)
+                
+                # Llamar al handler de cancelación
+                return self.handle_client_cancel_appointment(session, '1')
+            
+            else:
+                # Opción inválida desde el detalle
+                return "⚠️ Opción inválida.\n\n1️⃣ Reprogramar cita\n2️⃣ Cancelar cita\n0️⃣ Volver al menú"
+        
+        # ==========================================
+        # NO ESTAMOS EN DETALLE → SELECCIONAR CITA
+        # ==========================================
+        # El usuario está en la LISTA y está seleccionando una cita
+        
+        # Recuperar lista de citas del temp_data
+        active_appointments = session.get_temp('appointment_list', [])
+        
+        if not active_appointments:
+            # Si no hay lista guardada, volver a cargarla
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.handle_client_view_appointments(session, '')
+        
+        # Validar que message sea un número
         try:
-            selection = int(message)
-            if selection < 1 or selection > len(appointment_list):
-                return f"⚠️ Número inválido. Elige entre 1 y {len(appointment_list)}\n\n_Escribe *0* para volver al menú_"
+            idx = int(message) - 1  # Convertir a índice (1-indexed → 0-indexed)
         except ValueError:
-            return "⚠️ Por favor, ingresa un número válido.\n\n_Escribe *0* para volver_"
-
-        # Obtener cita seleccionada
-        selected_apt = appointment_list[selection - 1]
-        appointment_id = selected_apt['id']
-
-        # Transicionar al detalle
+            return "⚠️ Opción inválida. Envía el número de la cita o *0* para volver."
+        
+        # Validar que el índice esté en rango
+        if not (0 <= idx < len(active_appointments)):
+            return f"⚠️ Número inválido. Elige entre 1 y {len(active_appointments)} o *0* para volver."
+        
+        # Obtener la cita seleccionada
+        selected_apt = active_appointments[idx]
+        
+        # Guardar datos de la cita en temp_data para siguientes pasos
+        session.store_temp('appointment_id', selected_apt['id'])
+        session.store_temp('selected_appointment_number', idx + 1)  # 1-indexed para mostrar
+        session.store_temp('professional_phone', selected_apt['professional_phone'])
+        session.store_temp('professional_name', selected_apt.get('professional_name', 'Profesional'))
+        session.store_temp('original_date', selected_apt['appointment_date'])
+        session.store_temp('original_start', selected_apt['start'])
+        session.store_temp('original_end', selected_apt['end'])
+        
+        # Mantener en estado de detalle
         session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
-
-        # Guardar ID en temp_data para acciones futuras
-        session.store_temp('appointment_id', appointment_id)
-        # Guardar también el número de selección para mostrarlo al usuario
-        session.store_temp('selected_appointment_number', selection)
-
-        # Obtener detalles completos de la cita
-        apt = db.get_appointment(appointment_id)
-
-        if not apt:
-            return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
-
-        # Formatear fecha completa
-        date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
-
-        # Mapeo manual de días en español
-        dias = ['Lunes', 'Martes', 'Miércoles',
-                'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-
-        dia_semana = dias[date_obj.weekday()]
-        dia_numero = date_obj.day
-        mes = meses[date_obj.month - 1]
-        anio = date_obj.year
-
-        date_full = f"{dia_semana} {dia_numero} de {mes} de {anio}"
-
-        # Badge de estado
-        if apt['status'] == 'pendiente_confirmacion':
-            status_badge = "Estado: ⏳ *Pendiente de confirmación*"
-        elif apt['status'] == 'confirmada':
-            status_badge = "Estado: ✅ *Confirmada*"
-        elif apt['status'] == 'completada':
-            status_badge = "Estado: ✔️ *Completada*"
-        else:
-            status_badge = "Estado: ❌ *Cancelada*"
-
-        # Modalidad
-        modality_icons = {
-            'presencial': '🏥 Presencial',
-            'virtual': '💻 Virtual',
-            'ambas': '🏥💻 Presencial o Virtual'
-        }
-        modality = modality_icons.get(apt['modality'], apt['modality'])
-
-        # Opciones según estado
-        if apt['status'] == 'pendiente_confirmacion':
-            options = appointment_messages.CLIENT_APPOINTMENT_OPTIONS_PENDING
-        elif apt['status'] == 'confirmada':
-            options = appointment_messages.CLIENT_APPOINTMENT_OPTIONS_CONFIRMED
-        elif apt['status'] == 'completada':
-            options = appointment_messages.CLIENT_APPOINTMENT_FINISHED
-        else:
-            options = appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED
-
-        # Razón (si existe)
-        reason_display = ""
-        if apt.get('reason'):
-            reason_display = f"\n📝 Motivo: {apt['reason']}"
-
-        return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
-            id=session.get_temp('selected_appointment_number', apt['id']),
-            date=date_full,
-            time=apt['start'],
-            professional_name=apt['professional_name'],
-            professional_phone=apt['professional_phone'],
-            modality=modality,
-            duration=apt['duration_minutes'],
-            reason_display=reason_display,
-            status_badge=status_badge,
-            options=options
-        )
-
+        
+        # Formatear y mostrar detalle completo
+        return self._format_appointment_detail(session, selected_apt)
+    
     def handle_client_cancel_appointment(self, session: SessionData, message: str) -> str:
         """
         Maneja confirmación de cancelación de cita.
@@ -1624,34 +1697,65 @@ class ClientHandler:
         """
         from datetime import datetime, timedelta
 
-        # Check for back command
+        # ==========================================
+        # VERIFICAR SI VENIMOS DE UN ERROR PREVIO
+        # ==========================================
+        # Si mostramos un error (no se puede cancelar) y el usuario presiona 0
         if message == '0':
-            # Volver al detalle de la cita
-            session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
-            return self.handle_client_appointment_detail(session, '0')
+            # Limpiar cualquier flag de error
+            session.store_temp('cancel_error_shown', False)
+            
+            # Volver a la lista de citas
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.handle_client_view_appointments(session, '')
 
-        # Si message es '1', viene del detalle pidiendo cancelar
-        # Si message es confirmación, procesar cancelación
+        # ==========================================
+        # VALIDACIONES INICIALES
+        # ==========================================
         appointment_id = session.get_temp('appointment_id')
 
         if not appointment_id:
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return "❌ Error: No hay cita seleccionada\n\n" + client_messages.CLIENT_MAIN_MENU
+            
+            from src.services.user_service import user_service
+            welcome_msg = user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
+            return welcome_msg
 
         # Obtener datos de la cita
         apt = db.get_appointment(appointment_id)
 
         if not apt:
+            # Error al cargar - pero permitir volver con 0
+            session.store_temp('cancel_error_shown', True)
             return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
 
+        # ==========================================
+        # VALIDAR ESTADO DE LA CITA
+        # ==========================================
+        
         # Validar que no esté ya cancelada
         if apt['status'] in ['cancelada_cliente', 'cancelada_profesional']:
-            return appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED
+            session.store_temp('cancel_error_shown', True)
+            return appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED + "\n\n_Escribe *0* para volver_"
 
         # Validar que no esté completada
         if apt['status'] == 'completada':
+            session.store_temp('cancel_error_shown', True)
             return "❌ No puedes cancelar una cita que ya finalizó.\n\n_Escribe *0* para volver_"
 
+        # ==========================================
+        # VALIDAR TIEMPO LÍMITE (24 HORAS)
+        # ==========================================
+        
         # Calcular horas hasta la cita
         apt_datetime = datetime.strptime(
             f"{apt['appointment_date']} {apt['start']}",
@@ -1665,13 +1769,23 @@ class ClientHandler:
 
         if hours_until < CANCELLATION_HOURS_LIMIT:
             # Muy tarde para cancelar
+            # ✅ Guardar flag para permitir volver
+            session.store_temp('cancel_error_shown', True)
+            
             return appointment_messages.CLIENT_CANCEL_TOO_LATE.format(
                 hours_until=int(hours_until),
                 professional_phone=apt['professional_phone']
             )
 
+        # ==========================================
+        # MOSTRAR CONFIRMACIÓN
+        # ==========================================
+        
         # Si es primera vez (viene desde detalle), mostrar confirmación
         if message == '1':
+            # Limpiar flag de error (si existía)
+            session.store_temp('cancel_error_shown', False)
+            
             # Formatear fecha
             date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
             date_str = date_obj.strftime("%A %d de %B de %Y").title()
@@ -1698,11 +1812,18 @@ class ClientHandler:
         Maneja motivo de cancelación y ejecuta la cancelación.
 
         El motivo es opcional.
+        
+        ✅ VERSIÓN CON LOGS DETALLADOS PARA DEBUGGING
         """
+        print("=" * 70)
+        print("[CANCEL_HANDLER] 🚀 Iniciando handle_client_cancel_reason")
+        print("=" * 70)
 
         appointment_id = session.get_temp('appointment_id')
+        print(f"[CANCEL_HANDLER] 📋 Appointment ID: {appointment_id}")
 
         if not appointment_id:
+            print("[CANCEL_HANDLER] ❌ No hay appointment_id en session")
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return client_messages.CLIENT_MAIN_MENU
@@ -1717,24 +1838,79 @@ class ClientHandler:
             # El mensaje es el motivo
             reason = message
 
-        # Ejecutar cancelación en BD
-        success = db.update_appointment_status(
-            appointment_id=appointment_id,
-            new_status='cancelada_cliente',
-            changed_by='client',
-            reason=reason
-        )
+        print(f"[CANCEL_HANDLER] 💬 Motivo: {reason or 'Sin motivo'}")
 
-        if not success:
-            return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+        # ==========================================
+        # ⭐ CANCELAR EN GOOGLE CALENDAR Y BD
+        # ==========================================
+        try:
+            print("[CANCEL_HANDLER] 📦 Importando AppointmentCalendarService...")
+            from src.integrations.appointment_calendar_service import AppointmentCalendarService
+            print("[CANCEL_HANDLER] ✅ Import exitoso")
+            
+            print(f"[CANCEL_HANDLER] 🔄 Creando instancia de AppointmentCalendarService...")
+            calendar_service = AppointmentCalendarService(db)
+            print("[CANCEL_HANDLER] ✅ Instancia creada")
+            
+            print(f"[CANCEL_HANDLER] 🎯 Llamando a calendar_service.cancel_appointment...")
+            print(f"[CANCEL_HANDLER]    appointment_id: {appointment_id}")
+            print(f"[CANCEL_HANDLER]    cancellation_reason: {reason or 'Cancelado por el cliente'}")
+            
+            success = calendar_service.cancel_appointment(
+                appointment_id=appointment_id,
+                cancellation_reason=reason or "Cancelado por el cliente"
+            )
+            
+            print(f"[CANCEL_HANDLER] 📊 Resultado de cancel_appointment: {success}")
+            
+            if not success:
+                print(f"[CANCEL_HANDLER] ❌ cancel_appointment retornó False")
+                return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+            
+            print(f"[CANCEL_HANDLER] ✅ Cita cancelada exitosamente")
+            
+        except ImportError as e:
+            print(f"[CANCEL_HANDLER] ❌ Error de import: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback a BD local
+            print(f"[CANCEL_HANDLER] ⚠️ FALLBACK: Usando db.update_appointment_status")
+            success = db.update_appointment_status(
+                appointment_id=appointment_id,
+                new_status='cancelada_cliente',
+                changed_by='client',
+                reason=reason
+            )
+            
+            if not success:
+                return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+        
+        except Exception as e:
+            print(f"[CANCEL_HANDLER] ❌ Error inesperado: {e}")
+            print(f"[CANCEL_HANDLER] 📝 Tipo de error: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback a BD local
+            print(f"[CANCEL_HANDLER] ⚠️ FALLBACK: Usando db.update_appointment_status")
+            success = db.update_appointment_status(
+                appointment_id=appointment_id,
+                new_status='cancelada_cliente',
+                changed_by='client',
+                reason=reason
+            )
+            
+            if not success:
+                return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
 
-        # TODO: Crear notificación para el profesional
-        # db.create_notification(...)
-
+        print("[CANCEL_HANDLER] 🧹 Limpiando temp_data")
         # Limpiar temp_data
         session.clear_temp()
         session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
 
+        print("[CANCEL_HANDLER] 📤 Retornando mensaje de éxito")
+        print("=" * 70)
         return appointment_messages.CLIENT_APPOINTMENT_CANCELLED
 
     def handle_client_cancel_success(self, session: SessionData, message: str) -> str:
@@ -2069,12 +2245,12 @@ class ClientHandler:
             return "❌ Error: Datos incompletos\n\n" + client_messages.CLIENT_MAIN_MENU
 
         # Actualizar cita en BD
-        success = db.update_appointment_datetime(
+        calendar_service = AppointmentCalendarService(db)
+        success = calendar_service.reschedule_appointment(
             appointment_id=appointment_id,
             new_date=new_date,
             new_start_time=new_start_time,
-            new_end_time=new_end_time,
-            changed_by='client'
+            new_end_time=new_end_time
         )
 
         if not success:
@@ -2268,7 +2444,7 @@ O escribe '0' para volver al menú."""
 
 ¿Confirmas esta cita?
 
-1️⃣ Sí, confirmar agendamiento
+1️⃣ Sí, confirmar turno
 0️⃣ No, volver atrás
 
 ⚠️ El profesional recibirá tu solicitud y deberá confirmarla."""
