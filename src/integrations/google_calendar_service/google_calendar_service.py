@@ -428,3 +428,165 @@ class GoogleCalendarService:
             str: ID del proyecto
         """
         return self.auth_manager.get_project_id()
+
+    def get_event(self, calendar_id: str, event_id: str) -> dict:
+        """
+        Obtiene un evento específico de Google Calendar.
+        
+        Usado para sincronización: consultar el estado actual de una cita
+        que ya existe en Google Calendar.
+        
+        Args:
+            calendar_id: ID del calendario (email del profesional)
+            event_id: ID del evento en Google Calendar
+        
+        Returns:
+            dict: Datos del evento
+            {
+                'id': 'abc123...',
+                'status': 'confirmed' | 'cancelled',
+                'summary': 'Cita con Juan Pérez',
+                'start': {
+                    'dateTime': '2026-01-20T10:00:00-03:00',
+                    'timeZone': 'America/Argentina/Buenos_Aires'
+                },
+                'end': {
+                    'dateTime': '2026-01-20T10:50:00-03:00',
+                    'timeZone': 'America/Argentina/Buenos_Aires'
+                },
+                'description': '...',
+                ...
+            }
+        
+        Raises:
+            Exception: Si el evento no existe o hay error de API
+        
+        Ejemplo:
+            >>> service = GoogleCalendarService()
+            >>> event = service.get_event(
+            ...     calendar_id='profesional@gmail.com',
+            ...     event_id='abc123def456'
+            ... )
+            >>> print(event['start']['dateTime'])
+            '2026-01-20T10:00:00-03:00'
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            logger.debug(f"Consultando evento {event_id} en calendario {calendar_id}")
+            
+            # Construir el servicio de Google Calendar
+            service = self._build_service()
+            
+            # Consultar el evento
+            event = service.events().get(
+                calendarId=calendar_id,
+                eventId=event_id
+            ).execute()
+            
+            logger.debug(f"Evento encontrado: {event.get('summary', 'Sin título')}")
+            
+            return event
+        
+        except Exception as e:
+            logger.error(f"Error consultando evento {event_id}: {e}")
+            
+            # Re-lanzar la excepción para que el caller pueda manejarla
+            # (por ejemplo, si es 404, saber que el evento fue eliminado)
+            raise
+
+
+    def _build_service(self):
+        """
+        Construye el servicio de Google Calendar API.
+        
+        Versión corregida con el path correcto de credenciales.
+        """
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        
+        # ✅ PATH CORREGIDO
+        CREDENTIALS_PATH = 'src/integrations/google_calendar_service/config/google/service-account.json'
+        SCOPES = ['https://www.googleapis.com/auth/calendar']
+        
+        # Crear credenciales
+        credentials = service_account.Credentials.from_service_account_file(
+            CREDENTIALS_PATH,
+            scopes=SCOPES
+        )
+        
+        # Construir servicio
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        return service
+
+
+    # ============================================================================
+    # MÉTODO ALTERNATIVO: get_events (plural) - para obtener múltiples eventos
+    # ============================================================================
+
+    def get_events(
+        self,
+        calendar_id: str,
+        time_min: str = None,
+        time_max: str = None,
+        max_results: int = 100
+    ) -> list:
+        """
+        Obtiene múltiples eventos de un calendario.
+        
+        Útil para sincronizar todas las citas de un profesional en un rango de fechas.
+        
+        Args:
+            calendar_id: ID del calendario (email del profesional)
+            time_min: Fecha mínima en formato RFC3339 (ISO 8601)
+                    Ejemplo: '2026-01-01T00:00:00Z'
+            time_max: Fecha máxima en formato RFC3339
+            max_results: Máximo número de eventos a retornar (default: 100)
+        
+        Returns:
+            list: Lista de eventos
+        
+        Ejemplo:
+            >>> from datetime import datetime, timedelta
+            >>> today = datetime.now().isoformat() + 'Z'
+            >>> next_week = (datetime.now() + timedelta(days=7)).isoformat() + 'Z'
+            >>> 
+            >>> events = service.get_events(
+            ...     calendar_id='profesional@gmail.com',
+            ...     time_min=today,
+            ...     time_max=next_week
+            ... )
+            >>> print(f"Encontrados {len(events)} eventos")
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            service = self._build_service()
+            
+            # Construir parámetros
+            params = {
+                'calendarId': calendar_id,
+                'maxResults': max_results,
+                'singleEvents': True,  # Expandir eventos recurrentes
+                'orderBy': 'startTime'
+            }
+            
+            if time_min:
+                params['timeMin'] = time_min
+            if time_max:
+                params['timeMax'] = time_max
+            
+            # Ejecutar consulta
+            events_result = service.events().list(**params).execute()
+            events = events_result.get('items', [])
+            
+            logger.info(f"Encontrados {len(events)} eventos en {calendar_id}")
+            
+            return events
+        
+        except Exception as e:
+            logger.error(f"Error consultando eventos: {e}")
+            raise
