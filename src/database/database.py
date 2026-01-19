@@ -265,6 +265,7 @@ class Database:
                     confirmed_at TIMESTAMP,
                     cancelled_at TIMESTAMP,
                     completed_at TIMESTAMP,
+                    last_synced_at TIMESTAMP,
                     
                     -- Foreign keys
                     FOREIGN KEY (client_phone) REFERENCES clients(phone),
@@ -295,6 +296,10 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_appointments_date_professional 
                 ON appointments(professional_phone, appointment_date)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_appointments_last_synced 
+                ON appointments(last_synced_at)
             """)
 
             # ==========================================
@@ -1180,8 +1185,9 @@ class Database:
                     SET appointment_date = ?,
                         start = ?,
                         end = ?,
-                        status = 'reagendada',
-                        updated_at = CURRENT_TIMESTAMP
+                        status = 'confirmada',
+                        updated_at = CURRENT_TIMESTAMP,
+                        last_synced_at = NULL
                     WHERE id = ?
                 """, (new_date, new_start_time, new_end_time, appointment_id))
 
@@ -1236,9 +1242,9 @@ class Database:
                       AND appointment_date = ?
                       AND status IN ('pendiente_confirmacion', 'confirmada')
                       AND (
-                          (start_time < ? AND end > ?) OR
-                          (start_time < ? AND end > ?) OR
-                          (start_time >= ? AND end <= ?)
+                          (start < ? AND end > ?) OR
+                          (start < ? AND end > ?) OR
+                          (start >= ? AND end <= ?)
                       )
                 """
                 params = [professional_phone, appointment_date,
@@ -1424,9 +1430,9 @@ class Database:
                     AND appointment_date = ?
                     AND status NOT IN ('cancelada_cliente', 'cancelada_profesional')
                     AND (
-                        (start_time >= ? AND start < ?) OR
-                        (end_time > ? AND end <= ?) OR
-                        (start_time <= ? AND end >= ?)
+                        (start >= ? AND start < ?) OR
+                        (end > ? AND end <= ?) OR
+                        (start <= ? AND end >= ?)
                     )
                 """
 
@@ -1477,6 +1483,90 @@ class Database:
             except Exception as e:
                 print(f"[DB] ❌ Error getting calendar config: {e}")
                 return None
+            
+    def update_appointment_from_google(
+        self,
+        appointment_id: int,
+        google_event_data: dict
+    ) -> bool:
+        """
+        Actualiza una cita local con datos de Google Calendar.
+        
+        Se usa para sincronización cuando el profesional modifica
+        la cita directamente en Google Calendar.
+        
+        Args:
+            appointment_id: ID de la cita en BD local
+            google_event_data: Diccionario con datos del evento de Google
+                {
+                    'date': '2026-01-20',
+                    'start': '10:00',
+                    'end': '10:50',
+                    'status': 'confirmada' | 'cancelada_profesional'
+                }
+        
+        Returns:
+            True si se actualizó exitosamente, False en caso contrario
+        
+        Ejemplo:
+            >>> google_data = {
+            ...     'date': '2026-01-20',
+            ...     'start': '10:00',
+            ...     'end': '10:50',
+            ...     'status': 'confirmada'
+            ... }
+            >>> db.update_appointment_from_google(123, google_data)
+            True
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Actualizar cita con datos de Google
+                cursor.execute("""
+                    UPDATE appointments 
+                    SET 
+                        appointment_date = ?,
+                        start = ?,
+                        end = ?,
+                        status = ?,
+                        last_synced_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (
+                    google_event_data['date'],
+                    google_event_data['start'],
+                    google_event_data['end'],
+                    google_event_data['status'],
+                    appointment_id
+                ))
+                
+                if cursor.rowcount == 0:
+                    print(f"[DB] ⚠️ No se encontró cita con ID {appointment_id}")
+                    return False
+                
+                # Registrar en historial si hubo cambio de status
+                cursor.execute("""
+                    INSERT INTO appointment_history (
+                        appointment_id, 
+                        new_status, 
+                        changed_by, 
+                        change_reason
+                    )
+                    VALUES (?, ?, 'system', 'Sincronización desde Google Calendar')
+                """, (appointment_id, google_event_data['status']))
+                
+                print(f"[DB] ✅ Cita #{appointment_id} actualizada desde Google Calendar")
+                print(f"      Nueva fecha: {google_event_data['date']} {google_event_data['start']}")
+                print(f"      Status: {google_event_data['status']}")
+                
+                return True
+                
+        except Exception as e:
+            print(f"[DB] ❌ Error actualizando cita desde Google: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 
 # Global database instance
