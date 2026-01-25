@@ -339,7 +339,7 @@ class AppointmentCalendarService:
                     last_sync = datetime.fromisoformat(apt['last_synced_at'])
                     time_since_sync = (datetime.now() - last_sync).total_seconds()
                     
-                    if time_since_sync < 300:  # 5 minutos
+                    if time_since_sync < 60:  # 1 minutos
                         print(
                             f"[SYNC] ⏭️ Cita #{appointment_id} sincronizada hace "
                             f"{int(time_since_sync)}s, skip (cache)"
