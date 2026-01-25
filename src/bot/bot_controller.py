@@ -21,6 +21,7 @@ Responsabilidades:
 
 from src.bot.professional_handler import ProfessionalHandler
 from src.bot.client_handler import ClientHandler
+from src.bot.reminder_handler import should_handle_as_reminder, handle_reminder_response
 from src.config.filter_config import FilterConfig, FeatureFlags
 from src.services.user_service import user_service
 from src.messages.messages_common import common_messages
@@ -98,6 +99,13 @@ class BotController:
         # 2. OBTENER O CREAR SESIÓN
         # ==========================================
         session = session_manager.get_session(phone_number)
+
+        # ==========================================
+        # 2.5 RESPUESTAS A RECORDATORIOS
+        # ==========================================
+        
+        if should_handle_as_reminder(session, message):
+            return handle_reminder_response(session, message)
 
         # Limpiar mensaje
         message = message.strip()
@@ -294,14 +302,18 @@ class BotController:
             ConversationState.CLIENT_BOOKING_CONFIRMED: self.client_handler.handle_client_booking_confirmed,
             
 
-            # Estados de multi-filtro del cliente
+            # Estados de multi-filtro del cliente (Sistema Modular)
             ConversationState.CLIENT_MULTIFILTER_MENU: self.handle_client_multifilter_menu,
-            ConversationState.CLIENT_MULTIFILTER_ZONA: self.handle_client_multifilter_zona,
-            ConversationState.CLIENT_MULTIFILTER_FECHA: self.handle_client_multifilter_fecha,
-            ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
-            ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
-            ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
-            ConversationState.CLIENT_MULTIFILTER_ESPECIALIDAD: self.handle_client_multifilter_especialidad,
+            ConversationState.CLIENT_FILTER_INPUT: self.handle_client_filter_input,  # ⭐ NUEVO - Handler genérico
+            
+            # ⚠️ DEPRECATED - Reemplazados por CLIENT_FILTER_INPUT
+            # ConversationState.CLIENT_MULTIFILTER_ZONA: self.handle_client_multifilter_zona,
+            # ConversationState.CLIENT_MULTIFILTER_FECHA: self.handle_client_multifilter_fecha,
+            # ConversationState.CLIENT_MULTIFILTER_HORA: self.handle_client_multifilter_hora,
+            # ConversationState.CLIENT_MULTIFILTER_PREPAGA: self.handle_client_multifilter_prepaga,
+            # ConversationState.CLIENT_MULTIFILTER_SEXO: self.handle_client_multifilter_sexo,
+            # ConversationState.CLIENT_MULTIFILTER_ESPECIALIDAD: self.handle_client_multifilter_especialidad,
+            
             ConversationState.CLIENT_SEARCH_QUICK: self.handle_client_search_quick,
             # Estados de gestión de citas del cliente
             ConversationState.CLIENT_VIEW_APPOINTMENTS: self.handle_client_view_appointments,
@@ -529,32 +541,37 @@ class BotController:
         return self.client_handler.handle_client_view_detail(session, message)
 
     def handle_client_multifilter_menu(self, session: SessionData, message: str) -> str:
-        """Delega a client_handler"""
+        """Delega a client_handler - Menú multi-filtro"""
         return self.client_handler.handle_client_multifilter_menu(session, message)
-
-    def handle_client_multifilter_zona(self, session: SessionData, message: str) -> str:
-        """Delega a client_handler"""
-        return self.client_handler.handle_client_multifilter_zona(session, message)
-
-    def handle_client_multifilter_fecha(self, session: SessionData, message: str) -> str:
-        """Delega a client_handler"""
-        return self.client_handler.handle_client_multifilter_fecha(session, message)
-
-    def handle_client_multifilter_hora(self, session: SessionData, message: str) -> str:
-        """Delega a client_handler"""
-        return self.client_handler.handle_client_multifilter_hora(session, message)
-
-    def handle_client_multifilter_prepaga(self, session: SessionData, message: str) -> str:
-        """Delega a client_handler"""
-        return self.client_handler.handle_client_multifilter_prepaga(session, message)
     
-    def handle_client_multifilter_especialidad(self, session: SessionData, message: str) -> str:
-        """Delegar a client_handler."""
-        return self.client_handler.handle_client_multifilter_especialidad(session, message)
-
-    def handle_client_multifilter_sexo(self, session: SessionData, message: str) -> str:
-        """Delega a client_handler"""
-        return self.client_handler.handle_client_multifilter_sexo(session, message)
+    def handle_client_filter_input(self, session: SessionData, message: str) -> str:
+        """Delega a client_handler - Handler genérico para input de cualquier filtro"""
+        return self.client_handler.handle_client_filter_input(session, message)
+    
+    # ⚠️ DEPRECATED - Reemplazados por handle_client_filter_input
+    # def handle_client_multifilter_zona(self, session: SessionData, message: str) -> str:
+    #     """Delega a client_handler"""
+    #     return self.client_handler.handle_client_multifilter_zona(session, message)
+    # 
+    # def handle_client_multifilter_fecha(self, session: SessionData, message: str) -> str:
+    #     """Delega a client_handler"""
+    #     return self.client_handler.handle_client_multifilter_fecha(session, message)
+    # 
+    # def handle_client_multifilter_hora(self, session: SessionData, message: str) -> str:
+    #     """Delega a client_handler"""
+    #     return self.client_handler.handle_client_multifilter_hora(session, message)
+    # 
+    # def handle_client_multifilter_prepaga(self, session: SessionData, message: str) -> str:
+    #     """Delega a client_handler"""
+    #     return self.client_handler.handle_client_multifilter_prepaga(session, message)
+    # 
+    # def handle_client_multifilter_especialidad(self, session: SessionData, message: str) -> str:
+    #     """Delegar a client_handler."""
+    #     return self.client_handler.handle_client_multifilter_especialidad(session, message)
+    # 
+    # def handle_client_multifilter_sexo(self, session: SessionData, message: str) -> str:
+    #     """Delega a client_handler"""
+    #     return self.client_handler.handle_client_multifilter_sexo(session, message)
 
     def handle_client_search_quick(self, session: SessionData, message: str) -> str:
         """Delega a client_handler"""
