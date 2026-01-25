@@ -30,6 +30,9 @@ from src.services.client_service import client_service
 from src.services.analytics_service import analytics_service
 from src.database.database import db
 
+from src.filters.filter_manager import FilterManager
+from src.filters.filter_types import FilterType
+
 
 class ClientHandler:
     """
@@ -575,128 +578,130 @@ class ClientHandler:
         return "🔍 Buscando...\n\n📋 Próximamente mostraré resultados.\n\nEscribe 'menu' para volver."
 
     # ==========================================
-    # MULTI-FILTRO (Búsqueda avanzada)
+    # MULTI-FILTRO (Búsqueda avanzada) - SISTEMA MODULAR
     # ==========================================
 
     def format_multifilter_menu(self, session: SessionData) -> str:
-        """Formatea menú multi-filtro con filtros activos."""
-        filters = session.get_temp('filters', {})
-
-        # Build active filters list
-        if not filters:
-            active_filters = "Ninguno"
+        """
+        Genera menú multi-filtro usando FilterManager.
+        
+        Esta versión reemplaza el menú hardcodeado anterior.
+        Ahora el menú se genera dinámicamente desde la configuración.
+        
+        Returns:
+            Menú formateado con filtros habilitados y checkmarks en activos
+        """
+        print(f"\n{'='*60}")
+        print(f"📋 DEBUG format_multifilter_menu")
+        print(f"{'='*60}")
+        print(f"📞 Phone: {session.phone_number}")
+        
+        # Obtener filtros activos desde la sesión
+        active_filters = session.get_temp('filters', {})
+        print(f"📊 Active filters from session: {active_filters}")
+        print(f"📊 Number of active filters: {len(active_filters)}")
+        
+        if active_filters:
+            print(f"📝 Filter details:")
+            for key, value in active_filters.items():
+                display = value.get('display', 'N/A') if isinstance(value, dict) else str(value)
+                print(f"   • {key}: {display}")
         else:
-            active_list = []
-            if 'zona' in filters:
-                active_list.append(f"• Zona: {filters['zona'].capitalize()}")
-            if 'fecha' in filters:
-                active_list.append(f"• Fecha: {filters['fecha']}")
-            if 'hora' in filters:
-                active_list.append(f"• Hora: {filters['hora']}")
-            if 'prepaga' in filters:
-                prepaga_text = "Sí" if filters['prepaga'] else "No"
-                active_list.append(f"• Prepaga: {prepaga_text}")
-            if 'sexo' in filters:
-                sexo_text = "Masculino" if filters['sexo'] == 'm' else "Femenino"
-                active_list.append(f"• Sexo: {sexo_text}")
-            if 'especialidad' in filters:
-                active_list.append(
-                    f"• Especialidad: {filters['especialidad']}")
-
-            active_filters = "\n".join(active_list)
-
-        # Add checkmarks to selected options
-        menu = client_messages.CLIENT_MULTIFILTER_MENU(active_filters)
-
-        # Add checkmarks
-        if 'zona' in filters:
-            menu = menu.replace("1️⃣ Zona", "1️⃣ Zona ✓")
-        if 'fecha' in filters and 'hora' in filters:
-            menu = menu.replace("2️⃣ Disponibilidad", "2️⃣ Disponibilidad ✓")
-        if 'prepaga' in filters:
-            menu = menu.replace("3️⃣ Prepaga", "3️⃣ Prepaga ✓")
-        if 'sexo' in filters:
-            menu = menu.replace("4️⃣ Sexo", "4️⃣ Sexo ✓")
-        if 'especialidad' in filters:
-            menu = menu.replace("5️⃣ Especialidad", "5️⃣ Especialidad ✓")
-
+            print(f"⚠️ No active filters found in session")
+        
+        # Usar FilterManager para generar el menú
+        filter_manager = FilterManager()
+        print(f"✅ FilterManager created")
+        
+        menu = filter_manager.generate_menu(active_filters)
+        print(f"✅ Menu generated ({len(menu)} chars)")
+        print(f"{'='*60}\n")
+        
         return menu
 
+    
     def handle_client_multifilter_menu(self, session: SessionData, message: str) -> str:
         """
-        Maneja menú multi-filtro.
-
-        Permite al usuario ir agregando filtros uno por uno,
-        y cuando tenga los que necesita, ejecutar la búsqueda.
+        Maneja el menú multi-filtro usando el sistema modular.
+        
+        Permite al usuario:
+        - Seleccionar filtros dinámicamente (según configuración)
+        - Ver filtros activos con checkmarks
+        - Buscar cuando esté listo (opción 9)
+        - Volver al menú principal (opción 0)
+        
+        Este handler REEMPLAZA la versión anterior que tenía opciones hardcodeadas.
         """
+        filter_manager = FilterManager()
+        
         # Mostrar menú inicial si es start
         if message == 'start':
             return self.format_multifilter_menu(session)
-
-        # Opción 9: Buscar con filtros actuales
+        
+        # ===== OPCIÓN 9: BUSCAR =====
         if message == '9':
-            filters = session.get_temp('filters', {})
-
-            if not filters:
+            active_filters = session.get_temp('filters', {})
+            
+            # Validar que haya al menos un filtro
+            if not active_filters:
                 return "⚠️ No has seleccionado ningún filtro.\n\n" + self.format_multifilter_menu(session)
-
-            # Construir parámetros de búsqueda
-            search_params = {}
-            if 'zona' in filters:
-                search_params['zone'] = filters['zona']
-            if 'prepaga' in filters:
-                search_params['accept_prepaga'] = filters['prepaga']
-            if 'sexo' in filters:
-                search_params['gender'] = filters['sexo']
-            if 'fecha' in filters:
-                search_params['available_date'] = filters['fecha']
-
+            
+            # Validar filtros obligatorios
+            is_valid, error_msg = filter_manager.validate_required_filters(active_filters)
+            
+            if not is_valid:
+                return error_msg + "\n\n" + self.format_multifilter_menu(session)
+            
+            # Convertir filtros a parámetros de BD
+            db_params = filter_manager.convert_to_db_params(active_filters)
+            
+            # ⭐ NUEVO: Guardar date_str y time_preference en sesión
+            if 'date_str' in db_params:
+                session.store_temp('search_date', db_params['date_str'])
+            if 'time_preference' in db_params:
+                session.store_temp('time_preference', db_params['time_preference'])
+            
             # Buscar profesionales
             results = client_service.search_professionals_by_filters(
-                **search_params, limit=10)
-
-            # Log de búsqueda
+                **db_params, 
+                limit=10
+            )
+            
+            # ⭐ NUEVO: Log de búsqueda (solo valores display, JSON serializable)
+            search_params_for_log = {
+                key: value.get('display', str(value)) if isinstance(value, dict) else value
+                for key, value in active_filters.items()
+            }
+            
             search_id = analytics_service.log_search(
                 client_phone=session.phone_number,
                 search_type='multifilter',
-                search_params=filters,
+                search_params=search_params_for_log,
                 result_count=len(results),
                 session_id=session.phone_number
             )
             session.store_temp('current_search_id', search_id)
-
+            
             # Guardar resultados
             session.store_temp('search_results', results)
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
-
+            
             # Formatear y retornar
             if len(results) == 0:
                 return client_messages.CLIENT_NO_RESULTS
-
+            
             # Format results with available slots
-
-
             search_date = session.get_temp('search_date')
-
-
+            
             formatted = client_service.format_search_results_with_slots(
-
-
                 professionals=results,
-
-
                 date_str=search_date,
-
-
                 show_max_slots=3
-
-
             )
             return formatted
-
-        # Opción 0: Volver al menú cliente
+        
+        # ===== OPCIÓN 0: VOLVER =====
         elif message == '0':
-            
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             
@@ -710,223 +715,162 @@ class ClientHandler:
             })
             
             return welcome_msg
-
-        # Opción 1: Zona
-        elif message == '1':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_ZONA)
-            return client_messages.CLIENT_ASK_ZONA
-
-        # Opción 2: Disponibilidad
-        elif message == '2':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_FECHA)
-            return client_messages.CLIENT_ASK_FECHA
-
-        # Opción 3: Prepaga
-        elif message == '3':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_PREPAGA)
-            return client_messages.CLIENT_ASK_PREPAGA
-
-        # Opción 4: Sexo/Género
-        elif message == '4':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_SEXO)
-            return client_messages.CLIENT_ASK_SEXO
-
-        # Opción 5: Especialidad (TODO: implement)
-        elif message == '5':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_ESPECIALIDAD)
-            category_options = client_messages.format_category_options()
-            return client_messages.CLIENT_ASK_ESPECIALIDAD.format(
-                category_options=category_options
-            )
+        
+        # ===== OPCIONES 1-N: SELECCIONAR FILTRO =====
         else:
-            return common_messages.INVALID_OPTION + "\n\n" + self.format_multifilter_menu(session)
+            try:
+                option_num = int(message)
+                filter_obj = filter_manager.get_filter_by_menu_number(option_num)
+                
+                if not filter_obj:
+                    return "⚠️ Opción inválida\n\n" + self.format_multifilter_menu(session)
+                
+                # Guardar filtro actual en temp
+                session.store_temp('current_filter_type', filter_obj.filter_type.value)
+                
+                # Transicionar a estado de input de filtro
+                session.transition_to(ConversationState.CLIENT_FILTER_INPUT)
+                
+                # Mostrar prompt del filtro seleccionado
+                return filter_obj.get_input_prompt(session.get_temp_all())
+            
+            except ValueError:
+                return "⚠️ Opción inválida\n\n" + self.format_multifilter_menu(session)
 
-    def handle_client_multifilter_zona(self, session: SessionData, message: str) -> str:
-        """Maneja filtro de zona en modo multi-filtro."""
-        # Check for back command
-        if message == '0':
+
+    def handle_client_filter_input(self, session: SessionData, message: str) -> str:
+        """
+        Maneja el input genérico de CUALQUIER filtro.
+        
+        Este handler ÚNICO reemplaza a todos los handle_client_multifilter_* individuales:
+        - handle_client_multifilter_zona()
+        - handle_client_multifilter_fecha()
+        - handle_client_multifilter_hora()
+        - handle_client_multifilter_prepaga()
+        - handle_client_multifilter_sexo()
+        - handle_client_multifilter_especialidad()
+        
+        Flujo:
+        1. Obtiene el filtro actual desde session.temp
+        2. Valida el input usando el método del filtro
+        3. Procesa y guarda el filtro
+        4. Vuelve al menú de filtros
+        """
+        print(f"\n{'='*60}")
+        print(f"🔍 DEBUG handle_client_filter_input")
+        print(f"{'='*60}")
+        print(f"📞 Phone: {session.phone_number}")
+        print(f"💬 Message: '{message}'")
+        print(f"📊 Current State: {session.state}")
+        
+        filter_manager = FilterManager()
+        
+        # Obtener tipo de filtro actual desde session
+        filter_type_str = session.get_temp('current_filter_type')
+        print(f"🎯 Current filter type from session: '{filter_type_str}'")
+        
+        # Mostrar TODO el contenido de temp
+        all_temp = session.get_temp_all()
+        print(f"📦 ALL session.temp data: {all_temp}")
+        
+        if not filter_type_str:
+            # Error: no hay filtro en progreso
+            print(f"❌ ERROR: No current_filter_type in session!")
+            print(f"{'='*60}\n")
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return self.format_multifilter_menu(session)
-
+        
+        # Convertir string a FilterType enum
+        try:
+            filter_type = FilterType(filter_type_str)
+            print(f"✅ Filter type converted: {filter_type}")
+        except Exception as e:
+            print(f"❌ ERROR converting filter type: {e}")
+            print(f"{'='*60}\n")
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+        
+        filter_obj = filter_manager.get_filter(filter_type)
+        print(f"🔧 Filter object: {filter_obj.__class__.__name__ if filter_obj else 'None'}")
+        
+        if not filter_obj:
+            # Error: filtro no existe
+            print(f"❌ ERROR: Filter object not found for type {filter_type}!")
+            print(f"{'='*60}\n")
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            return self.format_multifilter_menu(session)
+        
+        # ===== OPCIÓN 0: VOLVER SIN GUARDAR =====
+        if message == '0':
+            print(f"↩️ User pressed 0 (back)")
+            session.remove_temp('current_filter_type')
+            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+            print(f"{'='*60}\n")
+            return self.format_multifilter_menu(session)
+        
+        # ===== VALIDAR INPUT =====
+        print(f"\n🔍 Validating input...")
+        session_data = session.get_temp_all()
+        is_valid, error_msg = filter_obj.validate_input(message, session_data)
+        print(f"✅ Validation result: {is_valid}")
+        if not is_valid:
+            print(f"❌ Validation error: {error_msg}")
+            print(f"{'='*60}\n")
+        
+        if not is_valid:
+            # Input inválido - mostrar error y volver a preguntar
+            return f"{error_msg}\n\n{filter_obj.get_input_prompt(session_data)}"
+        
+        # ===== PROCESAR INPUT VÁLIDO =====
+        print(f"\n⚙️ Processing input...")
+        processed_filter = filter_obj.process_input(message, session_data)
+        print(f"📦 Processed filter result: {processed_filter}")
+        
+        # ===== GUARDAR FILTRO =====
+        print(f"\n💾 Saving filter...")
         filters = session.get_temp('filters', {})
-
-        if message == '1':
-            filters['zona'] = 'norte'
-            filter_display = "Zona: Norte"
-        elif message == '2':
-            filters['zona'] = 'sur'
-            filter_display = "Zona: Sur"
+        print(f"📊 Current filters BEFORE save: {filters}")
+        print(f"📊 Filter count BEFORE: {len(filters)}")
+        
+        # Si el filtro tiene flag 'remove', eliminarlo en lugar de guardarlo
+        if processed_filter.get('remove'):
+            print(f"🗑️ Filter marked for removal")
+            if filter_type.value in filters:
+                del filters[filter_type.value]
+            filter_name = f"{processed_filter.get('display', filter_obj.display_name)} (filtro removido)"
         else:
-            zone_options = client_messages.format_zone_options()
-            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_ZONA.format(
-                zone_options=zone_options
-            )
-
+            # Guardar filtro normalmente
+            print(f"💾 Saving filter with key: '{filter_type.value}'")
+            filters[filter_type.value] = processed_filter
+            filter_name = processed_filter.get('display', filter_obj.display_name)
+        
+        print(f"📊 Filters AFTER update: {filters}")
+        print(f"📊 Filter count AFTER: {len(filters)}")
+        
+        # Guardar en sesión
+        print(f"💾 Calling session.store_temp('filters', ...)")
         session.store_temp('filters', filters)
+        
+        # Verificar que se guardó
+        print(f"✅ Verifying storage...")
+        verify_filters = session.get_temp('filters', {})
+        print(f"✅ Filters retrieved from session: {verify_filters}")
+        print(f"✅ Filter count retrieved: {len(verify_filters)}")
+        
+        if len(verify_filters) != len(filters):
+            print(f"⚠️ WARNING: Filter count mismatch!")
+            print(f"   Expected: {len(filters)}, Got: {len(verify_filters)}")
+        
+        # ===== LIMPIAR TEMP Y VOLVER AL MENÚ =====
+        print(f"\n🧹 Cleaning up...")
+        session.remove_temp('current_filter_type')
         session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        
+        print(f"{'='*60}\n")
+        
+        # Mostrar confirmación + menú actualizado
         return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-            filter_name=filter_display,
-            menu=self.format_multifilter_menu(session)
-        )
-
-    def handle_client_multifilter_fecha(self, session: SessionData, message: str) -> str:
-        """Maneja filtro de fecha en modo multi-filtro."""
-        # Check for back command FIRST
-        if message == '0':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
-
-        date_obj = parse_date(message)
-
-        if not date_obj:
-            return common_messages.INVALID_DATE + "\n\n" + client_messages.CLIENT_ASK_FECHA
-
-        # Validate date is not in the past
-        from datetime import date
-        today = date.today()
-
-        if date_obj < today:
-            return f"""❌ *Fecha inválida*
-
-    La fecha ingresada ({message}) ya pasó.
-
-    Por favor, ingresa una fecha de hoy en adelante.
-
-    {client_messages.CLIENT_ASK_FECHA}"""
-
-        filters = session.get_temp('filters', {})
-        filters['fecha'] = message
-        session.store_temp('filters', filters)
-        session.transition_to(ConversationState.CLIENT_MULTIFILTER_HORA)
-        return client_messages.CLIENT_ASK_HORA
-
-    def handle_client_multifilter_hora(self, session: SessionData, message: str) -> str:
-        """Maneja filtro de hora en modo multi-filtro."""
-        if message == '0':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
-
-        # Simple time validation (HH:MM)
-        if not validate_time(message) and message not in ['1', '2']:
-            return common_messages.INVALID_TIME + "\n\n" + client_messages.CLIENT_ASK_HORA
-
-        filters = session.get_temp('filters', {})
-
-        # Convert option to time description
-        if message == '1':
-            filters['hora'] = 'Mañana (8:00-13:00)'
-        elif message == '2':
-            filters['hora'] = 'Tarde (13:00-20:00)'
-        else:
-            filters['hora'] = message
-
-        session.store_temp('filters', filters)
-        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-
-        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-            filter_name=f"Horario: {filters['hora']}",
-            menu=self.format_multifilter_menu(session)
-        )
-
-    def handle_client_multifilter_prepaga(self, session: SessionData, message: str) -> str:
-        """Maneja filtro de prepaga en modo multi-filtro."""
-        # Check for back command FIRST
-        if message == '0':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
-
-        filters = session.get_temp('filters', {})
-
-        if message == '1':
-            filters['prepaga'] = True
-            filter_display = "Acepta Prepaga: Sí"
-        elif message == '2':
-            filters['prepaga'] = False
-            filter_display = "Acepta Prepaga: No"
-        elif message == '3':
-            # No importa = no aplicar filtro de prepaga
-            # Si ya existía el filtro, lo removemos
-            if 'prepaga' in filters:
-                del filters['prepaga']
-            session.store_temp('filters', filters)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Prepaga: Cualquiera (filtro removido)",
-                menu=self.format_multifilter_menu(session)
-            )
-        else:
-            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_PREPAGA
-
-        session.store_temp('filters', filters)
-        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-            filter_name=filter_display,
-            menu=self.format_multifilter_menu(session)
-        )
-
-    def handle_client_multifilter_sexo(self, session: SessionData, message: str) -> str:
-        """Maneja filtro de sexo en modo multi-filtro."""
-        # Check for back command FIRST
-        if message == '0':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
-
-        filters = session.get_temp('filters', {})
-
-        if message == '1':
-            filters['sexo'] = 'm'
-            filter_display = "Género: Masculino"
-        elif message == '2':
-            filters['sexo'] = 'f'
-            filter_display = "Género: Femenino"
-        elif message == '3':
-            # No importa = no aplicar filtro de género
-            # Si ya existía el filtro, lo removemos
-            if 'sexo' in filters:
-                del filters['sexo']
-            session.store_temp('filters', filters)
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-                filter_name="Género: Cualquiera (filtro removido)",
-                menu=self.format_multifilter_menu(session)
-            )
-        else:
-            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_SEXO
-
-        session.store_temp('filters', filters)
-        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-            filter_name=filter_display,
-            menu=self.format_multifilter_menu(session)
-        )
-
-    def handle_client_multifilter_especialidad(self, session: SessionData, message: str) -> str:
-        """Maneja filtro de especialidad en modo multi-filtro."""
-        # Check for back command FIRST
-        if message == '0':
-            session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
-
-        filters = session.get_temp('filters', {})
-
-        # Obtener las opciones de categorías desde DomainConfig
-        from src.config.domain_config import DomainConfig
-        categories = DomainConfig.CATEGORIES
-
-        # Validar que el mensaje sea un número válido
-        if message in categories:
-            especialidad_label = categories[message]
-            filters['especialidad'] = especialidad_label
-            filter_display = f"{DomainConfig.CATEGORY_LABEL}: {especialidad_label}"
-        else:
-            return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_ESPECIALIDAD.format(
-                category_options=client_messages.format_category_options()
-            )
-
-        session.store_temp('filters', filters)
-        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-            filter_name=filter_display,
+            filter_name=filter_name,
             menu=self.format_multifilter_menu(session)
         )
 
@@ -1322,10 +1266,15 @@ class ClientHandler:
         # ⭐ NUEVO: Transición a detalle con slots
         session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
         
-        # ⭐ NUEVO: Usar el nuevo formatter que muestra todos los slots
+        # ⭐ NUEVO: Obtener time_preference de la sesión
+        search_date = session.get_temp('search_date')
+        time_preference = session.get_temp('time_preference')
+        
+        # Usar el nuevo formatter que muestra todos los slots
         return client_service.format_professional_detail_with_slots(
             professional=professional,
-            date_str=search_date
+            date_str=search_date,
+            time_preference=time_preference
         )
 
 
@@ -1462,6 +1411,29 @@ class ClientHandler:
 
         # Si no hay citas
         if not active_appointments:
+            # MANEJAR RESPUESTA DEL USUARIO
+            if message == '1':
+                # Usuario quiere buscar
+                session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+                return self.format_multifilter_menu(session)
+            
+            elif message == '0':
+                # Ya manejado arriba, pero por si acaso
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                from src.services.user_service import user_service
+                welcome_msg = user_service.generate_welcome_message({
+                    'user_type': 'new',
+                    'name': None,
+                    'is_registered': False,
+                    'has_pending_appointments': False,
+                    'pending_appointments': [],
+                    'profile': None,
+                    'phone_number': session.phone_number
+                })
+                return welcome_msg
+            
+            # Mostrar mensaje con opciones
             return appointment_messages.CLIENT_NO_APPOINTMENTS
 
         # ==========================================
@@ -1659,7 +1631,7 @@ class ClientHandler:
         if not active_appointments:
             # Si no hay lista guardada, volver a cargarla
             session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
-            return self.handle_client_view_appointments(session, '')
+            return self.handle_client_view_appointments(session, message)
         
         # Validar que message sea un número
         try:
@@ -2464,12 +2436,13 @@ O escribe '0' para volver al menú."""
             session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
             # Format professional detail with slots
             search_date = session.get_temp('search_date')
+            time_preference = session.get_temp('time_preference')
+            
             return client_service.format_professional_detail_with_slots(
                 professional=professional,
                 date_str=search_date,
-                    target_date=search_date,
-                    show_booking=True
-                )
+                time_preference=time_preference
+            )
         
         # Validate confirmation
         if message != '1':
