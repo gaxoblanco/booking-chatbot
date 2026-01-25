@@ -88,6 +88,17 @@ booking-chatbot/
 │   │   ├── analytics_service.py         # Métricas y analytics
 │   │   └── appointment_service.py       # Gestión de citas (CRUD, confirmaciones)
 │   │
+│   ├── 📁 filters/                      # ⭐ Sistema de filtros modular
+│   │   ├── __init__.py
+│   │   ├── filter_types.py              # Enums y tipos de filtros
+│   │   ├── base_filter.py               # Clase base abstracta para filtros
+│   │   ├── filter_manager.py            # Gestor central de filtros
+│   │   │
+│   │   └── 📁 concrete_filters/         # Implementaciones de filtros
+│   │       ├── __init__.py
+│   │       ├── core_filters.py          # DateFilter, TimeFilter, SpecialtyFilter
+│   │       └── optional_filters.py      # ZoneFilter, PrepagaFilter, GenderFilter, etc.
+│   │
 │   ├── 📁 integrations/                 # ⭐ Integraciones externas
 │   │   │
 │   │   └── 📁 google_calendar_service/  # ⭐ Google Calendar Integration
@@ -135,7 +146,7 @@ booking-chatbot/
 │   │   ├── __init__.py
 │   │   ├── settings.py                  # Settings generales (env vars, etc.)
 │   │   ├── domain_config.py             # Configuración de dominios/presets
-│   │   ├── filter_config.py             # Configuración de filtros de búsqueda
+│   │   ├── domain_filters_config.py     # ⭐ Configuración de filtros (habilitados/orden)
 │   │   │
 │   │   └── 📁 google/                   # ⭐ Configuración de Google Calendar
 │   │       ├── service-account.json     # ⭐ Credenciales de Service Account (gitignored)
@@ -493,7 +504,183 @@ event = calendar_service.create_appointment(
 
 ---
 
-### **5. Capa Database (Persistencia)**
+### **5. Sistema de Filtros Modular** ⭐ NUEVO
+
+**Ubicación:** `src/filters/`
+
+**Propósito:** Sistema extensible y configurable para filtrar búsquedas de profesionales
+
+**Arquitectura:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  domain_filters_config.py (Configuración)               │
+│  - Define qué filtros están habilitados                 │
+│  - Orden de aparición en menús                          │
+│  - Filtros obligatorios vs opcionales                   │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│  FilterManager (Gestor Central)                         │
+│  - Carga filtros desde configuración                    │
+│  - Genera menús dinámicamente                           │
+│  - Valida filtros obligatorios                          │
+│  - Convierte a parámetros de BD                         │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│  BaseFilter (Clase Abstracta)                           │
+│  - get_menu_option_text()                               │
+│  - get_input_prompt()                                   │
+│  - validate_input()                                     │
+│  - process_input()                                      │
+│  - convert_to_db_param()                                │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+┌───────▼────────┐   ┌────────▼──────────┐
+│ Core Filters   │   │ Optional Filters  │
+│ - DateFilter   │   │ - ZoneFilter      │
+│ - TimeFilter   │   │ - PrepagaFilter   │
+│ - SpecialtyF.  │   │ - GenderFilter    │
+└────────────────┘   │ - ModalityFilter  │
+                     └───────────────────┘
+```
+
+**Componentes:**
+
+#### **filter_types.py**
+Define enums y tipos base:
+```python
+class FilterType(Enum):
+    DATE = "date"
+    TIME = "time"
+    SPECIALTY = "specialty"
+    ZONE = "zone"
+    PREPAGA = "prepaga"
+    GENDER = "gender"
+    MODALITY = "modality"
+
+class FilterCategory(Enum):
+    CORE = "core"           # Filtros esenciales
+    OPTIONAL = "optional"   # Filtros opcionales
+    ADVANCED = "advanced"   # Filtros avanzados
+
+class FilterPriority(Enum):
+    REQUIRED = 1      # Debe completarse antes de buscar
+    RECOMMENDED = 2   # Recomendado pero no obligatorio
+    OPTIONAL = 3      # Completamente opcional
+```
+
+#### **base_filter.py**
+Clase abstracta que define la interfaz común para todos los filtros.
+
+#### **filter_manager.py**
+Gestor central que:
+- Carga filtros habilitados desde configuración
+- Genera menús dinámicos con checkmarks
+- Valida filtros obligatorios antes de buscar
+- Convierte filtros a parámetros de BD
+
+#### **concrete_filters/core_filters.py**
+Filtros esenciales:
+- **DateFilter**: Fecha del turno (Hoy/Mañana/DD/MM/YYYY directa)
+- **TimeFilter**: Horario (Mañana/Tarde/HH:MM directa)
+- **SpecialtyFilter**: Especialidad (dinámico desde DomainConfig)
+
+#### **concrete_filters/optional_filters.py**
+Filtros opcionales:
+- **ZoneFilter**: Zona geográfica (Norte/Sur/Cualquiera)
+- **PrepagaFilter**: Obra social (Sí/No/Cualquiera)
+- **GenderFilter**: Género del profesional (M/F/Cualquiera)
+- **ModalityFilter**: Presencial/Virtual (deshabilitado por defecto)
+
+**Configuración en `config/domain_filters_config.py`:**
+
+```python
+ENABLED_FILTERS = {
+    FilterType.DATE: {
+        'enabled': True,
+        'menu_position': 1,
+        'category': FilterCategory.CORE,
+        'priority': FilterPriority.REQUIRED,
+    },
+    FilterType.MODALITY: {
+        'enabled': False,  # ✅ Deshabilitar sin tocar código
+        'menu_position': 7,
+        # ...
+    }
+}
+
+REQUIRED_FILTERS = [FilterType.DATE]  # Obligatorios antes de buscar
+```
+
+**Integración con client_handler.py:**
+
+Antes (6+ handlers repetitivos):
+```python
+def handle_client_multifilter_zona(...): # ~30 líneas
+def handle_client_multifilter_fecha(...): # ~30 líneas
+def handle_client_multifilter_hora(...): # ~30 líneas
+def handle_client_multifilter_prepaga(...): # ~30 líneas
+def handle_client_multifilter_sexo(...): # ~30 líneas
+def handle_client_multifilter_especialidad(...): # ~30 líneas
+```
+
+Ahora (1 handler genérico):
+```python
+def handle_client_filter_input(self, session, message):
+    """Handler genérico para TODOS los filtros."""
+    filter_manager = FilterManager()
+    filter_obj = filter_manager.get_filter(filter_type)
+    
+    # Validar, procesar y guardar
+    is_valid, error = filter_obj.validate_input(message)
+    if is_valid:
+        processed = filter_obj.process_input(message)
+        session.store_temp('filters', {filter_type.value: processed})
+```
+
+**Ventajas:**
+- ✅ Agregar/quitar filtros editando solo configuración
+- ✅ Reducción de ~180 líneas a ~40 líneas
+- ✅ Validaciones centralizadas por filtro
+- ✅ Fácil testear filtros individuales
+- ✅ Reutilizable en otros proyectos
+- ✅ UX mejorado (entrada directa de fecha/hora)
+
+**Ejemplo de flujo completo:**
+```
+Usuario: 1 (selecciona búsqueda)
+Bot: Muestra menú con filtros habilitados desde config
+
+Usuario: 1 (selecciona Fecha)
+Bot: DateFilter.get_input_prompt()
+     "1️⃣ Hoy  2️⃣ Mañana  💡 O ingresa DD/MM/YYYY directamente"
+
+Usuario: 30/01/2026 (entrada directa, sin paso extra)
+Bot: DateFilter.validate_input() ✓
+     DateFilter.process_input() → {'date': '2026-01-30', 'display': '30/01/2026'}
+     Guarda en session.temp['filters']['date']
+     Vuelve al menú mostrando "📅 Fecha: 30/01/2026"
+
+Usuario: 2 (selecciona Horario)
+Bot: TimeFilter.get_input_prompt()
+
+Usuario: 14:30 (entrada directa)
+Bot: Guarda y muestra "🕐 Horario: A las 14:30"
+
+Usuario: 9 (buscar)
+Bot: FilterManager.validate_required_filters() ✓
+     FilterManager.convert_to_db_params() 
+     → {'available_date': '2026-01-30', 'specific_time': '14:30'}
+     client_service.search_professionals_by_filters(**params)
+```
+
+---
+
+### **6. Capa Database (Persistencia)**
 
 **Ubicación:** `src/database/`
 
