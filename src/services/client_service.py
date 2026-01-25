@@ -46,6 +46,7 @@ class ClientService:
         online_sessions: bool = None,
         date_str: str = None,
         time_preference: str = None,  # 'mañana' | 'tarde' | 'noche'
+        specialty: str = None,
         limit: int = 10
     ) -> List[Dict]:
         """
@@ -81,7 +82,8 @@ class ClientService:
                 zone=zone,
                 gender=gender,
                 accept_prepaga=accept_prepaga,
-                online_sessions=online_sessions
+                online_sessions=online_sessions,
+                specialty=specialty
             )
 
             print(f"[CLIENT] Found {len(professionals)} professionals in DB")
@@ -273,18 +275,23 @@ class ClientService:
     def format_professional_detail_with_slots(
         self,
         professional: Dict,
-        date_str: str = None
+        date_str: str = None,
+        time_preference: str = None
     ) -> str:
         """
-        Format complete professional details with all available slots.
+        Format complete professional details with available slots.
         
         Args:
             professional: Professional dict with available_slots
             date_str: Date of slots (YYYY-MM-DD format)
+            time_preference: Time filter applied ('morning'|'afternoon'|'evening')
+                           If specified, only shows slots in that time range.
         
         Returns:
             Formatted string for WhatsApp
         """
+        from datetime import datetime
+        
         # Header
         name = professional.get('name', 'Sin nombre')
         message = f"👨‍⚕️ *{name}*\n"
@@ -337,22 +344,41 @@ class ClientService:
             afternoon_slots = [s for s in slots if '13:00' <= s['start'] < '19:00']
             evening_slots = [s for s in slots if s['start'] >= '19:00']
             
+            # ⭐ NUEVO: Si hay filtro de tiempo, SOLO mostrar esos slots
+            if time_preference:
+                if time_preference == 'morning':
+                    afternoon_slots = []
+                    evening_slots = []
+                elif time_preference == 'afternoon':
+                    morning_slots = []
+                    evening_slots = []
+                elif time_preference == 'evening':
+                    morning_slots = []
+                    afternoon_slots = []
+            
+            # Contador global para numerar slots
+            slot_counter = 1
+            
+            # Mostrar Mañana
             if morning_slots:
                 message += "\n🌅 *Mañana:*\n"
-                for idx, slot in enumerate(morning_slots, 1):
-                    message += f"  {idx}. {slot['start']} - {slot['end']}\n"
+                for slot in morning_slots:
+                    message += f"  {slot_counter}. {slot['start']} - {slot['end']}\n"
+                    slot_counter += 1
             
+            # Mostrar Tarde
             if afternoon_slots:
                 message += "\n☀️ *Tarde:*\n"
-                start_idx = len(morning_slots) + 1
-                for idx, slot in enumerate(afternoon_slots, start_idx):
-                    message += f"  {idx}. {slot['start']} - {slot['end']}\n"
+                for slot in afternoon_slots:
+                    message += f"  {slot_counter}. {slot['start']} - {slot['end']}\n"
+                    slot_counter += 1
             
+            # Mostrar Noche
             if evening_slots:
                 message += "\n🌙 *Noche:*\n"
-                start_idx = len(morning_slots) + len(afternoon_slots) + 1
-                for idx, slot in enumerate(evening_slots, start_idx):
-                    message += f"  {idx}. {slot['start']} - {slot['end']}\n"
+                for slot in evening_slots:
+                    message += f"  {slot_counter}. {slot['start']} - {slot['end']}\n"
+                    slot_counter += 1
             
             message += "\n"
         
