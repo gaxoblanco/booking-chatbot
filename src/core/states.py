@@ -51,9 +51,9 @@ class ConversationState(Enum):
 
     # Option 3: Cargar semana completa (weekly recurring schedule)
     PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
-    PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"      # ✅ NUEVO
-    PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"    # ✅ NUEVO
-    PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"    # ✅ NUEVO
+    PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"  
+    PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"
+    PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"
 
     # Option 5: Cargar información profesional
     PROF_INFO_MENU = "prof_info_menu"  # Main info menu
@@ -85,12 +85,16 @@ class ConversationState(Enum):
 
     # Multi-filter menu
     CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
-    CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"
-    CLIENT_MULTIFILTER_FECHA = "client_multifilter_fecha"
-    CLIENT_MULTIFILTER_HORA = "client_multifilter_hora"
-    CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
-    CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
-    CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
+    CLIENT_FILTER_INPUT = "client_filter_input"  # ⭐ NUEVO - Handler genérico para input de cualquier filtro
+    
+    # ⚠️ DEPRECATED - Reemplazados por CLIENT_FILTER_INPUT (sistema modular)
+    # Estos estados se mantienen comentados por compatibilidad temporal
+    # CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"
+    # CLIENT_MULTIFILTER_FECHA = "client_multifilter_fecha"
+    # CLIENT_MULTIFILTER_HORA = "client_multifilter_hora"
+    # CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
+    # CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
+    # CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
 
     # Quick search (all filters at once)
     CLIENT_SEARCH_QUICK = "client_search_quick"
@@ -131,6 +135,11 @@ class ConversationState(Enum):
     CLIENT_BOOKING_CONFIRM = "client_booking_confirm"
     CLIENT_BOOKING_SUCCESS = "client_booking_success"
 
+    CLIENT_BOOKING_CONFIRM_NAME = "client_booking_confirm_name"
+    CLIENT_BOOKING_CONFIRM_EMAIL = "client_booking_confirm_email"
+    CLIENT_BOOKING_FINAL_CONFIRMATION = "client_booking_final_confirmation"
+
+
     # ==========================================
     # CLIENT - MY APPOINTMENTS STATES
     # ==========================================
@@ -155,6 +164,9 @@ class ConversationState(Enum):
     PROF_CANCEL_REASON = "prof_cancel_reason"
     PROF_MARK_COMPLETED = "prof_mark_completed"
     PROF_MARK_NO_SHOW = "prof_mark_no_show"  # ✅ NUEVO
+
+    # Reminder response handling
+    AWAITING_REMINDER_RESPONSE = "awaiting_reminder_response"
 
     # ==========================================
     # COMMON STATES
@@ -235,6 +247,25 @@ class SessionData:
     def clear_temp(self):
         """Clear all temporary data."""
         self.temp_data = {}
+    
+    def remove_temp(self, key: str):
+        """
+        Remove a specific temporary data key.
+        
+        Args:
+            key: Data key to remove
+        """
+        if key in self.temp_data:
+            del self.temp_data[key]
+    
+    def get_temp_all(self) -> dict:
+        """
+        Get all temporary data.
+        
+        Returns:
+            Complete temporary data dictionary
+        """
+        return self.temp_data.copy()
 
 
 class SessionManager:
