@@ -55,86 +55,240 @@ class DateFilter(BaseFilter):
 2️⃣ Mañana ({tomorrow.strftime('%d/%m/%Y')})
 
 💡 *O ingresa la fecha directamente en formato DD/MM/YYYY*
-Ejemplo: 25/01/2026
+Ejemplo: 25/01/2026 | 25/01/26 | 25/01
 
 0️⃣ Volver al menú de filtros"""
     
-    def validate_input(self, user_input: str, session_data: dict = None) -> Tuple[bool, Optional[str]]:
+    def validate_input(self, user_input: str, session_data: Dict = None) -> Tuple[bool, str]:
         """
-        Valida el input de fecha.
+        Valida el input del usuario.
         
         Acepta:
-        - "1" para Hoy
-        - "2" para Mañana
-        - Fecha directa en formato DD/MM/YYYY
+        - "1" o "hoy" → Hoy
+        - "2" o "mañana" → Mañana
+        - "DD/MM/YYYY", "DD/MM/YY", "DD/MM", "DD"
         
-        Valida que:
-        - La fecha no sea del pasado
-        - El formato sea correcto
+        Returns:
+            (True, "") si válido
+            (False, mensaje_error) si inválido
         """
-        # Opciones rápidas (Hoy o Mañana)
-        if user_input in ['1', '2']:
-            return (True, None)
+        user_input = user_input.strip().lower()
         
-        # Intentar parsear fecha manual directamente
-        date_obj = self._parse_date(user_input)
+        # Opciones rápidas
+        if user_input in ['1', 'hoy', 'today']:
+            return True, ""
         
-        if not date_obj:
-            return (False, "❌ Formato de fecha inválido. Usa DD/MM/YYYY (ejemplo: 25/12/2026) o selecciona 1 (Hoy) o 2 (Mañana)")
+        if user_input in ['2', 'mañana', 'mañana', 'tomorrow']:
+            return True, ""
         
-        # Validar que no sea del pasado
-        if date_obj < date.today():
-            return (False, f"❌ La fecha {user_input} ya pasó. Ingresa una fecha de hoy en adelante.")
-        
-        return (True, None)
+        # Intentar parsear fecha flexible
+        try:
+            parsed_date = self._parse_flexible_date(user_input)
+            
+            # Validar que no sea en el pasado
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            if parsed_date < today:
+                return False, f"❌ La fecha {parsed_date.strftime('%d/%m/%Y')} ya pasó. Ingresa una fecha futura."
+            
+            # Validar que no sea más de 1 año en el futuro
+            max_date = today + timedelta(days=365)
+            if parsed_date > max_date:
+                return False, "❌ No se pueden agendar turnos con más de 1 año de anticipación."
+            
+            return True, ""
+            
+        except ValueError as e:
+            return False, f"❌ {str(e)}\n\n{self._get_format_help()}"
     
-    def process_input(self, user_input: str, session_data: dict = None) -> Dict:
+    def process_input(self, user_input: str, session_data: Dict = None) -> Dict:
         """
-        Procesa el input y retorna la estructura del filtro.
+        Procesa el input y retorna diccionario con fecha.
         
         Returns:
             {
-                'display': 'Hoy - 19/01/2026',
-                'date': '2026-01-19',
-                'date_obj': datetime.date(2026, 1, 19)
+                'date': 'YYYY-MM-DD',     # Formato BD
+                'display': 'DD/MM/YYYY'   # Formato display
             }
         """
-        today = date.today()
-        tomorrow = today + timedelta(days=1)
+        user_input = user_input.strip().lower()
         
-        if user_input == '1':
-            # Hoy
-            return {
-                'display': f"Hoy - {today.strftime('%d/%m/%Y')}",
-                'date': today.strftime('%Y-%m-%d'),
-                'date_obj': today
-            }
-        elif user_input == '2':
-            # Mañana
-            return {
-                'display': f"Mañana - {tomorrow.strftime('%d/%m/%Y')}",
-                'date': tomorrow.strftime('%Y-%m-%d'),
-                'date_obj': tomorrow
-            }
+        # Opciones rápidas
+        if user_input in ['1', 'hoy', 'today']:
+            date_obj = datetime.now()
+        elif user_input in ['2', 'mañana', 'mañana', 'tomorrow']:
+            date_obj = datetime.now() + timedelta(days=1)
         else:
-            # Fecha manual (DD/MM/YYYY) - entrada directa
-            date_obj = self._parse_date(user_input)
-            return {
-                'display': date_obj.strftime('%d/%m/%Y'),
-                'date': date_obj.strftime('%Y-%m-%d'),
-                'date_obj': date_obj
-            }
+            # Parsear fecha flexible
+            date_obj = self._parse_flexible_date(user_input)
+        
+        return {
+            'date': date_obj.strftime("%Y-%m-%d"),
+            'display': date_obj.strftime("%d/%m/%Y")
+        }
     
-    def convert_to_db_param(self, processed_data: Dict) -> Dict:
+    def _parse_flexible_date(self, date_str: str) -> datetime:
         """
-        Convierte a parámetro de base de datos.
+        Parsea fecha en múltiples formatos.
+        
+        Soporta:
+        - DD/MM/YYYY → 25/01/2026
+        - DD/MM/YY   → 25/01/26
+        - DD/MM      → 25/01
+        - DD         → 25
         
         Returns:
-            {'available_date': '2026-01-19'}
+            datetime object
+        
+        Raises:
+            ValueError si formato inválido
         """
+        date_str = date_str.strip()
+        today = datetime.now()
+        
+        # Separar por "/"
+        parts = date_str.split('/')
+        
+        # ==========================================
+        # FORMATO: DD/MM/YYYY o DD/MM/YY
+        # ==========================================
+        if len(parts) == 3:
+            day, month, year = parts
+            
+            try:
+                day = int(day)
+                month = int(month)
+                year = int(year)
+                
+                # Si año es corto (26), convertir a 2026
+                if year < 100:
+                    year += 2000
+                
+                # Validar rangos
+                if not (1 <= month <= 12):
+                    raise ValueError(f"Mes inválido: {month}. Debe estar entre 1 y 12.")
+                
+                if not (1 <= day <= 31):
+                    raise ValueError(f"Día inválido: {day}. Debe estar entre 1 y 31.")
+                
+                # Intentar crear fecha
+                date_obj = datetime(year, month, day)
+                return date_obj
+                
+            except ValueError as e:
+                if "day is out of range for month" in str(e):
+                    raise ValueError(f"El mes {month} no tiene {day} días.")
+                raise ValueError(f"Fecha inválida: {date_str}")
+        
+        # ==========================================
+        # FORMATO: DD/MM (asume año)
+        # ==========================================
+        elif len(parts) == 2:
+            day, month = parts
+            
+            try:
+                day = int(day)
+                month = int(month)
+                
+                # Validar rangos
+                if not (1 <= month <= 12):
+                    raise ValueError(f"Mes inválido: {month}")
+                
+                if not (1 <= day <= 31):
+                    raise ValueError(f"Día inválido: {day}")
+                
+                # Intentar con año actual
+                year = today.year
+                try:
+                    date_obj = datetime(year, month, day)
+                    
+                    # Si la fecha ya pasó, usar próximo año
+                    if date_obj < today:
+                        date_obj = datetime(year + 1, month, day)
+                    
+                    return date_obj
+                    
+                except ValueError as e:
+                    if "day is out of range for month" in str(e):
+                        raise ValueError(f"El mes {month} no tiene {day} días.")
+                    raise
+                    
+            except ValueError as e:
+                raise ValueError(f"Formato inválido: {date_str}. Usa DD/MM (ej: 25/01)")
+        
+        # ==========================================
+        # FORMATO: DD (solo día, asume mes y año)
+        # ==========================================
+        elif len(parts) == 1:
+            try:
+                day = int(date_str)
+                
+                if not (1 <= day <= 31):
+                    raise ValueError(f"Día inválido: {day}")
+                
+                # Intentar con mes y año actuales
+                month = today.month
+                year = today.year
+                
+                try:
+                    date_obj = datetime(year, month, day)
+                    
+                    # Si la fecha ya pasó este mes
+                    if date_obj < today:
+                        # Intentar próximo mes
+                        if month == 12:
+                            month = 1
+                            year += 1
+                        else:
+                            month += 1
+                        
+                        date_obj = datetime(year, month, day)
+                    
+                    return date_obj
+                    
+                except ValueError as e:
+                    if "day is out of range for month" in str(e):
+                        # El mes actual no tiene ese día, intentar siguiente mes
+                        if month == 12:
+                            month = 1
+                            year += 1
+                        else:
+                            month += 1
+                        
+                        try:
+                            date_obj = datetime(year, month, day)
+                            return date_obj
+                        except ValueError:
+                            raise ValueError(f"Día {day} inválido para este mes y el siguiente.")
+                    raise
+                    
+            except ValueError as e:
+                raise ValueError(f"Día inválido: {date_str}. Debe ser un número entre 1 y 31.")
+        
+        else:
+            raise ValueError(f"Formato no reconocido: {date_str}")
+        
+    def _get_format_help(self) -> str:
+        """Mensaje de ayuda con formatos aceptados."""
+        return """💡 *Formatos válidos:*
+
+• **Completo:** 25/01/2026
+• **Año corto:** 25/01/26
+• **Sin año:** 25/01 (asume este o próximo año)
+• **Solo día:** 25 (asume este mes o siguiente)
+
+O selecciona:
+1️⃣ Hoy
+2️⃣ Mañana"""
+    
+    def convert_to_db_param(self, processed_value: Dict) -> Dict:
+        """Convierte a parámetros de BD."""
         return {
-            'date_str': processed_data['date'] 
+            'date_str': processed_value['date']
         }
+    
+    def get_display_text(self, processed_value: Dict) -> str:
+        """Texto para mostrar en el menú."""
+        return processed_value['display']
     
     def _parse_date(self, date_str: str) -> Optional[date]:
         """
@@ -190,7 +344,7 @@ Ejemplo: 14:30
 
 0️⃣ Volver al menú de filtros"""
     
-    def validate_input(self, user_input: str, session_data: dict = None) -> Tuple[bool, Optional[str]]:
+    def validate_input(self, user_input: str, session_data: Dict = None) -> Tuple[bool, str]:
         """
         Valida el input de horario.
         
@@ -208,7 +362,7 @@ Ejemplo: 14:30
         
         return (False, "❌ Formato inválido. Usa HH:MM (ejemplo: 14:30) o selecciona 1 (Mañana) o 2 (Tarde)")
     
-    def process_input(self, user_input: str, session_data: dict = None) -> Dict:
+    def process_input(self, user_input: str, session_data: Dict = None) -> Dict:
         """
         Procesa el input de horario.
         
