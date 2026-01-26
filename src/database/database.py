@@ -548,8 +548,15 @@ class Database:
     # SEARCH OPERATIONS
     # ==========================================
 
-    def search_professionals(self, zone: str = None, gender: str = None,
-                             accept_prepaga: bool = None, online_sessions: bool = None) -> List[Dict]:
+    def search_professionals(
+        self,
+        zone: str = None,
+        gender: str = None,
+        accept_prepaga: bool = None,
+        online_sessions: bool = None,
+        specialty: str = None,  # ← NUEVO
+        limit: int = 50
+    ) -> List[Dict]:
         """
         Search professionals by filters.
 
@@ -584,6 +591,10 @@ class Database:
                 if online_sessions is not None:
                     query += " AND online_sessions = ?"
                     params.append(online_sessions)
+                
+                if specialty:
+                    query += " AND specialties LIKE ?"
+                    params.append(f"%{specialty}%")
 
                 # Only verified professionals (with certificate)
 
@@ -991,50 +1002,39 @@ class Database:
             print(f"[DB] ❌ Error getting appointment: {e}")
             return None
 
-    def get_appointments_by_client(
-        self,
-        client_phone: str,
-        status: str = None,
-        from_date: str = None
-    ) -> List[Dict]:
+    def get_appointments_by_client(self, client_phone: str, from_date: str = None) -> List[Dict]:
         """
-        Get all appointments for a client.
-
+        Obtiene citas de un cliente desde una fecha.
+        
         Args:
-            client_phone: Client's phone
-            status: Optional filter by status
-            from_date: Optional filter from date (YYYY-MM-DD)
-
+            client_phone: Teléfono del cliente
+            from_date: Fecha desde (YYYY-MM-DD), opcional
+        
         Returns:
-            List of appointment dictionaries
+            Lista de citas
         """
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-
-                query = """
-                    SELECT a.*, p.name as professional_name, p.zone
-                    FROM appointments a
-                    LEFT JOIN professionals p ON a.professional_phone = p.phone
-                    WHERE a.client_phone = ?
-                """
-                params = [client_phone]
-
-                if status:
-                    query += " AND a.status = ?"
-                    params.append(status)
-
-                if from_date:
-                    query += " AND a.appointment_date >= ?"
-                    params.append(from_date)
-
-                query += " ORDER BY a.appointment_date ASC, a.start ASC"
-
-                cursor.execute(query, params)
-                return [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"[DB] ❌ Error getting client appointments: {e}")
-            return []
+        query = """
+            SELECT 
+                a.*,
+                p.name as professional_name
+            FROM appointments a
+            LEFT JOIN professionals p ON a.professional_phone = p.phone
+            WHERE a.client_phone = ?
+        """
+        
+        params = [client_phone]
+        
+        if from_date:
+            query += " AND a.appointment_date >= ?"
+            params.append(from_date)
+        
+        query += " ORDER BY a.appointment_date, a.start"
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     def get_appointments_by_professional(
         self,
