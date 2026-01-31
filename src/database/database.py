@@ -391,6 +391,48 @@ class Database:
             conn.commit()
             print("✅ Database initialized successfully")
 
+            # ==========================================
+            # TABLE: appointment_reminders
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS appointment_reminders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    appointment_id INTEGER NOT NULL,
+                    reminder_type TEXT CHECK(reminder_type IN ('24h', '1h')) NOT NULL,
+                    
+                    -- Estado de envío
+                    sent BOOLEAN DEFAULT 0,
+                    sent_at TIMESTAMP,
+                    
+                    -- Respuesta del usuario
+                    response_received BOOLEAN DEFAULT 0,
+                    response TEXT,
+                    responded_at TIMESTAMP,
+                    
+                    -- Programación
+                    scheduled_for TIMESTAMP NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+                    UNIQUE(appointment_id, reminder_type)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reminders_appointment 
+                ON appointment_reminders(appointment_id)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reminders_scheduled 
+                ON appointment_reminders(scheduled_for, sent)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reminders_status 
+                ON appointment_reminders(sent, response_received)
+            """)
+
     # ==========================================
     # PROFESSIONAL CRUD OPERATIONS
     # ==========================================
@@ -1567,7 +1609,348 @@ class Database:
             import traceback
             traceback.print_exc()
             return False
+    # =========================================================================
+    # WAITLIST / SLOT OFFERS - Sistema de Lista de Espera
+    # =========================================================================
 
+    def create_slot_offer(
+        self,
+        freed_appointment_id: int,
+        offered_to_client_phone: str,
+        original_appointment_id: int,
+        freed_date: str,
+        freed_time: str,
+        professional_phone: str,
+        professional_name: str,
+        expires_at: str
+    ) -> int:
+        """
+        Crea registro de oferta de turno adelantado.
+        
+        Returns:
+            offer_id si se creó exitosamente, None si hubo error
+        """
+        query = """
+            INSERT INTO slot_offers 
+            (freed_appointment_id, offered_to_client_phone, original_appointment_id,
+             freed_date, freed_time, professional_phone, professional_name, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (
+                    freed_appointment_id,
+                    offered_to_client_phone,
+                    original_appointment_id,
+                    freed_date,
+                    freed_time,
+                    professional_phone,
+                    professional_name,
+                    expires_at
+                ))
+                return cursor.lastrowid
+        except Exception as e:
+            print(f"[DB] Error creating slot offer: {e}")
+            return None
 
+    def get_pending_slot_offer(self, client_phone: str) -> Dict:
+        """
+        Obtiene oferta pendiente de un cliente.
+        
+        Returns:
+            Dict con datos de la oferta o None
+        """
+        query = """
+            SELECT *
+            FROM slot_offers
+            WHERE offered_to_client_phone = ?
+            AND status = 'pending'
+            AND expires_at > datetime('now')
+            ORDER BY offered_at DESC
+            LIMIT 1
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (client_phone,))
+                row = cursor.fetchone()
+                
+                if row:
+                    columns = [desc[0] for desc in cursor.description]
+                    return dict(zip(columns, row))
+                return None
+        except Exception as e:
+            print(f"[DB] Error getting pending offer: {e}")
+            return None
+
+    def update_slot_offer_status(
+        self,
+        offer_id: int,
+        status: str,
+        response_received_at: str = None
+    ) -> bool:
+        """
+        Actualiza estado de oferta.
+        
+        Args:
+            status: 'accepted', 'rejected', 'expired'
+        """
+        query = """
+            UPDATE slot_offers
+            SET status = ?,
+                response_received_at = COALESCE(?, CURRENT_TIMESTAMP)
+            WHERE id = ?
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (status, response_received_at, offer_id))
+                return True
+        except Exception as e:
+            print(f"[DB] Error updating offer status: {e}")
+            return False
+
+    def find_waitlist_candidates(
+        self,
+        professional_phone: str,
+        freed_date: str,
+        max_days_ahead: int = 30,
+        limit: int = 10
+    ) -> List[Dict]:
+        """
+        Busca candidatos para ofrecer turno adelantado.
+        
+        Criterios:
+        - Mismo profesional
+        - Turnos en días posteriores
+        - Estado confirmada
+        - wants_earlier_slot = 1
+        - Sin oferta pendiente
+        """
+        query = """
+            SELECT 
+                a.id,
+                a.client_phone,
+                a.appointment_date,
+                a.start,
+                a.end,
+                c.name as client_name
+            FROM appointments a
+            LEFT JOIN clients c ON a.client_phone = c.phone
+            WHERE a.professional_phone = ?
+            AND a.appointment_date > ?
+            AND a.appointment_date <= DATE(?, '+' || ? || ' days')
+            AND a.status = 'confirmada'
+            AND (a.wants_earlier_slot IS NULL OR a.wants_earlier_slot = 1)
+            AND a.client_phone NOT IN (
+                SELECT offered_to_client_phone 
+                FROM slot_offers 
+                WHERE status = 'pending'
+                AND expires_at > datetime('now')
+            )
+            ORDER BY a.appointment_date ASC, a.start ASC
+            LIMIT ?
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (
+                    professional_phone,
+                    freed_date,
+                    freed_date,
+                    max_days_ahead,
+                    limit
+                ))
+                
+                columns = [desc[0] for desc in cursor.description]
+                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DB] Error finding candidates: {e}")
+            return []
+
+    def move_appointment_to_earlier_slot(
+        self,
+        appointment_id: int,
+        new_date: str,
+        new_time: str,
+        offer_id: int
+    ) -> bool:
+        """
+        Mueve un turno a un slot más temprano.
+        """
+        query = """
+            UPDATE appointments
+            SET appointment_date = ?,
+                start = ?,
+                moved_from_offer_id = ?
+            WHERE id = ?
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (new_date, new_time, offer_id, appointment_id))
+                return True
+        except Exception as e:
+            print(f"[DB] Error moving appointment: {e}")
+            return False
+
+    def expire_old_slot_offers(self) -> int:
+        """
+        Marca ofertas expiradas.
+        
+        Returns:
+            Cantidad de ofertas expiradas
+        """
+        query = """
+            UPDATE slot_offers
+            SET status = 'expired'
+            WHERE status = 'pending'
+            AND expires_at < datetime('now')
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query)
+                return cursor.rowcount
+        except Exception as e:
+            print(f"[DB] Error expiring offers: {e}")
+            return 0
+        
+    # ==========================================
+    # REMINDER OPERATIONS
+    # ==========================================
+
+    def create_reminder(
+        self,
+        appointment_id: int,
+        reminder_type: str,
+        scheduled_for: str
+    ) -> Optional[int]:
+        """
+        Crear un recordatorio programado.
+        
+        Args:
+            appointment_id: ID de la cita
+            reminder_type: '24h' o '1h'
+            scheduled_for: Timestamp en formato ISO
+        
+        Returns:
+            reminder_id si exitoso, None si falla
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO appointment_reminders (
+                        appointment_id, reminder_type, scheduled_for
+                    )
+                    VALUES (?, ?, ?)
+                """, (appointment_id, reminder_type, scheduled_for))
+                
+                reminder_id = cursor.lastrowid
+                print(f"[DB] ✅ Reminder created: #{reminder_id}")
+                return reminder_id
+        except Exception as e:
+            print(f"[DB] ❌ Error creating reminder: {e}")
+            return None
+
+    def get_pending_reminders(self, before_time: str = None) -> List[Dict]:
+        """
+        Obtener recordatorios pendientes de envío.
+        
+        Args:
+            before_time: Timestamp límite (formato ISO)
+        
+        Returns:
+            Lista de recordatorios pendientes
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                query = """
+                    SELECT r.*, a.client_phone, a.professional_phone
+                    FROM appointment_reminders r
+                    JOIN appointments a ON r.appointment_id = a.id
+                    WHERE r.sent = 0
+                """
+                
+                params = []
+                if before_time:
+                    query += " AND r.scheduled_for <= ?"
+                    params.append(before_time)
+                
+                query += " ORDER BY r.scheduled_for ASC"
+                
+                cursor.execute(query, params)
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"[DB] ❌ Error getting pending reminders: {e}")
+            return []
+
+    def mark_reminder_sent(self, reminder_id: int) -> bool:
+        """
+        Marcar recordatorio como enviado.
+        
+        Args:
+            reminder_id: ID del recordatorio
+        
+        Returns:
+            True si exitoso
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE appointment_reminders
+                    SET sent = 1,
+                        sent_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (reminder_id,))
+                
+                return True
+        except Exception as e:
+            print(f"[DB] ❌ Error marking reminder sent: {e}")
+            return False
+
+    def record_reminder_response(
+        self,
+        reminder_id: int,
+        response: str
+    ) -> bool:
+        """
+        Registrar respuesta del usuario a un recordatorio.
+        
+        Args:
+            reminder_id: ID del recordatorio
+            response: Texto de la respuesta
+        
+        Returns:
+            True si exitoso
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE appointment_reminders
+                    SET response_received = 1,
+                        response = ?,
+                        responded_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (response, reminder_id))
+                
+                return True
+        except Exception as e:
+            print(f"[DB] ❌ Error recording response: {e}")
+            return False
+
+    
 # Global database instance
 db = Database()
