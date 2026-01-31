@@ -139,7 +139,7 @@ class ClientHandler:
             print(f"[CLIENT] Búsqueda asistida: {session.phone_number}")
             
             session.clear_temp()
-            session.store_temp('filters', {})
+            session.set_temp('filters', {})
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             return self.format_multifilter_menu(session)
 
@@ -153,8 +153,8 @@ class ClientHandler:
             tomorrow_str = tomorrow.strftime("%Y-%m-%d")
             tomorrow_formatted = tomorrow.strftime("%d/%m/%Y")
 
-            session.store_temp('search_date', tomorrow_str)
-            session.store_temp('search_date_formatted', tomorrow_formatted)
+            session.set_temp('search_date', tomorrow_str)
+            session.set_temp('search_date_formatted', tomorrow_formatted)
 
             results = client_service.search_professionals_by_filters(
                 date_str=tomorrow_str,
@@ -169,8 +169,8 @@ class ClientHandler:
                 result_count=len(results),
                 session_id=session.phone_number
             )
-            session.store_temp('current_search_id', search_id)
-            session.store_temp('search_results', results)
+            session.set_temp('current_search_id', search_id)
+            session.set_temp('search_results', results)
 
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
@@ -371,10 +371,10 @@ class ClientHandler:
             result_count=len(results),
             session_id=session.phone_number
         )
-        session.store_temp('current_search_id', search_id)
+        session.set_temp('current_search_id', search_id)
 
         # Store results
-        session.store_temp('search_results', results)
+        session.set_temp('search_results', results)
 
         # Format and return
         if len(results) == 0:
@@ -428,8 +428,8 @@ class ClientHandler:
 
     {client_messages.CLIENT_ASK_FECHA}"""
 
-        session.store_temp('fecha', date_obj)
-        session.store_temp('fecha_str', message)
+        session.set_temp('fecha', date_obj)
+        session.set_temp('fecha_str', message)
         session.transition_to(ConversationState.CLIENT_FILTER_HORA)
         return client_messages.CLIENT_ASK_HORA
 
@@ -471,26 +471,28 @@ class ClientHandler:
 
         # Store time info
         if time_range:
-            session.store_temp('time_range', f"{time_start}-{time_end}")
-            session.store_temp('time_start', time_start)
-            session.store_temp('time_end', time_end)
+            session.set_temp('time_range', f"{time_start}-{time_end}")
+            session.set_temp('time_start', time_start)
+            session.set_temp('time_end', time_end)
         else:
-            session.store_temp('hora', time_start)
+            session.set_temp('hora', time_start)
 
         # Search professionals
+        # Determinar time_preference basado en el rango seleccionado
+        time_preference = None
         if time_range:
-            # Search for professionals available in the time range
-            results = client_service.search_professionals_in_time_range(
-                date_str=fecha.strftime("%Y-%m-%d"),
-                time_start=time_start,
-                time_end=time_end
-            )
-        else:
-            # Search for specific time
-            results = client_service.search_professionals_by_filters(
-                date_str=fecha.strftime("%Y-%m-%d"),
-                time_str=time_start
-            )
+            if time_start == "08:00" and time_end == "13:00":
+                time_preference = "mañana"
+            elif time_start == "13:00" and time_end == "20:00":
+                time_preference = "tarde"
+            # Si es cualquier horario (08:00-20:00), no especificamos preference
+        
+        # Buscar profesionales con disponibilidad
+        results = client_service.search_professionals_by_filters(
+            date_str=fecha.strftime("%Y-%m-%d"),
+            time_preference=time_preference if time_range else None,
+            limit=10
+        )
 
         # Log search
         search_params = {
@@ -508,10 +510,10 @@ class ClientHandler:
             result_count=len(results),
             session_id=session.phone_number
         )
-        session.store_temp('current_search_id', search_id)
+        session.set_temp('current_search_id', search_id)
 
         # Store results
-        session.store_temp('search_results', results)
+        session.set_temp('search_results', results)
 
         # Format and return
         # Format results with available slots
@@ -540,11 +542,11 @@ class ClientHandler:
             return client_messages.CLIENT_MAIN_MENU
 
         if message == '1':
-            session.store_temp('prepaga', True)
+            session.set_temp('prepaga', True)
         elif message == '2':
-            session.store_temp('prepaga', False)
+            session.set_temp('prepaga', False)
         elif message == '3':
-            session.store_temp('prepaga', None)
+            session.set_temp('prepaga', None)
         else:
             return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_PREPAGA
 
@@ -563,11 +565,11 @@ class ClientHandler:
             return client_messages.CLIENT_MAIN_MENU
 
         if message == '1':
-            session.store_temp('sexo', 'm')
+            session.set_temp('sexo', 'm')
         elif message == '2':
-            session.store_temp('sexo', 'f')
+            session.set_temp('sexo', 'f')
         elif message == '3':
-            session.store_temp('sexo', None)
+            session.set_temp('sexo', None)
         else:
             return common_messages.INVALID_OPTION + "\n\n" + client_messages.CLIENT_ASK_SEXO
 
@@ -657,9 +659,9 @@ class ClientHandler:
             
             # ⭐ NUEVO: Guardar date_str y time_preference en sesión
             if 'date_str' in db_params:
-                session.store_temp('search_date', db_params['date_str'])
+                session.set_temp('search_date', db_params['date_str'])
             if 'time_preference' in db_params:
-                session.store_temp('time_preference', db_params['time_preference'])
+                session.set_temp('time_preference', db_params['time_preference'])
             
             # Buscar profesionales
             results = client_service.search_professionals_by_filters(
@@ -680,10 +682,10 @@ class ClientHandler:
                 result_count=len(results),
                 session_id=session.phone_number
             )
-            session.store_temp('current_search_id', search_id)
+            session.set_temp('current_search_id', search_id)
             
             # Guardar resultados
-            session.store_temp('search_results', results)
+            session.set_temp('search_results', results)
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
             
             # Formatear y retornar
@@ -726,7 +728,7 @@ class ClientHandler:
                     return "⚠️ Opción inválida\n\n" + self.format_multifilter_menu(session)
                 
                 # Guardar filtro actual en temp
-                session.store_temp('current_filter_type', filter_obj.filter_type.value)
+                session.set_temp('current_filter_type', filter_obj.filter_type.value)
                 
                 # Transicionar a estado de input de filtro
                 session.transition_to(ConversationState.CLIENT_FILTER_INPUT)
@@ -848,8 +850,8 @@ class ClientHandler:
         print(f"📊 Filter count AFTER: {len(filters)}")
         
         # Guardar en sesión
-        print(f"💾 Calling session.store_temp('filters', ...)")
-        session.store_temp('filters', filters)
+        print(f"💾 Calling session.set_temp('filters', ...)")
+        session.set_temp('filters', filters)
         
         # Verificar que se guardó
         print(f"✅ Verifying storage...")
@@ -1076,7 +1078,7 @@ class ClientHandler:
             return f"{error_msg}\n\n{client_messages.CLIENT_SEARCH_QUICK_FORMAT}"
 
         # Store filters
-        session.store_temp('filters', filters)
+        session.set_temp('filters', filters)
 
         # Map parsed filters to service parameters
         search_params = {}
@@ -1116,10 +1118,10 @@ class ClientHandler:
             result_count=len(results),
             session_id=session.phone_number
         )
-        session.store_temp('current_search_id', search_id)
+        session.set_temp('current_search_id', search_id)
 
         # Store results
-        session.store_temp('search_results', results)
+        session.set_temp('search_results', results)
 
         # Format filters for display
         filter_lines = []
@@ -1219,8 +1221,8 @@ class ClientHandler:
                     result_count=len(all_results),
                     session_id=session.phone_number
                 )
-                session.store_temp('current_search_id', search_id)
-                session.store_temp('search_results', all_results)
+                session.set_temp('current_search_id', search_id)
+                session.set_temp('search_results', all_results)
                 
                 # Format with slots if date exists
                 if len(all_results) == 0:
@@ -1252,7 +1254,7 @@ class ClientHandler:
         professional = results[selection - 1]
 
         # Store selected professional
-        session.store_temp('selected_professional', professional)
+        session.set_temp('selected_professional', professional)
 
         # Log contact
         search_id = session.get_temp('current_search_id')
@@ -1328,7 +1330,7 @@ class ClientHandler:
             selected_slot = available_slots[slot_selection - 1]
             
             # Guardar slot seleccionado
-            session.store_temp('selected_slot', selected_slot)
+            session.set_temp('selected_slot', selected_slot)
             
             # Transición a confirmación de datos
             session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRM_NAME)
@@ -1502,7 +1504,7 @@ class ClientHandler:
         # ==========================================
         # 5. GUARDAR LISTA EN TEMP_DATA
         # ==========================================
-        session.store_temp('appointment_list', active_appointments)
+        session.set_temp('appointment_list', active_appointments)
 
         # ==========================================
         # 6. SI SELECCIONÓ UN NÚMERO, IR A DETALLE
@@ -1513,7 +1515,7 @@ class ClientHandler:
             # Validar que el índice esté en rango
             if 0 <= idx < len(active_appointments):
                 # Guardar índice seleccionado
-                session.store_temp('selected_appointment_index', idx)
+                session.set_temp('selected_appointment_index', idx)
                 
                 # Transicionar a detalle
                 session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
@@ -1647,13 +1649,13 @@ class ClientHandler:
         selected_apt = active_appointments[idx]
         
         # Guardar datos de la cita en temp_data para siguientes pasos
-        session.store_temp('appointment_id', selected_apt['id'])
-        session.store_temp('selected_appointment_number', idx + 1)  # 1-indexed para mostrar
-        session.store_temp('professional_phone', selected_apt['professional_phone'])
-        session.store_temp('professional_name', selected_apt.get('professional_name', 'Profesional'))
-        session.store_temp('original_date', selected_apt['appointment_date'])
-        session.store_temp('original_start', selected_apt['start'])
-        session.store_temp('original_end', selected_apt['end'])
+        session.set_temp('appointment_id', selected_apt['id'])
+        session.set_temp('selected_appointment_number', idx + 1)  # 1-indexed para mostrar
+        session.set_temp('professional_phone', selected_apt['professional_phone'])
+        session.set_temp('professional_name', selected_apt.get('professional_name', 'Profesional'))
+        session.set_temp('original_date', selected_apt['appointment_date'])
+        session.set_temp('original_start', selected_apt['start'])
+        session.set_temp('original_end', selected_apt['end'])
         
         # Mantener en estado de detalle
         session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
@@ -1675,7 +1677,7 @@ class ClientHandler:
         # Si mostramos un error (no se puede cancelar) y el usuario presiona 0
         if message == '0':
             # Limpiar cualquier flag de error
-            session.store_temp('cancel_error_shown', False)
+            session.set_temp('cancel_error_shown', False)
             
             # Volver a la lista de citas
             session.clear_temp()
@@ -1707,7 +1709,7 @@ class ClientHandler:
 
         if not apt:
             # Error al cargar - pero permitir volver con 0
-            session.store_temp('cancel_error_shown', True)
+            session.set_temp('cancel_error_shown', True)
             return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
 
         # ==========================================
@@ -1716,12 +1718,12 @@ class ClientHandler:
         
         # Validar que no esté ya cancelada
         if apt['status'] in ['cancelada_cliente', 'cancelada_profesional']:
-            session.store_temp('cancel_error_shown', True)
+            session.set_temp('cancel_error_shown', True)
             return appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED + "\n\n_Escribe *0* para volver_"
 
         # Validar que no esté completada
         if apt['status'] == 'completada':
-            session.store_temp('cancel_error_shown', True)
+            session.set_temp('cancel_error_shown', True)
             return "❌ No puedes cancelar una cita que ya finalizó.\n\n_Escribe *0* para volver_"
 
         # ==========================================
@@ -1742,7 +1744,7 @@ class ClientHandler:
         if hours_until < CANCELLATION_HOURS_LIMIT:
             # Muy tarde para cancelar
             # ✅ Guardar flag para permitir volver
-            session.store_temp('cancel_error_shown', True)
+            session.set_temp('cancel_error_shown', True)
             
             return appointment_messages.CLIENT_CANCEL_TOO_LATE.format(
                 hours_until=int(hours_until),
@@ -1756,7 +1758,7 @@ class ClientHandler:
         # Si es primera vez (viene desde detalle), mostrar confirmación
         if message == '1':
             # Limpiar flag de error (si existía)
-            session.store_temp('cancel_error_shown', False)
+            session.set_temp('cancel_error_shown', False)
             
             # Formatear fecha
             date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
@@ -1960,8 +1962,8 @@ class ClientHandler:
         now = datetime.now()
         hours_until = (apt_datetime - now).total_seconds() / 3600
 
-        # Validar tiempo mínimo (24 horas por defecto)
-        RESCHEDULE_HOURS_LIMIT = 24
+        # Validar tiempo mínimo (22 horas por defecto)
+        RESCHEDULE_HOURS_LIMIT = 22
 
         # TESTING: Skip time validation if env var is set
         if os.getenv('TESTING_SKIP_TIME_VALIDATION', '').lower() == 'true':
@@ -1978,13 +1980,13 @@ class ClientHandler:
             )
 
         # Guardar datos originales de la cita
-        session.store_temp('original_date', apt['appointment_date'])
-        session.store_temp('original_start_time', apt['start'])
-        session.store_temp('original_end_time', apt['end'])
-        session.store_temp('professional_phone', apt['professional_phone'])
-        session.store_temp('professional_name', apt['professional_name'])
-        session.store_temp('duration', apt['duration_minutes'])
-        session.store_temp('modality', apt['modality'])
+        session.set_temp('original_date', apt['appointment_date'])
+        session.set_temp('original_start_time', apt['start'])
+        session.set_temp('original_end_time', apt['end'])
+        session.set_temp('professional_phone', apt['professional_phone'])
+        session.set_temp('professional_name', apt['professional_name'])
+        session.set_temp('duration', apt['duration_minutes'])
+        session.set_temp('modality', apt['modality'])
 
         # ✅ CAMBIO: Transicionar directamente a selección de fecha
         session.transition_to(ConversationState.CLIENT_RESCHEDULE_SELECT_DATE)
@@ -2056,8 +2058,8 @@ class ClientHandler:
             formatted_dates = "\n".join(dates_list)
 
             # ✅ CAMBIO: Guardar fechas Y marcar que ya se mostraron
-            session.store_temp('available_dates', dates)
-            session.store_temp('reschedule_dates_shown', True)
+            session.set_temp('available_dates', dates)
+            session.set_temp('reschedule_dates_shown', True)
 
             # Formatear fecha original
             original_time = session.get_temp('original_start_time')
@@ -2081,11 +2083,11 @@ class ClientHandler:
             selected_date = available_dates[selection - 1]
 
             # Guardar fecha seleccionada
-            session.store_temp('new_date', selected_date['date_db'])
-            session.store_temp('new_date_str', selected_date['date_str'])
+            session.set_temp('new_date', selected_date['date_db'])
+            session.set_temp('new_date_str', selected_date['date_str'])
 
             # ✅ IMPORTANTE: Limpiar el flag de fechas mostradas
-            session.store_temp('reschedule_dates_shown', False)
+            session.set_temp('reschedule_dates_shown', False)
 
             # Transicionar a selección de horario
             session.transition_to(
@@ -2143,7 +2145,7 @@ class ClientHandler:
             formatted_slots = "\n".join(slots_list)
 
             # Guardar slots en temp
-            session.store_temp('available_slots', slots)
+            session.set_temp('available_slots', slots)
 
             return appointment_messages.CLIENT_RESCHEDULE_SELECT_TIME.format(
                 new_date=new_date_str,
@@ -2161,8 +2163,8 @@ class ClientHandler:
             selected_slot = available_slots[selection - 1]
 
             # Guardar horario seleccionado
-            session.store_temp('new_start_time', selected_slot['start'])
-            session.store_temp('new_end_time', selected_slot['end'])
+            session.set_temp('new_start_time', selected_slot['start'])
+            session.set_temp('new_end_time', selected_slot['end'])
 
             # Transicionar a confirmación
             session.transition_to(ConversationState.CLIENT_RESCHEDULE_CONFIRM)
@@ -2388,10 +2390,10 @@ O escribe '0' para volver al menú."""
         selected_slot = slots[selection - 1]
         
         # Store booking info
-        session.store_temp('selected_slot', selected_slot)
-        session.store_temp('booking_date', search_date)
-        session.store_temp('booking_start_time', selected_slot['start'])
-        session.store_temp('booking_end_time', selected_slot['end'])
+        session.set_temp('selected_slot', selected_slot)
+        session.set_temp('booking_date', search_date)
+        session.set_temp('booking_start_time', selected_slot['start'])
+        session.set_temp('booking_end_time', selected_slot['end'])
         
         # Transition to confirmation
         session.transition_to(ConversationState.CLIENT_CONFIRM_BOOKING)
@@ -2417,9 +2419,7 @@ O escribe '0' para volver al menú."""
 ¿Confirmas esta cita?
 
 1️⃣ Sí, confirmar turno
-0️⃣ No, volver atrás
-
-⚠️ El profesional recibirá tu solicitud y deberá confirmarla."""
+0️⃣ No, volver atrás"""
 
     def handle_client_confirm_booking(self, session: SessionData, message: str) -> str:
         """
@@ -2500,7 +2500,7 @@ O escribe '0' para volver al menú."""
 
     {client_messages.CLIENT_MAIN_MENU}"""
         
-        session.store_temp('appointment_id', appointment_id)
+        session.set_temp('appointment_id', appointment_id)
         session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRMED)
         
         # Format success message
@@ -2523,7 +2523,6 @@ O escribe '0' para volver al menú."""
     📅 Fecha: {day_name} {date_formatted}
     ⏰ Horario: {booking_start_time} - {booking_end_time}
     📱 Contacto: {prof_phone}
-    🆔 Código de cita: {appointment_id[:8]}...
 
     📌 Estado: Confirmada
 
@@ -2577,7 +2576,7 @@ O escribe '0' para volver al menú."""
         
         # Guardar nombre
         client_name = message.strip()
-        session.store_temp('client_name', client_name)
+        session.set_temp('client_name', client_name)
         
         # Transicionar a solicitud de email
         session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRM_EMAIL)
@@ -2610,7 +2609,7 @@ O escribe '0' para volver al menú."""
         
         # Guardar email
         client_email = message.strip().lower()
-        session.store_temp('client_email', client_email)
+        session.set_temp('client_email', client_email)
         
         # Transicionar a confirmación final
         session.transition_to(ConversationState.CLIENT_BOOKING_FINAL_CONFIRMATION)
