@@ -1,8 +1,16 @@
 """
-Conversation States
-===================
-Defines all possible states in the conversation flow.
-Uses a state machine pattern to manage user interactions.
+Conversation States v3.0
+=========================
+Define todos los estados posibles en el flujo conversacional.
+Usa un patrón de máquina de estados para gestionar interacciones del usuario.
+
+CAMBIOS EN v3.0:
+- ❌ Eliminado: ROLE_SELECTION (ya no preguntamos rol)
+- ❌ Eliminado: PROF_NEED_CERTIFICATE (sin registro desde bot)
+- ❌ Eliminado: PROF_NEED_ACCESS_KEY (sin claves de acceso)
+- ❌ Eliminado: PROF_FREE_SLOT_* (agenda en Google Calendar)
+- ❌ Eliminado: PROF_WEEK_SCHEDULE_* (agenda en Google Calendar)
+- ✅ Simplificado: Solo estados esenciales de cliente y menú profesional
 """
 
 from enum import Enum
@@ -10,8 +18,8 @@ from enum import Enum
 
 class UserRole(Enum):
     """
-    User role in the system.
-    Determines which menu and options are available.
+    Rol del usuario en el sistema.
+    Determina qué menú y opciones están disponibles.
     """
     UNKNOWN = "unknown"
     PROFESSIONAL = "professional"
@@ -20,297 +28,240 @@ class UserRole(Enum):
 
 class ConversationState(Enum):
     """
-    All possible states in the conversation flow.
-    State machine transitions based on user input.
+    Todos los estados posibles en el flujo conversacional.
+    Transiciones de máquina de estados basadas en input del usuario.
+    
+    v3.0: Flujo simplificado enfocado en clientes.
     """
 
     # ==========================================
-    # INITIAL STATES
+    # ESTADOS INICIALES
     # ==========================================
-    START = "start"  # Initial state, ask for role
-    ROLE_SELECTION = "role_selection"  # Waiting for role choice
+    START = "start"  # Estado inicial
+    
+    # ❌ DEPRECATED en v3.0 - Ya no preguntamos "¿Eres cliente o profesional?"
+    # ROLE_SELECTION = "role_selection"
 
     # ==========================================
-    # PROFESSIONAL STATES
+    # ESTADOS DE PROFESIONAL (Solo para registrados manualmente)
     # ==========================================
+    
+    # ❌ DEPRECATED en v3.0 - No hay registro desde el bot
+    # PROF_NEED_CERTIFICATE = "prof_need_certificate"
+    # PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"
+    # PROF_NEED_ACCESS_KEY = "prof_need_access_key"
+    # PROF_VERIFY_KEY = "prof_verify_key"
 
-    # Certificate upload (Deprecated in favor of access key)
-    PROF_NEED_CERTIFICATE = "prof_need_certificate"  # Must upload certificate
-    PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"  # Waiting for file
-    # Verificación por clave
-    PROF_NEED_ACCESS_KEY = "prof_need_access_key"  # Pedir clave de acceso
-    PROF_VERIFY_KEY = "prof_verify_key"  # Verificar clave ingresada
+    # Menú principal (solo lectura para profesionales registrados)
+    PROF_MAIN_MENU = "prof_main_menu"
+    
+    # ❌ DEPRECATED en v3.0 - Horarios se gestionan en Google Calendar
+    # PROF_FREE_SLOT_DATE = "prof_free_slot_date"
+    # PROF_FREE_SLOT_TIME = "prof_free_slot_time"
+    # PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"
+    # PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
+    # PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"
+    # PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"
+    # PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"
+    # PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"
+    # PROF_DELETE_FREE_SLOT = "prof_delete_free_slot"
 
-    # Main menu
-    PROF_MAIN_MENU = "prof_main_menu"  # Show professional menu
+    # Ver citas agendadas (lectura desde Google Calendar)
+    PROF_VIEW_APPOINTMENTS = "prof_view_appointments"
 
-    # Option 1: Liberar horario específico (mark slot as FREE)
-    PROF_FREE_SLOT_DATE = "prof_free_slot_date"  # Ask for date
-    PROF_FREE_SLOT_TIME = "prof_free_slot_time"  # Ask for time range
-    PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"  # Confirm before saving
-
-    # Option 3: Cargar semana completa (weekly recurring schedule)
-    PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
-    PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"  
-    PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"
-    PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"
-
-    # Option 5: Cargar información profesional
-    PROF_INFO_MENU = "prof_info_menu"  # Main info menu
-    PROF_INFO_NAME = "prof_info_name"  # Ask for name
-    PROF_INFO_EMAIL = "prof_info_email"  # Ask for email
-    PROF_INFO_ZONA = "prof_info_zona"  # Ask for zone
-    PROF_INFO_GENERO = "prof_info_genero"  # Ask for gender
-    PROF_INFO_PREPAGA = "prof_info_prepaga"  # Ask for prepaga
-    PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"  # Ask for specialty
+    # Edición de información profesional (opcional)
+    PROF_INFO_MENU = "prof_info_menu"
+    PROF_INFO_NAME = "prof_info_name"
+    PROF_INFO_EMAIL = "prof_info_email"
+    PROF_INFO_ZONA = "prof_info_zona"
+    PROF_INFO_GENERO = "prof_info_genero"
+    PROF_INFO_PREPAGA = "prof_info_prepaga"
+    PROF_INFO_ESPECIALIDAD = "prof_info_especialidad"
     PROF_INFO_QUICK = "prof_info_quick"
     PROF_INFO_BIO = "prof_info_bio"
     PROF_INFO_FEE_RANGE = "prof_info_fee_range"
 
-    # Professional - Manage free slots
-    PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"
-    PROF_DELETE_FREE_SLOT = "prof_delete_free_slot"
-
     # ==========================================
-    # CLIENT STATES - SEARCH & FILTERS
+    # ESTADOS DE CLIENTE - BÚSQUEDA Y FILTROS
     # ==========================================
 
-    # Main menu
-    CLIENT_MAIN_MENU = "client_main_menu"  # Show search options
-    CLIENT_NEW_USER_MENU = "client_new_user_menu"  # Show intro for new users
-    CLIENT_SELECT_MODALITY = "client_select_modality"  # Virtual or Presencial
-
-    # Filter selection
-    CLIENT_SELECT_FILTERS = "client_select_filters"  # Which filters to apply?
-
-    # Multi-filter menu
-    CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"  # Main filter selection menu
-    CLIENT_FILTER_INPUT = "client_filter_input"  # ⭐ NUEVO - Handler genérico para input de cualquier filtro
+    # Menú principal
+    CLIENT_MAIN_MENU = "client_main_menu"
+    CLIENT_NEW_USER_MENU = "client_new_user_menu"
     
-    # ⚠️ DEPRECATED - Reemplazados por CLIENT_FILTER_INPUT (sistema modular)
-    # Estos estados se mantienen comentados por compatibilidad temporal
-    # CLIENT_MULTIFILTER_ZONA = "client_multifilter_zona"
-    # CLIENT_MULTIFILTER_FECHA = "client_multifilter_fecha"
-    # CLIENT_MULTIFILTER_HORA = "client_multifilter_hora"
-    # CLIENT_MULTIFILTER_PREPAGA = "client_multifilter_prepaga"
-    # CLIENT_MULTIFILTER_SEXO = "client_multifilter_sexo"
-    # CLIENT_MULTIFILTER_ESPECIALIDAD = "client_multifilter_especialidad"
-
-    # Quick search (all filters at once)
+    # Búsqueda con múltiples filtros (sistema modular)
+    CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"
+    CLIENT_FILTER_INPUT = "client_filter_input"
     CLIENT_SEARCH_QUICK = "client_search_quick"
+    
+    # Mostrar resultados
+    CLIENT_SHOW_RESULTS = "client_show_results"
+    CLIENT_VIEW_DETAIL = "client_view_detail"
 
-    # Individual filters
-    CLIENT_FILTER_ZONA = "client_filter_zona"  # Ask for zone (Sur/Norte)
-    CLIENT_FILTER_FECHA = "client_filter_fecha"  # Ask for date
-    CLIENT_FILTER_HORA = "client_filter_hora"  # Ask for time
-    CLIENT_FILTER_PREPAGA = "client_filter_prepaga"  # Ask yes/no
-    CLIENT_FILTER_SEXO = "client_filter_sexo"  # Ask M/F/Otro
+    # ==========================================
+    # ESTADOS DE CLIENTE - RESERVA DE CITAS
+    # ==========================================
 
-    # Results
-    CLIENT_SHOW_RESULTS = "client_show_results"  # Display search results
-    CLIENT_VIEW_DETAIL = "client_view_detail"  # Show professional detail
-    CLIENT_SEARCH_TYPE = "client_search_type" # Choose search type again
-
-    # CLIENT - Booking Flow  ← AGREGAR ESTOS 3
     CLIENT_VIEW_DETAIL_WITH_BOOKING = "client_view_detail_with_booking"
     CLIENT_CONFIRM_BOOKING = "client_confirm_booking"
     CLIENT_BOOKING_CONFIRMED = "client_booking_confirmed"
 
     # ==========================================
-    # CLIENT - APPOINTMENT BOOKING STATES
+    # ESTADOS DE CLIENTE - GESTIÓN DE CITAS
     # ==========================================
-    CLIENT_BOOKING_START = "client_booking_start"
-    CLIENT_BOOKING_FOR_WHOM = "client_booking_for_whom"
-    CLIENT_BOOKING_PATIENT_NAME = "client_booking_patient_name"
-    CLIENT_BOOKING_PATIENT_PHONE = "client_booking_patient_phone"
-    CLIENT_BOOKING_SELECT_MODALITY = "client_booking_select_modality"
-    CLIENT_BOOKING_SELECT_DATE = "client_booking_select_date"
-    CLIENT_BOOKING_SELECT_TIME = "client_booking_select_time"
-    CLIENT_BOOKING_COLLECT_DATA = "client_booking_collect_data"
-    CLIENT_BOOKING_COLLECT_NAME = "client_booking_collect_name"
-    CLIENT_BOOKING_COLLECT_EMAIL = "client_booking_collect_email"
-    CLIENT_BOOKING_COLLECT_AGE = "client_booking_collect_age"
-    CLIENT_BOOKING_COLLECT_GENDER = "client_booking_collect_gender"
-    CLIENT_BOOKING_REASON = "client_booking_reason"
-    CLIENT_BOOKING_CONFIRM = "client_booking_confirm"
-    CLIENT_BOOKING_SUCCESS = "client_booking_success"
 
-    CLIENT_BOOKING_CONFIRM_NAME = "client_booking_confirm_name"
-    CLIENT_BOOKING_CONFIRM_EMAIL = "client_booking_confirm_email"
-    CLIENT_BOOKING_FINAL_CONFIRMATION = "client_booking_final_confirmation"
-
-
-    # ==========================================
-    # CLIENT - MY APPOINTMENTS STATES
-    # ==========================================
+    # Ver y gestionar citas
     CLIENT_VIEW_APPOINTMENTS = "client_view_appointments"
     CLIENT_APPOINTMENT_DETAIL = "client_appointment_detail"
+    
+    # Cancelación de citas
     CLIENT_CANCEL_APPOINTMENT = "client_cancel_appointment"
     CLIENT_CANCEL_REASON = "client_cancel_reason"
     CLIENT_CANCEL_SUCCESS = "client_cancel_success"
+
+    # Reprogramación de citas
     CLIENT_RESCHEDULE_APPOINTMENT = "client_reschedule_appointment"
     CLIENT_RESCHEDULE_SELECT_DATE = "client_reschedule_select_date"
     CLIENT_RESCHEDULE_SELECT_TIME = "client_reschedule_select_time"
     CLIENT_RESCHEDULE_CONFIRM = "client_reschedule_confirm"
 
-    # ==========================================
-    # PROFESSIONAL - APPOINTMENT MANAGEMENT
-    # ==========================================
-    PROF_VIEW_APPOINTMENTS = "prof_view_appointments"
-    PROF_APPOINTMENT_DETAIL = "prof_appointment_detail"
-    PROF_CONFIRM_APPOINTMENT = "prof_confirm_appointment"
-    PROF_REJECT_APPOINTMENT = "prof_reject_appointment"  # ✅ NUEVO
-    PROF_CANCEL_APPOINTMENT = "prof_cancel_appointment"
-    PROF_CANCEL_REASON = "prof_cancel_reason"
-    PROF_MARK_COMPLETED = "prof_mark_completed"
-    PROF_MARK_NO_SHOW = "prof_mark_no_show"  # ✅ NUEVO
-
-    # Reminder response handling
     AWAITING_REMINDER_RESPONSE = "awaiting_reminder_response"
 
-    # ==========================================
-    # COMMON STATES
-    # ==========================================
-    ERROR = "error"
-    CANCELLED = "cancelled"
 
+# ==========================================
+# SESSION DATA CLASS
+# ==========================================
 
 class SessionData:
     """
-    Data structure to store temporary session data.
-    Each user has their own session.
+    Datos de sesión del usuario.
+    
+    Maneja estado de conversación, rol, y datos temporales.
+    Se persiste en memoria durante la conversación.
     """
 
     def __init__(self, phone_number: str):
         """
-        Initialize session for a user.
-
+        Inicializar sesión del usuario.
+        
         Args:
-            phone_number: User's WhatsApp phone number
+            phone_number: Número de teléfono del usuario (ID único)
         """
         self.phone_number = phone_number
+        self.current_state = ConversationState.START
         self.role = UserRole.UNKNOWN
-        self.state = ConversationState.START
-        self.temp_data = {}  # Temporary data for multi-step operations
-
-    def reset(self):
-        """Reset session to initial state."""
-        self.state = ConversationState.START
         self.temp_data = {}
+        self.conversation_history = []
 
-    def set_role(self, role: UserRole):
-        """Set user role and transition to appropriate menu."""
-        self.role = role
-        if role == UserRole.PROFESSIONAL:
-            # Check if certificate exists (will be implemented in bot.py)
-            # self.state = ConversationState.PROF_NEED_CERTIFICATE
-            self.state = ConversationState.PROF_NEED_ACCESS_KEY
-        elif role == UserRole.CLIENT:
-            self.state = ConversationState.CLIENT_MAIN_MENU
-        # elif role == UserRole.CLIENT:
-        #     self.state = ConversationState.CLIENT_MAIN_MENU
+    @property
+    def state(self):
+        """Alias para current_state."""
+        return self.current_state
 
     def transition_to(self, new_state: ConversationState):
         """
-        Transition to a new state.
-
+        Transicionar a un nuevo estado.
+        
         Args:
-            new_state: Target state
+            new_state: Nuevo estado de conversación
         """
-        print(
-            f"[STATE] {self.phone_number}: {self.state.value} → {new_state.value}")
-        self.state = new_state
+        print(f"[SESSION] {self.phone_number}: {self.current_state.value} -> {new_state.value}")
+        self.current_state = new_state
 
-    def store_temp(self, key: str, value):
+    def set_role(self, role: UserRole):
         """
-        Store temporary data for current operation.
-
+        Establecer rol del usuario.
+        
         Args:
-            key: Data key
-            value: Data value
+            role: Rol del usuario (PROFESSIONAL o CLIENT)
+        """
+        print(f"[SESSION] {self.phone_number}: Rol establecido como {role.value}")
+        self.role = role
+
+    def set_temp(self, key: str, value):
+        """
+        Guardar dato temporal en la sesión.
+        
+        Args:
+            key: Clave del dato
+            value: Valor del dato
         """
         self.temp_data[key] = value
 
     def get_temp(self, key: str, default=None):
         """
-        Retrieve temporary data.
-
+        Obtener dato temporal de la sesión.
+        
         Args:
-            key: Data key
-            default: Default value if key not found
-
+            key: Clave del dato
+            default: Valor por defecto si no existe
+            
         Returns:
-            Stored value or default
+            Valor del dato o default
         """
         return self.temp_data.get(key, default)
 
     def clear_temp(self):
-        """Clear all temporary data."""
+        """Limpiar todos los datos temporales."""
         self.temp_data = {}
-    
-    def remove_temp(self, key: str):
-        """
-        Remove a specific temporary data key.
-        
-        Args:
-            key: Data key to remove
-        """
-        if key in self.temp_data:
-            del self.temp_data[key]
-    
-    def get_temp_all(self) -> dict:
-        """
-        Get all temporary data.
-        
-        Returns:
-            Complete temporary data dictionary
-        """
-        return self.temp_data.copy()
 
+    def reset(self):
+        """
+        Resetear sesión completamente.
+        
+        Limpia estado, rol y datos temporales.
+        Útil para comando "hola" o reinicio.
+        """
+        print(f"[SESSION] {self.phone_number}: Reset completo")
+        self.current_state = ConversationState.START
+        self.role = UserRole.UNKNOWN
+        self.temp_data = {}
+
+
+# ==========================================
+# SESSION MANAGER
+# ==========================================
 
 class SessionManager:
     """
-    Manages all user sessions.
-    In-memory storage for MVP (can be replaced with Redis later).
+    Gestor global de sesiones de usuario.
+    
+    Mantiene un diccionario en memoria con las sesiones activas.
+    En producción, esto debería usar Redis o similar para persistencia.
     """
 
     def __init__(self):
-        """Initialize session manager."""
-        self.sessions = {}  # phone_number -> SessionData
+        """Inicializar gestor de sesiones."""
+        self.sessions = {}
 
     def get_session(self, phone_number: str) -> SessionData:
         """
-        Get or create session for a user.
-
+        Obtener o crear sesión para un usuario.
+        
         Args:
-            phone_number: User's WhatsApp phone number
-
+            phone_number: Número de teléfono del usuario
+            
         Returns:
-            SessionData for the user
+            SessionData del usuario
         """
         if phone_number not in self.sessions:
+            print(f"[SESSION] Nueva sesión creada para: {phone_number}")
             self.sessions[phone_number] = SessionData(phone_number)
         return self.sessions[phone_number]
 
-    def delete_session(self, phone_number: str):
+    def clear_session(self, phone_number: str):
         """
-        Delete a user's session.
-
+        Limpiar sesión de un usuario.
+        
         Args:
-            phone_number: User's WhatsApp phone number
+            phone_number: Número de teléfono del usuario
         """
         if phone_number in self.sessions:
             del self.sessions[phone_number]
-
-    def get_active_sessions_count(self) -> int:
-        """
-        Get count of active sessions.
-
-        Returns:
-            Number of active sessions
-        """
-        return len(self.sessions)
+            print(f"[SESSION] Sesión eliminada: {phone_number}")
 
 
-# Global session manager instance
+# ==========================================
+# INSTANCIA GLOBAL
+# ==========================================
 session_manager = SessionManager()
