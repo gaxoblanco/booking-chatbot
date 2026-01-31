@@ -46,6 +46,12 @@ npm install -g localtunnel
 lt --port 5000
 ```
 
+**Test interactivo**: [https://localtunnel.me/](https://localtunnel.me/)
+```bash
+python tests/test_bot_interactive.py --url http://localhost:5001/webhook
+docker exec whatsapp-demo python -m src.services.reminder_service
+```
+
 **Opción B: CloudFlare (más estable)**
 ```powershell
 # Descargar cloudflared.exe y ejecutar:
