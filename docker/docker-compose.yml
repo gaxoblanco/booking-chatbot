@@ -40,6 +40,9 @@ services:
       # Environment mode (development/production)
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - FLASK_ENV=${FLASK_ENV:-development}
+      # WhatsApp Templates
+      - TWILIO_REMINDER_TEMPLATE_SID=${TWILIO_REMINDER_TEMPLATE_SID:-}
+      - TWILIO_SLOT_OFFER_TEMPLATE_SID=${TWILIO_SLOT_OFFER_TEMPLATE_SID:-}
 
     # Volume mounts (desde raíz del proyecto)
     volumes:
