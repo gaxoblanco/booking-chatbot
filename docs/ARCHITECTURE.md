@@ -79,6 +79,9 @@ booking-chatbot/
 │   │   ├── client_handler.py            # Handler de flujo de clientes (~2280 líneas)
 │   │   ├── professional_handler.py      # Handler de flujo de profesionales (~800 líneas)
 │   │   └── admin_handler.py             # Handler de administración (~200 líneas)
+│   ├── 📁 cron/                         # ⭐ NUEVO: Tareas programadas
+│   │   ├── __init__.py
+│   │   └── daily_reminder_job.py        # Job diario de recordatorios (17:30)
 │   │
 │   ├── 📁 services/                     # Servicios de lógica de negocio
 │   │   ├── __init__.py
@@ -709,6 +712,105 @@ timezone TEXT,                 -- Zona horaria (America/Argentina/Buenos_Aires)
 google_event_id TEXT,          -- ID del evento en Google Calendar ⭐
 status TEXT,                   -- confirmed|cancelled|rescheduled
 ```
+---
+
+## 🔔 SISTEMA DE RECORDATORIOS AUTOMÁTICOS
+
+### **Descripción**
+
+Sistema automatizado que envía recordatorios de citas 24 horas antes por WhatsApp, permite confirmar/reprogramar, y registra todas las interacciones.
+
+### **Arquitectura**
+```
+CRON (17:30) → ReminderService → Twilio WhatsApp
+                      ↓
+                  Database
+                      ↓
+            Cliente recibe mensaje
+                      ↓
+            Bot procesa respuesta
+```
+
+### **Componentes**
+
+**1. `src/services/reminder_service.py`**
+- `send_daily_reminders()` - Ejecutada por CRON
+- `handle_reminder_response()` - Procesa respuestas (1/2/0)
+- `_send_reminder()` - Envía WhatsApp
+- `_format_reminder_message()` - Formatea mensaje
+
+**2. `src/cron/daily_reminder_job.py`**
+- Script ejecutado diariamente a las 17:30
+- Configuración CRON:
+```bash
+  30 17 * * * docker exec whatsapp-demo python -m src.cron.daily_reminder_job
+```
+
+**3. `src/bot/reminder_handler.py`**
+- `should_handle_as_reminder()` - Detecta respuesta a recordatorio
+- `handle_reminder_response()` - Procesa y enruta
+- Integrado en `bot_controller.py` con prioridad máxima
+
+### **Base de Datos**
+
+**Nueva tabla:**
+```sql
+CREATE TABLE appointment_reminders (
+    id INTEGER PRIMARY KEY,
+    appointment_id INTEGER NOT NULL,
+    sent_at TIMESTAMP,
+    status TEXT,  -- sent | confirmed | rescheduled | cancelled
+    confirmed_at TIMESTAMP,
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+);
+```
+
+**Columnas agregadas a `appointments`:**
+```sql
+reminder_sent BOOLEAN DEFAULT 0
+confirmed_by_client BOOLEAN DEFAULT 0
+confirmed_by_client_at TIMESTAMP
+```
+
+### **Flujo de Uso**
+
+1. **17:30** - CRON ejecuta, busca citas para mañana
+2. **Cliente recibe:** "🔔 RECORDATORIO... 1️⃣ Confirmar 2️⃣ Reprogramar 0️⃣ Cancelar"
+3. **Cliente responde "1"** - Sistema marca `confirmed_by_client=1`
+4. **Cliente recibe:** "✅ ¡Perfecto! Tu turno está confirmado."
+
+### **Testing**
+```bash
+# Ejecutar manualmente
+docker exec whatsapp-demo python -m src.services.reminder_service
+
+# Ver logs
+tail -f /var/log/reminders.log
+
+# Métricas
+docker exec whatsapp-demo sqlite3 /app/data/booking.db \
+  "SELECT status, COUNT(*) FROM appointment_reminders GROUP BY status;"
+```
+
+### **Configuración**
+
+Variables de entorno (ya existen):
+```bash
+TWILIO_ACCOUNT_SID=ACxxxx
+TWILIO_AUTH_TOKEN=xxxx
+TWILIO_WHATSAPP_NUMBER=+14155238886
+```
+
+### **Archivos del Sistema**
+
+- ✅ `src/services/reminder_service.py` (~450 líneas)
+- ✅ `src/cron/daily_reminder_job.py` (~60 líneas)  
+- ✅ `src/bot/reminder_handler.py` (~120 líneas)
+
+**Archivos modificados:**
+- `src/bot/bot_controller.py` (+5 líneas)
+- `src/session/session.py` (+1 estado)
+- `src/database/database.py` (+20 líneas método)
 
 ---
 
