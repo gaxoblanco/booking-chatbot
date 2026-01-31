@@ -186,8 +186,8 @@ class DomainConfig:
     # Restricciones de tiempo
     MIN_HOURS_ADVANCE = 24  # Mínimo anticipación para agendar (horas)
     MAX_DAYS_ADVANCE = 60   # Máximo días hacia adelante que se puede agendar
-    CANCELLATION_HOURS_LIMIT = 24  # Horas mínimas de anticipación para cancelar
-    RESCHEDULE_HOURS_LIMIT = 24  # Horas mínimas de anticipación para reprogramar
+    CANCELLATION_HOURS_LIMIT = 22  # Horas mínimas de anticipación para cancelar
+    RESCHEDULE_HOURS_LIMIT = 22  # Horas mínimas de anticipación para reprogramar
 
     # Agendamiento para terceros
     ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?
