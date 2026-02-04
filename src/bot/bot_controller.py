@@ -1,35 +1,41 @@
 """
-Bot Controller v3.0
-===================
-Orquestador principal del bot. Procesa mensajes entrantes y delega a handlers específicos.
+Bot Controller v3.1 - Con Sistema de Intenciones NLU
+======================================================
+Orquestador principal del bot con detección inteligente de intenciones.
 
-CAMBIOS EN v3.0:
+NUEVO EN v3.1:
+✅ Detección automática de intenciones (NLU)
+✅ Extracción de entidades (fecha, zona, horario, especialidad)
+✅ Shortcuts inteligentes (omitir menú cuando sea posible)
+✅ Flujo adaptativo según lo que el usuario menciona
+
+CAMBIOS DE v3.0:
 - ❌ Eliminado: ROLE_SELECTION (ya no preguntamos "¿Eres cliente o profesional?")
-- ❌ Eliminado: Flujo de registro de profesionales (se cargan manualmente por admin)
-- ❌ Eliminado: Sistema de claves de acceso para profesionales
+- ❌ Eliminado: Flujo de registro de profesionales (se cargan manualmente)
+- ❌ Eliminado: Sistema de claves de acceso
 - ✅ Simplificado: Solo flujo de CLIENTES
 - ✅ Automático: Reconocimiento inteligente de usuarios
-- ✅ Google Calendar: Profesionales gestionan agenda desde Google Calendar
 
 Este archivo es el cerebro del bot:
 - Recibe mensajes de WhatsApp
 - Identifica usuarios automáticamente
-- Detecta intenciones (cliente vs profesional)
+- Detecta intenciones con NLU ⭐ NUEVO
+- Extrae entidades del mensaje ⭐ NUEVO
+- Hace shortcuts cuando es posible ⭐ NUEVO
 - Maneja comandos globales
-- Delega a client_handler para todo el flujo de clientes
-- Profesionales registrados tienen acceso a su menú directo
+- Delega a handlers específicos
 
-Responsabilidades:
-- Router principal (process_message)
-- Comandos globales (hola, menu, cancelar, ayuda)
-- Delegación a handlers
-- Integración con user_service
+Ejemplos de uso:
+- "necesito psicólogo mañana" → Detecta intent + entidades → Busca directamente
+- "ver mis turnos" → Detecta intent → Muestra citas directamente
+- "hola" → Sin intent específico → Muestra menú tradicional
 """
 
 from src.bot.professional_handler import ProfessionalHandler
 from src.bot.client_handler import ClientHandler
 from src.config.filter_config import FeatureFlags
 from src.services.user_service import user_service
+from src.services.intent_detector import intent_detector, Intent  # ⭐ NUEVO
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
 from src.messages.messages_professional import professional_messages
@@ -39,6 +45,9 @@ from src.core.states import (
     session_manager,
     SessionData
 )
+from src.core.conversation_context import context_manager
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
 import sys
 from pathlib import Path
 
@@ -49,20 +58,17 @@ sys.path.insert(0, str(project_root))
 
 class BotController:
     """
-    Controlador principal del bot v3.0.
-
-    Maneja el flujo de mensajes y delega a handlers específicos.
-    Integra reconocimiento inteligente de usuarios.
+    Controlador principal del bot v3.1 con NLU.
     
-    FLUJO SIMPLIFICADO v3.0:
-    - Clientes: Búsqueda, reserva, gestión de citas
-    - Profesionales: Solo los registrados manualmente pueden acceder a su menú
-    - No hay registro de profesionales desde el bot
+    Mejoras sobre v3.0:
+    - Detecta intenciones en lenguaje natural
+    - Extrae entidades automáticamente
+    - Hace shortcuts cuando es posible
+    - Flujo más corto y natural
     """
 
     def __init__(self):
         """Inicializar controlador del bot."""
-        # Handlers específicos
         self.client_handler = ClientHandler()
         self.professional_handler = ProfessionalHandler()
 
@@ -70,13 +76,11 @@ class BotController:
         """
         Procesa mensaje entrante y retorna respuesta.
 
-        Este es el método principal del bot. Recibe cada mensaje de WhatsApp
-        y lo procesa según el estado actual de la conversación.
-
-        FLUJO v3.0:
-        1. Identificar usuario automáticamente → user_service
-        2. Verificar comandos globales (hola, menu, cancelar)
-        3. Delegar a handler específico según rol
+        FLUJO v3.1:
+        1. Identificar usuario automáticamente
+        2. Detectar intención del mensaje (NLU) ⭐ NUEVO
+        3. Intentar shortcut si es posible ⭐ NUEVO
+        4. Si no, seguir flujo tradicional
 
         Args:
             phone_number: Número de WhatsApp del usuario
@@ -85,7 +89,6 @@ class BotController:
         Returns:
             Respuesta del bot
         """
-        
         # ==========================================
         # 1. IDENTIFICACIÓN INTELIGENTE DE USUARIO
         # ==========================================
@@ -104,70 +107,139 @@ class BotController:
         # 2. OBTENER O CREAR SESIÓN
         # ==========================================
         session = session_manager.get_session(phone_number)
-
-        # ==========================================
-        # 2.5 RESPUESTAS A RECORDATORIOS
-        # ==========================================
-        # if should_handle_as_reminder(session, message):
-        #     return handle_reminder_response(session, message)
+        # Contexto de conversación (para NLU avanzado)
+        conv_context = context_manager.get_context(phone_number)
 
         # Limpiar mensaje
         message = message.strip()
         message_lower = message.lower()
 
         # ==========================================
-        # 3. SUPER COMANDO: "HOLA" SIEMPRE RESETEA
+        # 3. SUPER COMANDO: "HOLA" CON NLU ⭐
         # ==========================================
-        # Sin importar el estado, "hola" reinicia la conversación
         if message_lower in ['hola', 'hello', 'hi', 'hey', 'buenos días', 'buenas tardes', 'buenas noches']:
-
-            # Resetear sesión
-            session.reset()
             
-            # ==========================================
-            # CASO 1: PROFESIONAL REGISTRADO
-            # ==========================================
-            if user_info['user_type'] == 'professional':
-                session.set_role(UserRole.PROFESSIONAL)
-                session.transition_to(ConversationState.PROF_MAIN_MENU)
+            # ⭐ NUEVO: Detectar si "hola" viene con intención adicional
+            # Ejemplo: "hola, necesito psicólogo mañana"
+            intent_result = intent_detector.detect(message, context={
+                'role': session.role,
+                'user_info': user_info
+            })
+            
+            # Si solo es saludo sin intención clara, resetear y mostrar menú
+            if intent_result['intent'] == Intent.GREETING:
+                session.reset()
+                conv_context.reset()
                 
-                # Mensaje personalizado
-                greeting = f"¡Hola Dr/Dra. {user_info['name']}! 👋\n\n" if user_info['name'] else "¡Hola! 👋\n\n"
-                return greeting + professional_messages.PROF_MAIN_MENU
-
-            # ==========================================
-            # CASO 2: CLIENTE (registrado o nuevo)
-            # ==========================================
-            else:
-                # Siempre asumir rol de CLIENTE
+                # Profesional registrado
+                if user_info['user_type'] == 'professional':
+                    session.set_role(UserRole.PROFESSIONAL)
+                    session.transition_to(ConversationState.PROF_MAIN_MENU)
+                    greeting = f"¡Hola Dr/Dra. {user_info['name']}! 👋\n\n" if user_info['name'] else "¡Hola! 👋\n\n"
+                    return greeting + professional_messages.PROF_MAIN_MENU
+                
+                # Cliente (default)
                 session.set_role(UserRole.CLIENT)
                 session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-                
-                # Generar mensaje de bienvenida personalizado
                 user_info['phone_number'] = phone_number
                 return user_service.generate_welcome_message(user_info)
+            
+            # ⭐ Si hay intención adicional, procesarla abajo
 
         # ==========================================
-        # 4. COMANDOS GLOBALES (funcionan desde cualquier estado)
+        # 4. DETECCIÓN DE INTENCIÓN (NLU) ⭐ NUEVO
+        # ==========================================
+        
+        # Intentar NLU en estados donde tiene sentido
+        # Expandido para incluir más estados donde el usuario puede dar comandos naturales
+        nlu_enabled_states = [
+            ConversationState.START,
+            ConversationState.CLIENT_MAIN_MENU,
+            ConversationState.CLIENT_NEW_USER_MENU,
+            ConversationState.CLIENT_MULTIFILTER_MENU,  # ⭐ NUEVO
+            ConversationState.CLIENT_SHOW_RESULTS,      # ⭐ NUEVO
+            ConversationState.CLIENT_FILTER_INPUT,      # ⭐ NUEVO - Para ayudar con inputs
+        ]
+        
+        if session.state in nlu_enabled_states:
+            # Detectar intent y entidades
+            intent_result = intent_detector.detect(message, context={
+                'role': session.role,
+                'state': session.state,
+                'user_info': user_info,
+                'conversation_history': conv_context.get_history_text()  # ⭐ Para ML futuro
+            })
+            
+            print(f"[NLU] Intent: {intent_result['intent'].value} (confianza: {intent_result['confidence']:.2f})")
+            if intent_result['entities']:
+                print(f"[NLU] Entidades: {intent_result['entities']}")
+            
+            # ⭐ Agregar al historial
+            conv_context.add_message(
+                message=message,
+                intent=intent_result['intent'].value,
+                entities=intent_result['entities']
+            )
+
+            # ⭐ CRÍTICO: Acumular entidades si hay alguna detectada
+            # Esto funciona incluso si el intent es "unknown" pero detectó entidades
+            if intent_result['entities']:
+                print(f"[NLU] Entidades detectadas: {intent_result['entities']}")
+                
+                # Si estamos en flujo de búsqueda (o tiene entidades de búsqueda), acumular
+                tiene_entidades_busqueda = any(k in intent_result['entities'] for k in 
+                                            ['fecha', 'especialidad', 'horario', 'zona', 'genero', 'prepaga', 'professional_name'])
+                
+                if tiene_entidades_busqueda or session.state == ConversationState.CLIENT_MULTIFILTER_MENU:
+                    # Acumular entidades nuevas
+                    conv_context.update_entities(intent_result['entities'], merge=True)
+                    accumulated = conv_context.get_entities()
+                    print(f"[CONTEXT] Entidades totales acumuladas: {accumulated}")
+                    
+                    # Decidir si ejecutar búsqueda o pedir más info
+                    if self._can_execute_search(accumulated):
+                        print(f"[CONTEXT] ✅ Suficiente información, ejecutando búsqueda")
+                        return self._execute_smart_search(session, accumulated)
+                    else:
+                        print(f"[CONTEXT] ⚠️ Falta información crítica")
+                        missing = self._get_missing_required_entities(accumulated)
+                        return self._ask_for_missing_entity(session, accumulated, missing)
+
+            # Conversión de input natural (solo en CLIENT_FILTER_INPUT)
+            if session.state == ConversationState.CLIENT_FILTER_INPUT:
+                converted_message = self._convert_natural_input(
+                    message, intent_result, session
+                )
+                if converted_message != message:
+                    print(f"[NLU] Input convertido: '{message}' → '{converted_message}'")
+                    message = converted_message
+                    message_lower = message.lower()
+
+            # Para otros intents (no búsqueda), intentar shortcut
+            if intent_result['intent'].value not in ['search_professional', 'unknown'] and intent_result['confidence'] >= 0.7:
+                conv_context.set_intent(intent_result['intent'].value)
+                shortcut_response = self._try_intent_shortcut(
+                    session, intent_result, user_info
+                )
+                if shortcut_response:
+                    return shortcut_response
+        # ==========================================
+        # 5. COMANDOS GLOBALES
         # ==========================================
 
-        # Volver al menú específico del rol
         if message_lower in ['menu', 'menú', 'volver']:
             return self.handle_return_to_menu(session)
 
-        # Cancelar operación actual
         if message_lower in ['cancelar', 'cancel', 'salir']:
             return self.handle_cancel(session)
 
-        # Ayuda
         if message_lower in ['ayuda', 'help', '?']:
             return common_messages.HELP_MESSAGE
 
         # ==========================================
-        # 5. ENRUTAR A HANDLER SEGÚN ESTADO
+        # 6. ENRUTAR A HANDLER SEGÚN ESTADO
         # ==========================================
 
-        # Obtener handler apropiado según estado actual
         handler = self.get_handler_for_state(session.state)
 
         try:
@@ -179,30 +251,414 @@ class BotController:
             traceback.print_exc()
             return common_messages.ERROR_GENERIC
 
-    def get_handler_for_state(self, state: ConversationState):
+    def _convert_natural_input(self, message: str, intent_result: Dict, session: SessionData) -> str:
         """
-        Obtiene la función handler apropiada para un estado.
-
-        Este método mapea cada estado de conversación a su handler específico.
-        Los handlers están organizados en archivos separados por responsabilidad.
-
+        Convierte input en lenguaje natural al formato esperado por los filtros.
+        
+        Por ejemplo:
+        - "hoy" → Fecha de hoy en formato DD/MM/YYYY
+        - "mañana" → Fecha de mañana en formato DD/MM/YYYY
+        - "14:00" → "14:00" (ya está correcto)
+        - "tarde" → Podría convertirse a opción numérica
+        
         Args:
-            state: Estado actual de conversación
-
+            message: Mensaje original del usuario
+            intent_result: Resultado de la detección NLU
+            session: Sesión actual
+            
         Returns:
-            Función handler para ese estado
+            Mensaje convertido o mensaje original si no se pudo convertir
         """
-        handlers = {
-            # ===== ESTADOS INICIALES =====
-            ConversationState.START: self.handle_start,
-            # ❌ ELIMINADO en v3.0: ROLE_SELECTION ya no existe
+        from datetime import date, timedelta
+        
+        entities = intent_result.get('entities', {})
+        current_filter = session.get_temp('current_filter_type')
+        
+        print(f"[NLU] Converting input for filter: {current_filter}")
+        
+        # Convertir fechas relativas
+        if 'fecha' in entities:
+            fecha_entity = entities['fecha']
+            print(f"[NLU] Fecha entity detected: {fecha_entity}")
+            
+            if fecha_entity == 'hoy':
+                converted = date.today().strftime('%d/%m/%Y')
+                print(f"[NLU] 'hoy' → {converted}")
+                return converted
+            elif fecha_entity == 'mañana':
+                converted = (date.today() + timedelta(days=1)).strftime('%d/%m/%Y')
+                print(f"[NLU] 'mañana' → {converted}")
+                return converted
+            elif fecha_entity == 'pasado_mañana':
+                converted = (date.today() + timedelta(days=2)).strftime('%d/%m/%Y')
+                print(f"[NLU] 'pasado_mañana' → {converted}")
+                return converted
+            elif '/' in str(fecha_entity):
+                # Ya es una fecha en formato DD/MM/YYYY
+                print(f"[NLU] Fecha ya en formato correcto: {fecha_entity}")
+                return str(fecha_entity)
+        
+        # Convertir horarios a números de opción si estamos en filtro de horario
+        if current_filter == 'time' and 'horario' in entities:
+            horario_entity = entities['horario']
+            print(f"[NLU] Horario entity detected: {horario_entity}")
+            
+            # Mapeo de texto a número de opción
+            horario_map = {
+                'mañana': '1',
+                'tarde': '2',
+                'noche': '3'
+            }
+            
+            if horario_entity in horario_map:
+                converted = horario_map[horario_entity]
+                print(f"[NLU] '{horario_entity}' → opción {converted}")
+                return converted
+        
+        # Si no se pudo convertir, devolver original
+        print(f"[NLU] No conversion needed or possible")
+        return message
+    
+    def _try_intent_shortcut(self, session: SessionData, intent_result: Dict, user_info: Dict) -> Optional[str]:
+        """
+        Intenta hacer shortcut basado en la intención detectada.
+        
+        Args:
+            session: Sesión del usuario
+            intent_result: Resultado de detección de intención
+            user_info: Info del usuario
+            
+        Returns:
+            Respuesta del bot si hace shortcut, None si debe seguir flujo normal
+        """
+        intent = intent_result['intent']
+        entities = intent_result['entities']
+        can_shortcut = intent_result['can_shortcut']
+        
+        print(f"[NLU] Intentando shortcut para: {intent.value}")
+        
+        # ==========================================
+        # INTENT: VER MIS CITAS
+        # ==========================================
+        if intent == Intent.VIEW_MY_APPOINTMENTS:
+            print("[NLU] → Shortcut: Ver citas directamente")
+            session.set_role(UserRole.CLIENT)
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.client_handler.handle_client_view_appointments(session, "")
+        
+        # ==========================================
+        # INTENT: CANCELAR TURNO ⭐ NUEVO
+        # ==========================================
+        elif intent == Intent.CANCEL_APPOINTMENT:
+            print("[NLU] → Cancelar turno")
+            session.set_role(UserRole.CLIENT)
+            return self._handle_cancel_appointment(session, user_info)
+        
+        # ==========================================
+        # INTENT: VER DISPONIBLES MAÑANA
+        # ==========================================
+        elif intent == Intent.VIEW_TOMORROW:
+            print("[NLU] → Shortcut: Ver disponibles mañana")
+            session.set_role(UserRole.CLIENT)
+            
+            from src.services.client_service import client_service
+            from datetime import date, timedelta
+            
+            tomorrow = date.today() + timedelta(days=1)
+            date_str = tomorrow.strftime('%Y-%m-%d')
+            date_formatted = tomorrow.strftime('%d/%m/%Y')
+            
+            # Guardar en sesión
+            session.set_temp('search_date', date_str)
+            session.set_temp('search_date_formatted', date_formatted)
+            
+            # Preparar filtros
+            filters = {}
+            if 'horario' in entities:
+                filters['time_preference'] = entities['horario']
+                session.set_temp('time_preference', entities['horario'])
+            
+            # Buscar
+            results = client_service.search_professionals_by_filters(
+                date_str=date_str,
+                **filters,
+                limit=10
+            )
+            
+            session.set_temp('search_results', results)
+            session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+            
+            # Formatear resultados
+            if not results:
+                # Verificar si es porque no existen o porque no hay disponibilidad
+                no_profs = session.get_temp('no_professionals_found')
+                
+                if no_profs:
+                    session.clear_temp()
+                    return (
+                        "😔 No encontré profesionales que cumplan con esos requisitos:\n"
+                        f"• Especialidad: {entities.get('especialidad', 'cualquiera')}\n"
+                        f"• Género: {entities.get('genero', 'cualquiera')}\n"
+                        f"• Prepaga: {'Sí' if entities.get('prepaga') else 'No importa'}\n\n"
+                        "Podés intentar:\n"
+                        "• Cambiar los filtros\n"
+                        "• Escribir 'buscar' para búsqueda asistida"
+                    )
+                else:
+                    return (
+                        f"😔 No encontré profesionales disponibles para {date_formatted}.\n\n"
+                        "Hay profesionales que cumplen tus requisitos pero no tienen horarios disponibles ese día.\n\n"
+                        "Podés intentar:\n"
+                        "• Otra fecha\n"
+                        "• Escribir 'buscar' para ver más opciones"
+                    )
+            
+            formatted = client_service.format_search_results_with_slots(
+                professionals=results,
+                date_str=date_str,
+                show_max_slots=3
+            )
+            
+            header = f"✅ Encontré {len(results)} profesional(es) disponible(s) para mañana ({date_formatted}):\n\n"
+            return header + formatted
+        
+        # ==========================================
+        # INTENT: INFORMACIÓN DEL CENTRO
+        # ==========================================
+        elif intent == Intent.INFO_CENTER:
+            print("[NLU] → Shortcut: Info del centro")
+            return user_service.get_center_info()
+        
+        # ==========================================
+        # INTENT: BÚSQUEDA DE PROFESIONAL
+        # ==========================================
+        elif intent == Intent.SEARCH_PROFESSIONAL:
+            print(f"[NLU] → Búsqueda de profesional (can_shortcut: {can_shortcut})")
+            session.set_role(UserRole.CLIENT)
+            
+            # Guardar entidades detectadas
+            if 'especialidad' in entities:
+                session.set_temp('especialidad', entities['especialidad'])
+            if 'zona' in entities:
+                session.set_temp('zona', entities['zona'])
+            if 'fecha' in entities:
+                session.set_temp('fecha', entities['fecha'])
+            if 'horario' in entities:
+                session.set_temp('time_preference', entities['horario'])
+            if 'modalidad' in entities:
+                session.set_temp('modalidad', entities['modalidad'])
+            
+            # Si puede hacer shortcut (tiene info suficiente)
+            if can_shortcut:
+                print("[NLU] → Ejecutando búsqueda directa")
+                return self._execute_smart_search(session, entities)
+            
+            # Si no, iniciar flujo de filtros pidiendo lo que falta
+            else:
+                print("[NLU] → Falta info, iniciando flujo de filtros")
+                missing = intent_result.get('missing_entities', [])
+                return self._start_filter_flow(session, entities, missing)
+        
+        # No hay shortcut disponible
+        print("[NLU] → No se puede hacer shortcut")
+        return None
+    
+    def _execute_smart_search(self, session: SessionData, entities: Dict) -> str:
+        """
+        Ejecuta búsqueda inteligente con las entidades extraídas.
+        
+        Args:
+            session: Sesión del usuario
+            entities: Entidades extraídas/acumuladas del contexto
+            
+        Returns:
+            Resultados de búsqueda formateados
+        """
+        from src.services.client_service import client_service
+        from datetime import datetime, timedelta, date
+        from src.core.conversation_context import context_manager
 
-            # ===== ESTADOS DE PROFESIONAL =====
-            # Solo para profesionales registrados manualmente
+        # Obtener contexto
+        conv_context = context_manager.get_context(session.phone_number)
+        
+        # Convertir fecha relativa a absoluta
+        fecha_entity = entities.get('fecha')
+
+        # 🔍 DEBUG: Ver qué fecha tiene el servidor
+        hoy = date.today()
+        print(f"[DEBUG] Hoy según el servidor: {hoy} ({hoy.strftime('%d/%m/%Y')})")
+        print(f"[DEBUG] Fecha entity: '{fecha_entity}'")
+        
+        # Manejar fecha pasada
+        if fecha_entity == 'fecha_pasada':
+            return ("⚠️ La fecha que ingresaste ya pasó.\n\n"
+                "Por favor elige una fecha futura:\n"
+                "• 'hoy'\n"
+                "• 'mañana'\n"
+                "• 'DD/MM/YYYY'")
+        
+        # Si no especifica fecha, asumir 'hoy' por defecto
+        if not fecha_entity:
+            print(f"[NLU] No se especificó fecha, asumiendo 'hoy' por defecto")
+            fecha_entity = 'hoy'
+        
+        if fecha_entity == 'hoy':
+            date_obj = date.today()
+        elif fecha_entity == 'mañana':
+            date_obj = date.today() + timedelta(days=1)
+            print(f"[DEBUG] Mañana calculado: {date_obj} ({date_obj.strftime('%d/%m/%Y')})")
+        elif fecha_entity == 'pasado_mañana':
+            date_obj = date.today() + timedelta(days=2)
+        elif fecha_entity:
+            # Fecha absoluta DD/MM/YYYY
+            try:
+                date_obj = datetime.strptime(fecha_entity, '%d/%m/%Y').date()
+            except:
+                date_obj = date.today()  # Fallback a hoy si falla el parse
+        else:
+            date_obj = date.today()
+        
+        date_str = date_obj.strftime('%Y-%m-%d')
+        date_formatted = date_obj.strftime('%d/%m/%Y')
+        
+        # Preparar filtros
+        filters = {}
+        if 'zona' in entities:
+            filters['zone'] = entities['zona']
+        if 'especialidad' in entities:
+            filters['specialty'] = entities['especialidad']
+        if 'horario' in entities:
+            filters['time_preference'] = entities['horario']
+        if 'modalidad' in entities:
+            filters['modality'] = entities['modalidad']
+        if 'genero' in entities:
+            # Convertir a formato esperado por BD (m/f)
+            gender_map = {'masculino': 'm', 'femenino': 'f'}
+            filters['gender'] = gender_map.get(entities['genero'])
+            print(f"[NLU] Género mapeado: {entities['genero']} → {filters['gender']}")
+        if 'prepaga' in entities:
+            filters['accept_prepaga'] = True
+            print(f"[NLU] Filtro prepaga activado")
+        
+        # Si hay nombre de profesional, agregarlo como filtro
+        professional_name_filter = entities.get('professional_name')
+        if professional_name_filter:
+            filters['professional_name'] = professional_name_filter
+            print(f"[NLU] 🎯 Agregando filtro de nombre a BD: '{professional_name_filter}'")
+        
+        # Guardar filtros en contexto (para refinamiento futuro)
+        conv_context.save_search_filters(filters)
+        
+        # Buscar profesionales
+        results = client_service.search_professionals_by_filters(
+            date_str=date_str,
+            **filters,
+            limit=10
+        )
+        
+        # Guardar en sesión
+        session.set_temp('search_results', results)
+        session.set_temp('search_date', date_str)
+        session.set_temp('search_date_formatted', date_formatted)
+        session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+        
+        # Sin resultados
+        if not results:
+            filter_text = self._format_applied_filters(entities)
+            return (f"😔 No encontré profesionales disponibles para {date_formatted}{filter_text}\n\n"
+                    "Podés intentar:\n"
+                    "• Otra fecha (ej: 'mañana', 'pasado mañana')\n"
+                    "• Cambiar filtros (escribe 'filtros')\n"
+                    "• Escribir 'buscar' para empezar de nuevo")
+        
+        # Formatear resultados
+        formatted = client_service.format_search_results_with_slots(
+            professionals=results,
+            date_str=date_str,
+            show_max_slots=3
+        )
+        
+        # Header con resumen de búsqueda
+        if professional_name_filter:
+            header = f"✅ {results[0]['name']}"
+        else:
+            header = f"✅ Encontré {len(results)} profesional(es)"
+            if 'especialidad' in entities:
+                header += f" en {entities['especialidad']}"
+        
+        header += f" para {date_formatted}"
+        
+        if 'horario' in entities:
+            header += f" ({entities['horario']})"
+        if 'zona' in entities and not professional_name_filter:
+            header += f" en {entities['zona']}"
+        header += ":\n\n"
+        
+        # Footer con opciones
+        footer = ("\n\n💡 Podés:\n"
+                "• Responder con el número para agendar\n"
+                "• Escribir 'filtros' para refinar búsqueda\n"
+                "• Escribir 'otra fecha' para cambiar fecha")
+        
+        return header + formatted + footer
+    def _start_filter_flow(self, session: SessionData, entities: Dict, missing: List[str]) -> str:
+        """
+        Inicia flujo de filtros pidiendo solo lo que falta.
+        
+        Args:
+            session: Sesión del usuario
+            entities: Entidades ya extraídas
+            missing: Lista de entidades faltantes
+            
+        Returns:
+            Pregunta para siguiente filtro
+        """
+        # Transicionar a flujo de multi-filtro
+        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        
+        # Preparar mensaje personalizado
+        mensaje = "Perfecto! "
+        
+        # Confirmar lo que entendió
+        confirmaciones = []
+        if 'especialidad' in entities:
+            confirmaciones.append(f"buscarás {entities['especialidad']}")
+        if 'zona' in entities:
+            confirmaciones.append(f"en zona {entities['zona']}")
+        if 'fecha' in entities:
+            confirmaciones.append(f"para {entities['fecha']}")
+        if 'horario' in entities:
+            confirmaciones.append(f"por la {entities['horario']}")
+        
+        if confirmaciones:
+            mensaje += " ".join(confirmaciones).capitalize() + ".\n\n"
+        
+        # Preguntar lo que falta (solo el primero)
+        if 'fecha' in missing:
+            mensaje += "¿Para qué fecha necesitas el turno?\n"
+            mensaje += "Ej: 'mañana', 'hoy', '25/12'"
+        elif 'horario' in missing:
+            mensaje += "¿En qué horario preferís?\n"
+            mensaje += "1️⃣ Mañana\n2️⃣ Tarde\n3️⃣ Noche"
+        elif 'zona' in missing:
+            mensaje += "¿En qué zona?\n"
+            mensaje += "Ej: 'Palermo', 'Belgrano', 'Online'"
+        elif 'especialidad' in missing:
+            mensaje += "¿Qué tipo de profesional buscas?\n"
+            mensaje += "Ej: 'Psicólogo', 'Nutricionista'"
+        else:
+            # Tiene todo, buscar
+            mensaje = "Buscando profesionales..."
+            return self._execute_smart_search(session, entities)
+        
+        return mensaje
+    
+    def get_handler_for_state(self, state: ConversationState):
+        """Obtiene handler para el estado actual."""
+        handlers = {
+            ConversationState.START: self.handle_start,
             ConversationState.PROF_MAIN_MENU: self.professional_handler.handle_prof_main_menu,
             ConversationState.PROF_VIEW_APPOINTMENTS: self.professional_handler.handle_prof_view_appointments,
-            
-            # Estados de información del profesional
             ConversationState.PROF_INFO_MENU: self.professional_handler.handle_prof_info_menu,
             ConversationState.PROF_INFO_NAME: self.professional_handler.handle_prof_info_name,
             ConversationState.PROF_INFO_EMAIL: self.professional_handler.handle_prof_info_email,
@@ -213,94 +669,235 @@ class BotController:
             ConversationState.PROF_INFO_QUICK: self.professional_handler.handle_prof_info_quick,
             ConversationState.PROF_INFO_BIO: self.professional_handler.handle_prof_info_bio,
             ConversationState.PROF_INFO_FEE_RANGE: self.professional_handler.handle_prof_info_fee_range,
-
-            # ===== ESTADOS DE CLIENTE =====
             ConversationState.CLIENT_MAIN_MENU: self.client_handler.handle_client_main_menu,
             ConversationState.CLIENT_NEW_USER_MENU: self.client_handler.handle_client_main_menu,
-            
-            # Estados de búsqueda y filtros
             ConversationState.CLIENT_MULTIFILTER_MENU: self.client_handler.handle_client_multifilter_menu,
             ConversationState.CLIENT_FILTER_INPUT: self.client_handler.handle_client_filter_input,
             ConversationState.CLIENT_SEARCH_QUICK: self.client_handler.handle_client_search_quick,
             ConversationState.CLIENT_SHOW_RESULTS: self.client_handler.handle_client_show_results,
             ConversationState.CLIENT_VIEW_DETAIL: self.client_handler.handle_client_view_detail,
-
-            # Estados de reserva del cliente
             ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING: self.client_handler.handle_client_view_detail_with_booking,
             ConversationState.CLIENT_CONFIRM_BOOKING: self.client_handler.handle_client_confirm_booking,
             ConversationState.CLIENT_BOOKING_CONFIRMED: self.client_handler.handle_client_booking_confirmed,
-
-            # Estados de gestión de citas del cliente
             ConversationState.CLIENT_VIEW_APPOINTMENTS: self.client_handler.handle_client_view_appointments,
             ConversationState.CLIENT_APPOINTMENT_DETAIL: self.client_handler.handle_client_appointment_detail,
             ConversationState.CLIENT_CANCEL_APPOINTMENT: self.client_handler.handle_client_cancel_appointment,
             ConversationState.CLIENT_CANCEL_REASON: self.client_handler.handle_client_cancel_reason,
             ConversationState.CLIENT_CANCEL_SUCCESS: self.client_handler.handle_client_cancel_success,
-
-            # Estados de reprogramación del cliente
             ConversationState.CLIENT_RESCHEDULE_APPOINTMENT: self.client_handler.handle_client_reschedule_appointment,
             ConversationState.CLIENT_RESCHEDULE_SELECT_DATE: self.client_handler.handle_client_reschedule_select_date,
             ConversationState.CLIENT_RESCHEDULE_SELECT_TIME: self.client_handler.handle_client_reschedule_select_time,
             ConversationState.CLIENT_RESCHEDULE_CONFIRM: self.client_handler.handle_client_reschedule_confirm,
+            ConversationState.CLIENT_CONFIRM_CANCEL: self.client_handler.handle_confirm_cancel,
+            ConversationState.CLIENT_SELECT_CANCEL: self.client_handler.handle_select_cancel,
         }
-
         return handlers.get(state, self.handle_unknown_state)
 
-    # ==========================================
-    # HANDLERS INICIALES
-    # ==========================================
-
     def handle_start(self, session: SessionData, message: str) -> str:
-        """
-        Maneja estado inicial.
-        
-        En v3.0 ya no preguntamos rol, asumimos CLIENTE por defecto.
-        Los profesionales registrados se identifican automáticamente.
-        """
+        """Maneja estado inicial."""
         session.set_role(UserRole.CLIENT)
         session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-        
         user_info = user_service.identify_user(session.phone_number)
         user_info['phone_number'] = session.phone_number
-        
         return user_service.generate_welcome_message(user_info)
 
-    # ==========================================
-    # COMANDOS GLOBALES
-    # ==========================================
-
     def handle_return_to_menu(self, session: SessionData) -> str:
-        """
-        Maneja comando de volver al menú.
-
-        Limpia datos temporales y retorna al menú principal
-        según el rol del usuario.
-        """
+        """Vuelve al menú principal."""
         session.clear_temp()
-
         if session.role == UserRole.PROFESSIONAL:
             session.transition_to(ConversationState.PROF_MAIN_MENU)
             return professional_messages.PROF_MAIN_MENU
         else:
-            # Por defecto, asumir cliente
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             user_info = user_service.identify_user(session.phone_number)
             user_info['phone_number'] = session.phone_number
             return user_service.generate_welcome_message(user_info)
 
     def handle_cancel(self, session: SessionData) -> str:
-        """
-        Maneja comando de cancelar.
-
-        Cancela operación actual y vuelve al menú.
-        """
+        """Cancela operación actual."""
         session.clear_temp()
         return self.handle_return_to_menu(session)
+    
+    def _handle_cancel_appointment(self, session: SessionData, user_info: Dict) -> str:
+        """
+        Maneja la cancelación de turnos.
+        
+        ⭐ NUEVA FUNCIONALIDAD
+        
+        Flow:
+        1. Obtiene turnos del usuario
+        2. Si tiene 1 solo → Pide confirmación
+        3. Si tiene múltiples → Pregunta cuál cancelar
+        4. Si no tiene → Informa que no hay turnos
+        """
+        from src.services.client_service import client_service
+        
+        try:
+            # Obtener turnos del usuario
+            appointments = client_service.get_user_appointments(session.phone_number)
+            
+            if not appointments or len(appointments) == 0:
+                return ("ℹ️ No tienes turnos agendados para cancelar.\n\n"
+                       "Si deseas agendar un turno nuevo, escribe 'buscar' o 'hola'.")
+            
+            # Si tiene 1 solo turno
+            if len(appointments) == 1:
+                apt = appointments[0]
+                session.set_temp('appointment_to_cancel', apt)
+                session.transition_to(ConversationState.CLIENT_CONFIRM_CANCEL)
+                
+                return (f"🗑️ Cancelación de turno:\n\n"
+                       f"👨‍⚕️ {apt['professional_name']}\n"
+                       f"📅 {apt['date_formatted']}\n"
+                       f"🕐 {apt['time']}\n\n"
+                       f"¿Confirmas la cancelación?\n"
+                       f"• Escribe 'sí' para confirmar\n"
+                       f"• Escribe 'no' para volver")
+            
+            # Si tiene múltiples turnos
+            else:
+                session.set_temp('appointments_list', appointments)
+                session.transition_to(ConversationState.CLIENT_SELECT_CANCEL)
+                
+                mensaje = f"📅 Tienes {len(appointments)} turnos agendados:\n\n"
+                
+                for idx, apt in enumerate(appointments, 1):
+                    mensaje += (f"{idx}️⃣ {apt['professional_name']}\n"
+                              f"   📅 {apt['date_formatted']} - 🕐 {apt['time']}\n\n")
+                
+                mensaje += "\nResponde con el número del turno que deseas cancelar\n"
+                mensaje += "O escribe '0' para volver"
+                
+                return mensaje
+                
+        except Exception as e:
+            print(f"[BOT] Error al obtener turnos para cancelar: {e}")
+            return ("⚠️ Hubo un error al obtener tus turnos.\n\n"
+                   "Por favor intenta de nuevo o contacta al centro.")
 
     def handle_unknown_state(self, session: SessionData, message: str) -> str:
-        """Maneja estado desconocido/no implementado."""
+        """Maneja estado desconocido."""
         print(f"⚠️ Estado desconocido: {session.state}")
         return common_messages.ERROR_UNKNOWN_STATE + "\n\n" + self.handle_return_to_menu(session)
+    
+    def _can_execute_search(self, entities: Dict) -> bool:
+        """
+        Determina si hay suficiente información para ejecutar búsqueda.
+        
+        LÓGICA: Solo necesita fecha (especialidad es opcional).
+        
+        Args:
+            entities: Entidades acumuladas
+            
+        Returns:
+            True si puede buscar
+        """
+        # Mínimo requerido: fecha
+        has_date = 'fecha' in entities and entities['fecha']
+        
+        return has_date
+
+
+    def _get_missing_required_entities(self, entities: Dict) -> List[str]:
+        """
+        Obtiene lista de entidades requeridas faltantes.
+        
+        Args:
+            entities: Entidades acumuladas
+            
+        Returns:
+            Lista de entidades faltantes
+        """
+        required = ['fecha']  # Solo fecha es requerida
+        missing = []
+        
+        for req in required:
+            if req not in entities or not entities[req]:
+                missing.append(req)
+        
+        return missing
+
+
+    def _ask_for_missing_entity(self, session: SessionData, entities: Dict, missing: List[str]) -> str:
+        """
+        Pregunta por la siguiente entidad faltante de forma contextual.
+        
+        Args:
+            session: Sesión actual
+            entities: Entidades ya acumuladas
+            missing: Lista de entidades faltantes
+            
+        Returns:
+            Mensaje preguntando por la entidad
+        """
+        if not missing:
+            # No falta nada, ejecutar búsqueda
+            return self._execute_smart_search(session, entities)
+        
+        # Preguntar por la primera faltante
+        next_missing = missing[0]
+        
+        session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
+        
+        # Construir mensaje contextual según lo que ya tiene
+        context_parts = []
+        if 'especialidad' in entities:
+            context_parts.append(f"Buscarás {entities['especialidad']}")
+        if 'genero' in entities:
+            gender_text = 'profesional mujer' if entities['genero'] == 'femenino' else 'profesional hombre'
+            context_parts.append(gender_text)
+        if 'prepaga' in entities:
+            context_parts.append('que acepte obra social')
+        
+        context = "Perfecto! " + ", ".join(context_parts) + ".\n\n" if context_parts else ""
+        
+        # Mensaje según la entidad faltante
+        if next_missing == 'fecha':
+            return (f"{context}"
+                    f"¿Para qué fecha necesitas el turno?\n"
+                    f"Ej: 'hoy', 'mañana', 'pasado mañana', 'DD/MM'")
+        
+        elif next_missing == 'horario':
+            return (f"{context}"
+                    f"¿En qué horario preferís?\n"
+                    f"Ej: 'mañana', 'tarde', 'noche'")
+        
+        elif next_missing == 'especialidad':
+            return (f"{context}"
+                    f"¿Qué especialidad buscás?\n"
+                    f"Ej: 'psicología', 'nutrición', 'kinesiología'")
+        
+        else:
+            return f"{context}¿Qué {next_missing} necesitas?"
+
+
+    def _format_applied_filters(self, entities: Dict) -> str:
+        """
+        Formatea filtros aplicados para mostrar al usuario.
+        
+        Args:
+            entities: Entidades usadas en la búsqueda
+            
+        Returns:
+            Texto formateado con los filtros
+        """
+        filters_used = []
+        
+        if 'especialidad' in entities:
+            filters_used.append(f"Especialidad: {entities['especialidad']}")
+        if 'genero' in entities:
+            filters_used.append(f"Género: {entities['genero']}")
+        if 'prepaga' in entities:
+            filters_used.append("Acepta obra social")
+        if 'horario' in entities:
+            filters_used.append(f"Horario: {entities['horario']}")
+        if 'zona' in entities:
+            filters_used.append(f"Zona: {entities['zona']}")
+        
+        if not filters_used:
+            return ""
+        
+        return " con:\n• " + "\n• ".join(filters_used)
 
 
 # ==========================================
