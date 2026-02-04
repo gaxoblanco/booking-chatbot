@@ -17,7 +17,7 @@ from src.integrations.google_calendar_service import GoogleCalendarService
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import random
-
+from src.core.states import SessionData, ConversationState
 
 class ClientService:
     """
@@ -45,8 +45,9 @@ class ClientService:
         accept_prepaga: bool = None,
         online_sessions: bool = None,
         date_str: str = None,
-        time_preference: str = None,  # 'mañana' | 'tarde' | 'noche'
+        time_preference: str = None,
         specialty: str = None,
+        professional_name: str = None,
         limit: int = 10
     ) -> List[Dict]:
         """
@@ -57,7 +58,8 @@ class ClientService:
         Performance:
         - Before: ~840 API calls (24h × 7 days × 5 professionals)
         - After: ~5 API calls (1 per professional)
-        - Speed improvement: ~170x faster
+        - With name filter: ~1 API call (only the matching professional)
+        - Speed improvement: ~170x faster (840x with name filter)
         
         Args:
             zone: Filter by zone
@@ -66,6 +68,8 @@ class ClientService:
             online_sessions: Filter by online availability
             date_str: Date in YYYY-MM-DD format
             time_preference: Filter by time of day ('mañana'|'tarde'|'noche')
+            specialty: Filter by specialty/category
+            professional_name: Filter by professional name (flexible matching)
             limit: Maximum results
         
         Returns:
@@ -76,6 +80,8 @@ class ClientService:
             print(f"         Zone: {zone}, Gender: {gender}, Prepaga: {accept_prepaga}")
             print(f"         Online: {online_sessions}, Date: {date_str}")
             print(f"         Time preference: {time_preference}, Limit: {limit}")
+            if professional_name:
+                print(f"         👤 Professional name: '{professional_name}'")
 
             # Step 1: Get base filtered results from database
             professionals = self.db.search_professionals(
@@ -87,6 +93,51 @@ class ClientService:
             )
 
             print(f"[CLIENT] Found {len(professionals)} professionals in DB")
+
+            # Validación: Si no hay profesionales en BD → Retornar vacío
+            if not professionals:
+                print(f"[CLIENT] ⚠️ No hay profesionales con esos filtros en la BD")
+                return []
+
+            # Step 1.5 - Filter by professional name BEFORE checking calendars
+            # CRITICAL optimization - reduces API calls dramatically
+            if professional_name:
+                print(f"[CLIENT] 🎯 Filtering by name '{professional_name}' BEFORE checking availability...")
+                
+                # Normalizar texto: quitar acentos para matching flexible
+                import unicodedata
+                
+                def normalize_text(text):
+                    """Quita acentos y convierte a minúsculas."""
+                    # Normalizar: NFD separa acentos de las letras
+                    nfd = unicodedata.normalize('NFD', text)
+                    # Filtrar solo caracteres que NO son acentos
+                    without_accents = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
+                    return without_accents.lower()
+                
+                search_normalized = normalize_text(professional_name)
+                search_terms = search_normalized.split()
+                
+                matched_professionals = []
+                
+                for prof in professionals:
+                    prof_name = prof.get('name', '')
+                    prof_name_normalized = normalize_text(prof_name)
+                    
+                    # Match if ALL search terms are in the professional's name
+                    if all(term in prof_name_normalized for term in search_terms):
+                        matched_professionals.append(prof)
+                        print(f"[CLIENT]   ✅ Match: '{prof.get('name')}' contains '{professional_name}'")
+                    else:
+                        print(f"[CLIENT]   ⏭️  Skip: '{prof.get('name')}' doesn't match '{professional_name}'")
+                
+                # CRÍTICO: Reemplazar la lista con solo los que matchearon
+                professionals = matched_professionals
+                print(f"[CLIENT] 🚀 Name filter: reduced to {len(professionals)} professional(s)")
+                
+                if not professionals:
+                    print(f"[CLIENT] ❌ No professionals found matching name '{professional_name}'")
+                    return []
 
             # Step 2: Filter only professionals with Google Calendar configured
             professionals = [
@@ -102,6 +153,7 @@ class ClientService:
             # Step 3: If date specified, get available slots for each professional
             if date_str:
                 from src.services.professional_service import professional_service
+                from concurrent.futures import ThreadPoolExecutor, as_completed
                 
                 # Define time range based on preference
                 time_ranges = {
@@ -114,46 +166,70 @@ class ClientService:
                 
                 print(f"[CLIENT] Checking availability for {len(professionals)} professionals...")
                 
-                for idx, prof in enumerate(professionals, 1):
-                    print(f"[CLIENT] [{idx}/{len(professionals)}] Checking {prof['name']}...")
-                    
-                    # ⭐ OPTIMIZED: Single API call per professional
-                    # Gets ALL slots for the day in one request
-                    slots = professional_service.get_available_slots(
-                        professional_phone=prof['phone'],
-                        date=date_str,
-                        duration_minutes=50
-                    )
-                    
-                    if not slots:
-                        print(f"[CLIENT]   ❌ No slots available")
-                        continue
-                    
-                    print(f"[CLIENT]   ✅ Found {len(slots)} total slots")
-                    
-                    # Filter by time preference if specified
-                    if time_preference and time_preference in time_ranges:
-                        start_time, end_time = time_ranges[time_preference]
+                def check_professional_availability(prof_data):
+                    """
+                    Helper function to check availability for one professional.
+                    Runs in parallel thread.
+                    """
+                    idx, prof = prof_data
+                    try:
+                        print(f"[CLIENT] [{idx}/{len(professionals)}] Checking {prof['name']}...")
                         
-                        # Filter slots within the time range
-                        filtered_slots = [
-                            slot for slot in slots
-                            if start_time <= slot['start'] < end_time
-                        ]
+                        # Get ALL slots for the day in one request
+                        slots = professional_service.get_available_slots(
+                            professional_phone=prof['phone'],
+                            date=date_str,
+                            duration_minutes=50
+                        )
                         
-                        print(f"[CLIENT]   📊 {len(filtered_slots)} slots in {time_preference} range")
+                        if not slots:
+                            print(f"[CLIENT]   ❌ No slots available")
+                            return None
                         
-                        if not filtered_slots:
-                            continue
+                        print(f"[CLIENT]   ✅ Found {len(slots)} total slots")
                         
-                        prof['available_slots'] = filtered_slots
-                        prof['available_slots_count'] = len(filtered_slots)
-                    else:
-                        # No time preference, use all slots
-                        prof['available_slots'] = slots
-                        prof['available_slots_count'] = len(slots)
+                        # Filter by time preference if specified
+                        if time_preference and time_preference in time_ranges:
+                            start_time, end_time = time_ranges[time_preference]
+                            
+                            filtered_slots = [
+                                slot for slot in slots
+                                if start_time <= slot['start'] < end_time
+                            ]
+                            
+                            print(f"[CLIENT]   📊 {len(filtered_slots)} slots in {time_preference} range")
+                            
+                            if not filtered_slots:
+                                return None
+                            
+                            prof['available_slots'] = filtered_slots
+                            prof['available_slots_count'] = len(filtered_slots)
+                        else:
+                            prof['available_slots'] = slots
+                            prof['available_slots_count'] = len(slots)
+                        
+                        return prof
+                        
+                    except Exception as e:
+                        print(f"[CLIENT]   ❌ Error checking {prof['name']}: {e}")
+                        return None
+                
+                # Execute checks in parallel (max 5 workers)
+                # This is safe because Google Calendar API supports concurrent requests
+                max_workers = min(5, len(professionals))
+                
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all tasks
+                    future_to_prof = {
+                        executor.submit(check_professional_availability, (idx, prof)): prof
+                        for idx, prof in enumerate(professionals, 1)
+                    }
                     
-                    available_professionals.append(prof)
+                    # Collect results as they complete
+                    for future in as_completed(future_to_prof):
+                        result = future.result()
+                        if result:
+                            available_professionals.append(result)
                 
                 professionals = available_professionals
                 
@@ -172,7 +248,6 @@ class ClientService:
             import traceback
             traceback.print_exc()
             return []
-
     # =========================================================================
     # FORMATTING - Display results for WhatsApp
     # =========================================================================
@@ -511,6 +586,302 @@ class ClientService:
         }
         return gender_map.get(gender, 'No especificado')
 
+    def get_user_appointments(self, phone_number: str) -> List[Dict]:
+        """
+        Obtiene los turnos agendados de un usuario.
+        
+        AJUSTADO al schema de appointments con:
+        - appointment_date (DATE)
+        - start (TEXT) - hora de inicio
+        - status → confirmada, pendiente_confirmacion
+        
+        Args:
+            phone_number: Teléfono del usuario
+            
+        Returns:
+            Lista de turnos con formato:
+            [{
+                'id': 123,
+                'professional_name': 'Dr. García',
+                'professional_phone': '+5491112345678',
+                'date': '2026-02-01',
+                'date_formatted': '01/02/2026',
+                'time': '14:00',
+                'duration_minutes': 50,
+                'status': 'confirmada',
+                'google_event_id': 'event_id_from_gcal',
+                'modality': 'presencial'
+            }]
+        """
+        try:
+            print(f"[CLIENT] 📅 Obteniendo turnos para {phone_number}")
+            
+            # Query ajustado a tu schema
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Obtener turnos confirmados y pendientes, ordenados por fecha
+                cursor.execute("""
+                    SELECT 
+                        a.id,
+                        a.google_event_id,
+                        a.appointment_date,
+                        a.start as time,
+                        a.duration_minutes,
+                        a.status,
+                        a.modality,
+                        a.professional_phone,
+                        p.name as professional_name
+                    FROM appointments a
+                    JOIN professionals p ON a.professional_phone = p.phone
+                    WHERE a.client_phone = ?
+                    AND a.status IN ('confirmada', 'pendiente_confirmacion')
+                    AND a.appointment_date >= DATE('now')
+                    ORDER BY a.appointment_date ASC, a.start ASC
+                """, (phone_number,))
+                
+                rows = cursor.fetchall()
+                
+                # Formatear resultados
+                appointments = []
+                for row in rows:
+                    # Convertir fecha a formato display DD/MM/YYYY
+                    date_obj = datetime.strptime(row['appointment_date'], '%Y-%m-%d').date()
+                    date_formatted = date_obj.strftime('%d/%m/%Y')
+                    
+                    appointments.append({
+                        'id': row['id'],
+                        'google_event_id': row['google_event_id'],
+                        'date': row['appointment_date'],  # YYYY-MM-DD
+                        'date_formatted': date_formatted,  # DD/MM/YYYY
+                        'time': row['time'],  # HH:MM
+                        'duration_minutes': row['duration_minutes'],
+                        'status': row['status'],
+                        'modality': row['modality'],
+                        'professional_phone': row['professional_phone'],
+                        'professional_name': row['professional_name']
+                    })
+                
+                print(f"[CLIENT] ✅ Encontrados {len(appointments)} turnos activos")
+                return appointments
+                
+        except Exception as e:
+            print(f"[CLIENT] ❌ Error obteniendo turnos: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+
+    def cancel_appointment(self, appointment_id: int, phone_number: str, reason: str = None) -> bool:
+        """
+        Cancela un turno agendado.
+        
+        AJUSTADO al schema:
+        - Actualiza status a 'cancelada_cliente'
+        - Guarda cancellation_reason
+        - Actualiza cancelled_at
+        - Elimina de Google Calendar usando google_event_id
+        
+        Realiza 2 acciones:
+        1. Elimina evento de Google Calendar
+        2. Actualiza estado en BD a 'cancelada_cliente'
+        
+        Args:
+            appointment_id: ID del turno en BD
+            phone_number: Teléfono del usuario (validación)
+            reason: Razón de cancelación (opcional)
+            
+        Returns:
+            True si se canceló exitosamente, False si hubo error
+        """
+        try:
+            print(f"[CLIENT] 🗑️ Cancelando turno {appointment_id} para {phone_number}")
+            
+            # 1. Obtener info del turno
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT 
+                        id,
+                        client_phone,
+                        professional_phone,
+                        google_event_id,
+                        appointment_date,
+                        start as time,
+                        status
+                    FROM appointments
+                    WHERE id = ?
+                """, (appointment_id,))
+                
+                row = cursor.fetchone()
+                
+                if not row:
+                    print(f"[CLIENT] ❌ Turno {appointment_id} no encontrado")
+                    return False
+                
+                appointment = dict(row)
+            
+            # Validar que pertenece al usuario
+            if appointment['client_phone'] != phone_number:
+                print(f"[CLIENT] ❌ Turno no pertenece al usuario {phone_number}")
+                return False
+            
+            # Validar que no esté ya cancelado
+            if 'cancelada' in appointment['status']:
+                print(f"[CLIENT] ⚠️ Turno ya está cancelado")
+                return False
+            
+            # 2. Eliminar de Google Calendar
+            if appointment.get('google_event_id') and appointment.get('professional_phone'):
+                from src.services.professional_service import professional_service
+                
+                try:
+                    # Obtener calendar_id del profesional
+                    prof = self.db.get_professional_by_phone(appointment['professional_phone'])
+                    calendar_id = prof.get('calendar_id')
+                    
+                    if calendar_id and appointment['google_event_id']:
+                        professional_service.delete_calendar_event(
+                            professional_phone=appointment['professional_phone'],
+                            event_id=appointment['google_event_id']
+                        )
+                        print(f"[CLIENT] ✅ Evento eliminado de Google Calendar")
+                    else:
+                        print(f"[CLIENT] ⚠️ Sin calendar_id o event_id, saltando eliminación de Calendar")
+                        
+                except Exception as e:
+                    print(f"[CLIENT] ⚠️ Error eliminando de Calendar (continuando): {e}")
+            
+            # 3. Actualizar estado en BD
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    UPDATE appointments
+                    SET status = 'cancelada_cliente',
+                        cancellation_reason = ?,
+                        cancelled_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (reason or 'Cancelado por el cliente', appointment_id))
+                
+                conn.commit()
+            
+            print(f"[CLIENT] ✅ Turno {appointment_id} cancelado exitosamente")
+            
+            # 4. Analytics (opcional)
+            from src.services.analytics_service import analytics_service
+            try:
+                analytics_service.log_appointment_cancellation(
+                    appointment_id=appointment_id,
+                    client_phone=phone_number,
+                    professional_phone=appointment['professional_phone'],
+                    reason=reason or 'Cancelado por el cliente'
+                )
+            except:
+                pass  # Analytics no debe bloquear
+            
+            return True
+            
+        except Exception as e:
+            print(f"[CLIENT] ❌ Error cancelando turno: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+
+    # ========================================
+    # MÉTODO PARA AGREGAR A database.py
+    # ========================================
+
+    def get_appointment_by_id(self, appointment_id: int) -> Optional[Dict]:
+        """
+        Obtiene un turno específico por ID.
+        
+        AJUSTADO al schema de appointments.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    a.id,
+                    a.google_event_id,
+                    a.client_phone,
+                    a.professional_phone,
+                    a.appointment_date,
+                    a.start as time,
+                    a.end,
+                    a.duration_minutes,
+                    a.status,
+                    a.modality,
+                    a.session_type,
+                    a.notes,
+                    p.name as professional_name,
+                    p.calendar_id
+                FROM appointments a
+                JOIN professionals p ON a.professional_phone = p.phone
+                WHERE a.id = ?
+            """, (appointment_id,))
+            
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            return dict(row)
+
+
+    # ========================================
+    # MÉTODO PARA AGREGAR A professional_service.py
+    # ========================================
+
+    def delete_calendar_event(self, professional_phone: str, event_id: str) -> bool:
+        """
+        Elimina un evento de Google Calendar.
+        
+        Args:
+            professional_phone: Teléfono del profesional
+            event_id: ID del evento en Google Calendar (google_event_id)
+            
+        Returns:
+            True si se eliminó exitosamente
+        """
+        try:
+            print(f"[PROF] 🗑️ Eliminando evento {event_id} de Calendar")
+            
+            # Obtener calendar_id del profesional
+            professional = self.db.get_professional_by_phone(professional_phone)
+            calendar_id = professional.get('calendar_id')
+            
+            if not calendar_id:
+                print(f"[PROF] ❌ Profesional sin calendar_id configurado")
+                return False
+            
+            # Obtener servicio de Calendar
+            calendar_service = self._get_calendar_service(professional_phone)
+            
+            if not calendar_service:
+                print(f"[PROF] ❌ No se pudo obtener servicio de Calendar")
+                return False
+            
+            # Eliminar evento
+            calendar_service.events().delete(
+                calendarId=calendar_id,
+                eventId=event_id
+            ).execute()
+            
+            print(f"[PROF] ✅ Evento {event_id} eliminado de Google Calendar")
+            return True
+            
+        except Exception as e:
+            print(f"[PROF] ❌ Error eliminando evento de Calendar: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        
+    
 
 # Global instance
 client_service = ClientService()
