@@ -2243,6 +2243,113 @@ class ClientHandler:
             new_time=new_start_time,
             professional_name=professional_name
         )
+    
+       # ========================================
+    # MÉTODO PARA HANDLERS DE CONFIRMACIÓN
+    # ========================================
+
+    def handle_confirm_cancel(self, session: SessionData, message: str) -> str:
+        """
+        Handler para confirmación de cancelación de turno.
+        
+        Estado: CLIENT_CONFIRM_CANCEL
+        """
+        from src.services.client_service import client_service
+        
+        message_lower = message.lower().strip()
+        
+        # Confirmación
+        if message_lower in ['si', 'sí', 'confirmo', 'ok', 'confirmar', 'yes']:
+            appointment = session.get_temp('appointment_to_cancel')
+            
+            if not appointment:
+                return "⚠️ Hubo un error. Por favor intenta de nuevo."
+            
+            # Cancelar turno
+            success = client_service.cancel_appointment(
+                appointment_id=appointment['id'],
+                phone_number=session.phone_number,
+                reason='Cancelado por el cliente vía WhatsApp'
+            )
+            
+            if success:
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                
+                return (f"✅ Turno cancelado exitosamente\n\n"
+                    f"👨‍⚕️ {appointment['professional_name']}\n"
+                    f"📅 {appointment['date_formatted']}\n"
+                    f"🕐 {appointment['time']}\n\n"
+                    f"Si deseas agendar un nuevo turno, escribe 'buscar'.")
+            else:
+                return ("⚠️ No se pudo cancelar el turno.\n\n"
+                    "Por favor contacta al centro directamente.")
+        
+        # Cancelar la cancelación
+        elif message_lower in ['no', 'volver', 'cancelar', 'atrás', 'atras']:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            
+            user_info = user_service.identify_user(session.phone_number)
+            user_info['phone_number'] = session.phone_number
+            return user_service.generate_welcome_message(user_info)
+        
+        # Opción inválida
+        else:
+            return ("⚠️ Por favor responde:\n"
+                "• 'sí' para confirmar la cancelación\n"
+                "• 'no' para volver al menú")
+
+
+    def handle_select_cancel(self, session: SessionData, message: str) -> str:
+        """
+        Handler para seleccionar qué turno cancelar (cuando hay múltiples).
+        
+        Estado: CLIENT_SELECT_CANCEL
+        """
+        from src.services.client_service import client_service
+        
+        appointments = session.get_temp('appointments_list')
+        
+        if not appointments:
+            return "⚠️ Hubo un error. Por favor intenta de nuevo."
+        
+        # Opción 0: Volver
+        if message == '0':
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            
+            user_info = user_service.identify_user(session.phone_number)
+            user_info['phone_number'] = session.phone_number
+            return user_service.generate_welcome_message(user_info)
+        
+        # Validar número
+        try:
+            selection = int(message)
+            
+            if 1 <= selection <= len(appointments):
+                # Turno seleccionado
+                appointment = appointments[selection - 1]
+                
+                # Guardar y pedir confirmación
+                session.set_temp('appointment_to_cancel', appointment)
+                session.transition_to(ConversationState.CLIENT_CONFIRM_CANCEL)
+                
+                return (f"🗑️ Cancelación de turno:\n\n"
+                    f"👨‍⚕️ {appointment['professional_name']}\n"
+                    f"📅 {appointment['date_formatted']}\n"
+                    f"🕐 {appointment['time']}\n"
+                    f"📍 {appointment.get('modality', 'presencial').title()}\n\n"
+                    f"¿Confirmas la cancelación?\n"
+                    f"• Escribe 'sí' para confirmar\n"
+                    f"• Escribe 'no' para volver")
+            else:
+                return f"⚠️ Por favor ingresa un número entre 1 y {len(appointments)}, o '0' para volver."
+                
+        except ValueError:
+            return f"⚠️ Por favor ingresa un número entre 1 y {len(appointments)}, o '0' para volver."
+
+
 
     # Helper method para formatear detalle de cita
     def _format_appointment_detail(self, session: SessionData, apt: dict) -> str:
@@ -2717,3 +2824,5 @@ O escribe '0' para volver al menú."""
     Por favor, intenta nuevamente más tarde o contacta directamente al profesional.
 
     Escribe 'menu' para volver al menú principal."""
+        
+    
