@@ -32,6 +32,7 @@ services:
       - .env
 
     environment:
+      - TZ=America/Argentina/Buenos_Aires
       - DOMAIN_PRESET=${DOMAIN_PRESET:-SALUD} # Default: SALUD
       - PYTHONPATH=/app
       # Access keys configuration
