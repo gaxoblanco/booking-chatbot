@@ -127,6 +127,10 @@ class ConversationState(Enum):
 
     AWAITING_REMINDER_RESPONSE = "awaiting_reminder_response"
 
+    # CANCELACIÓN DE CITAS
+    CLIENT_CONFIRM_CANCEL = "client_confirm_cancel"    # Confirmar cancelación
+    CLIENT_SELECT_CANCEL = "client_select_cancel"       # Seleccionar cuál turno cancelar
+
 
 # ==========================================
 # SESSION DATA CLASS
