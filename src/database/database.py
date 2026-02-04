@@ -635,7 +635,7 @@ class Database:
                     params.append(online_sessions)
                 
                 if specialty:
-                    query += " AND specialties LIKE ?"
+                    query += " AND category LIKE ?"
                     params.append(f"%{specialty}%")
 
                 # Only verified professionals (with certificate)
