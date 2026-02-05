@@ -50,6 +50,12 @@ services:
       # Mount database (persistent storage)
       - database:/app/data
 
+      # Mount conversations logs (persistent storage para ML)
+      - conversations:/app/data/conversations
+
+      # Mount dataset (persistent storage para entrenamiento ML)
+      - dataset:/app/dataset
+
       # Mount source code for hot reload in development
       # Comment out for production
       - ../src:/app/src
@@ -57,7 +63,7 @@ services:
       # Mount scripts (if needed for debugging)
       - ../scripts:/app/scripts
 
-      # ⭐ NUEVO: Mount Google Calendar credentials
+      # Mount Google Calendar credentials
       - ../src/integrations/google_calendar_service:/app/src/integrations/google_calendar_service
 
       - ../profesionales_demo.csv:/app/profesionales_demo.csv
@@ -93,6 +99,17 @@ networks:
 volumes:
   database:
     driver: local
+
+  # Conversaciones recopiladas para ML
+  # Contiene archivos JSONL con logs de cada mensaje procesado
+  conversations:
+    driver: local
+
+  # Dataset limpio para entrenamiento ML
+  # Contiene datos revisados y validados manualmente
+  dataset:
+    driver: local
+  
 # ==================================================
 # USAGE INSTRUCTIONS
 # ==================================================
