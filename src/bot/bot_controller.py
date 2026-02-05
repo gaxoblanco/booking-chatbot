@@ -35,7 +35,8 @@ from src.bot.professional_handler import ProfessionalHandler
 from src.bot.client_handler import ClientHandler
 from src.config.filter_config import FeatureFlags
 from src.services.user_service import user_service
-from src.services.intent_detector import intent_detector, Intent  # ⭐ NUEVO
+from src.services.intent_detector import intent_detector, Intent
+from src.services.conversation_logger import conversation_logger
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
 from src.messages.messages_professional import professional_messages
@@ -156,9 +157,9 @@ class BotController:
             ConversationState.START,
             ConversationState.CLIENT_MAIN_MENU,
             ConversationState.CLIENT_NEW_USER_MENU,
-            ConversationState.CLIENT_MULTIFILTER_MENU,  # ⭐ NUEVO
-            ConversationState.CLIENT_SHOW_RESULTS,      # ⭐ NUEVO
-            ConversationState.CLIENT_FILTER_INPUT,      # ⭐ NUEVO - Para ayudar con inputs
+            ConversationState.CLIENT_MULTIFILTER_MENU,  
+            ConversationState.CLIENT_SHOW_RESULTS,      
+            ConversationState.CLIENT_FILTER_INPUT,
         ]
         
         if session.state in nlu_enabled_states:
@@ -173,15 +174,40 @@ class BotController:
             print(f"[NLU] Intent: {intent_result['intent'].value} (confianza: {intent_result['confidence']:.2f})")
             if intent_result['entities']:
                 print(f"[NLU] Entidades: {intent_result['entities']}")
+
+            # Logging automático para dataset de ML
+            conversation_logger.log_message(
+                phone=phone_number,
+                message=message,
+                detected_intent=intent_result['intent'].value,
+                detected_entities=intent_result['entities'],
+                confidence=intent_result['confidence'],
+                shortcut_used=intent_result.get('can_shortcut', False),
+                session_state=session.state.value,
+                user_role=session.role.value if session.role else None,
+                context_data={
+                    'has_accumulated_entities': len(conv_context.get_entities()) > 0,
+                    'conversation_turns': len(conv_context.conversation_history)
+                }
+            )
+
+            # Marcar para revisión si confianza baja
+            if intent_result['confidence'] < 0.5:
+                conversation_logger.mark_for_review(
+                    phone=phone_number,
+                    message=message,
+                    detected_intent=intent_result['intent'].value,
+                    priority='high'
+                )
             
-            # ⭐ Agregar al historial
+            # Agregar al historial
             conv_context.add_message(
                 message=message,
                 intent=intent_result['intent'].value,
                 entities=intent_result['entities']
             )
 
-            # ⭐ CRÍTICO: Acumular entidades si hay alguna detectada
+            # CRÍTICO: Acumular entidades si hay alguna detectada
             # Esto funciona incluso si el intent es "unknown" pero detectó entidades
             if intent_result['entities']:
                 print(f"[NLU] Entidades detectadas: {intent_result['entities']}")
