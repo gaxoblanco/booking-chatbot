@@ -222,3 +222,26 @@ scratch.md
 !.gitkeep
 !README*.md
 !LICENSE
+
+# ==================================================
+# MACHINE LEARNING
+# ==================================================
+# Excluye modelos entrenados (pesados ~50MB)
+scripts/ml/intent_classifier/model/
+scripts/ml/intent_classifier/model/*
+
+# Excluye archivos binarios de spaCy
+scripts/ml/intent_classifier/*.bin
+scripts/ml/intent_classifier/*.vocab
+
+# Excluye datos generados
+scripts/ml/intent_classifier/*.jsonl
+scripts/ml/intent_classifier/training_report.json
+
+# Excluye archivos de configuración generados
+scripts/ml/intent_classifier/cfg/
+scripts/ml/intent_classifier/cfg/*
+
+# Excluye todos los JSON generados EXCEPTO config.cfg
+scripts/ml/intent_classifier/*.json
+!scripts/ml/intent_classifier/config.cfg
