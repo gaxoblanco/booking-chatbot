@@ -34,3 +34,25 @@ pytz==2023.3
 pytest==7.4.3
 pytest-mock==3.12.0
 pytest-cov==4.1.0
+
+# ==========================================
+# ML / NLU Dependencies (spaCy Intent Detection)
+# ==========================================
+
+# spaCy - Framework NLP industrial
+spacy==3.7.0
+
+# scikit-learn - Métricas de evaluación ML
+scikit-learn==1.3.0
+
+# NumPy - Operaciones numéricas
+numpy==1.24.0
+
+# pandas - Análisis de datos
+pandas==2.0.0
+
+# tqdm - Barras de progreso
+tqdm==4.65.0
+
+# NOTA: El modelo español de spaCy se instala por separado con:
+# python -m spacy download es_core_news_sm
