@@ -24,11 +24,11 @@ from pathlib import Path
 # Importar detectores
 try:
     from src.services.intent_detector import intent_detector, Intent
-    from services.ml_intent_detector import ml_intent_detector
+    from integrations.ml.ml_intent_detector import ml_intent_detector
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.services.intent_detector import intent_detector, Intent
-    from services.ml_intent_detector import ml_intent_detector
+    from integrations.ml.ml_intent_detector import ml_intent_detector
 
 
 class HybridIntentDetector:
