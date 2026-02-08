@@ -1,0 +1,148 @@
+# ==================================================
+# .dockerignore - Excluir archivos innecesarios del build
+# ==================================================
+# Reduce tamaño de contexto Docker y acelera builds
+
+# ==================================================
+# PYTHON
+# ==================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# ==================================================
+# DOCKER
+# ==================================================
+.dockerignore
+Dockerfile
+docker-compose*.yml
+.docker/
+
+# ==================================================
+# GIT
+# ==================================================
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# ==================================================
+# IDE / EDITORS
+# ==================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ==================================================
+# DATA & DATABASES (IMPORTANTE!)
+# ==================================================
+# No copiar datos locales al build
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Dataset (se monta como volumen)
+dataset/
+dataset_training.jsonl
+dataset_validation.jsonl
+
+# Conversaciones recopiladas
+data/conversations/
+*.jsonl
+
+# ==================================================
+# MODELS (GRANDES!)
+# ==================================================
+# No copiar modelos al build (se montan como volumen)
+scripts/ml/models/
+*.pkl
+*.model
+*.h5
+*.pt
+*.pth
+
+# ==================================================
+# LOGS
+# ==================================================
+*.log
+logs/
+*.log.*
+
+# ==================================================
+# CERTIFICATES & CREDENTIALS
+# ==================================================
+# No incluir credenciales en la imagen
+*.pem
+*.key
+*.crt
+data/certificates/
+credentials.json
+token.json
+
+# Google Calendar
+src/integrations/google_calendar_service/config/google/*.json
+
+# ==================================================
+# TEMPORARY FILES
+# ==================================================
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ==================================================
+# DOCUMENTATION (opcional)
+# ==================================================
+docs/
+*.md
+README.md
+LICENSE
+
+# ==================================================
+# TESTING
+# ==================================================
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==================================================
+# ENVIRONMENT FILES
+# ==================================================
+# No incluir .env con secretos (usar .env.example)
+.env
+.env.local
+.env.*.local
+
+# ==================================================
+# BACKUPS
+# ==================================================
+*.bak
+*.backup
+backup/
+backups/
+
+# ==================================================
+# OTROS
+# ==================================================
+# Archivos de configuración local
+.editorconfig
+.pre-commit-config.yaml
+Makefile
