@@ -184,6 +184,67 @@ class IntentDetector:
             'esta_semana': ['esta semana'],
             'próxima_semana': ['próxima semana', 'proxima semana', 'semana que viene', 'la semana que viene'],
         }
+
+    def _normalize_text(self, message: str) -> str:
+        """
+        Normaliza texto para casos de mensajes complejos.
+        Expande contracciones y corrige errores comunes.
+        """
+        msg = ' ' + message.lower() + ' '  # Espacios para match exacto
+        
+        # Expandir contracciones y errores comunes
+        replacements = {
+            # Contracciones
+            ' pa ': ' para ',
+            ' pal ': ' para el ',
+            ' xa ': ' para ',
+            ' q ': ' que ',
+            ' xq ': ' porque ',
+            ' xfa ': ' por favor ',
+            ' bn ': ' bien ',
+            ' tmb ': ' también ',
+            
+            # Errores fonéticos
+            ' nesesito ': ' necesito ',
+            ' nececito ': ' necesito ',
+            ' quero ': ' quiero ',
+            ' quier ': ' quiero ',
+            ' teno ': ' tengo ',
+            ' aora ': ' ahora ',
+            ' aber ': ' a ver ',
+            
+            # ⭐ NUEVO: Títulos abreviados
+            ' lic ': ' licenciado ',
+            ' lic. ': ' licenciado ',
+            ' dr ': ' doctor ',
+            ' dr. ': ' doctor ',
+            ' dra ': ' doctora ',
+            ' dra. ': ' doctora ',
+            ' dc ': ' doctor ',
+            ' dc. ': ' doctor ',
+            ' dotor ': ' doctor ',
+            ' dotora ': ' doctora ',
+            
+            # Títulos mal escritos
+            ' licen ': ' licenciado ',
+            ' licdo ': ' licenciado ',
+            
+            # Días abreviados
+            ' lun ': ' lunes ',
+            ' lune ': ' lunes ',
+            ' mar ': ' martes ',
+            ' mier ': ' miércoles ',
+            ' jue ': ' jueves ',
+            ' vier ': ' viernes ',
+            ' vie ': ' viernes ',
+            ' sab ': ' sábado ',
+            ' dom ': ' domingo ',
+        }
+        
+        for old, new in replacements.items():
+            msg = msg.replace(old, new)
+        
+        return msg.strip()
     
     def detect(self, message: str, context: Optional[Dict] = None) -> Dict:
         """
@@ -203,14 +264,16 @@ class IntentDetector:
             }
         """
         message_lower = message.lower().strip()
-
-        entities = self._extract_all_entities(message)
+        message_normalized = self._normalize_text(message_lower)
+        
+        print(f"[NLU] Original: {message_lower}")
+        print(f"[NLU] Normalizado: {message_normalized}")
         
         # Resultado inicial
         result = {
             'intent': Intent.UNKNOWN,
             'confidence': 0.0,
-            'entities': entities,
+            'entities': {},
             'can_shortcut': False,
             'missing_entities': []
         }
@@ -219,19 +282,27 @@ class IntentDetector:
         # 1. DETECTAR INTENCIÓN PRINCIPAL
         # ==========================================
         
-        intent, confidence = self._detect_intent(message_lower)
+        intent, confidence = self._detect_intent(message_normalized)
         result['intent'] = intent
         result['confidence'] = confidence
         
         # ==========================================
-        # 2. EXTRAER ENTIDADES
+        # 2. EXTRAER ENTIDADES (SIEMPRE)
+        # ==========================================
+        
+        # ⭐ CAMBIO: Extraer entidades SIEMPRE, no solo para intents específicos
+        entities = self._extract_entities(message_normalized)
+        result['entities'] = entities
+        
+        print(f"[NLU] 📋 Entities extracted:")
+        for key, value in entities.items():
+            print(f"[NLU]    {key}: {value}")
+        
+        # ==========================================
+        # 3. DETERMINAR SHORTCUT
         # ==========================================
         
         if intent in [Intent.SEARCH_PROFESSIONAL, Intent.VIEW_TOMORROW]:
-            entities = self._extract_entities(message_lower)
-            result['entities'] = entities
-            
-            # Determinar si puede hacer shortcut
             result['can_shortcut'], result['missing_entities'] = self._can_shortcut(
                 intent, entities
             )
@@ -311,23 +382,26 @@ class IntentDetector:
         if modalidad:
             entities['modalidad'] = modalidad
         
-        # ⭐ NUEVO: Género
+        # Género
         genero = self._extract_genero(message)
         if genero:
             entities['genero'] = genero
         
-        # ⭐ NUEVO: Prepaga
+        # Prepaga
         prepaga = self._extract_prepaga(message)
         if prepaga:
             entities['prepaga'] = prepaga
         
-        # Nombre de profesional
+        # ⭐ CRÍTICO: Nombre de profesional
         professional_name = self._extract_professional_name(message)
         if professional_name:
             entities['professional_name'] = professional_name
+            print(f"[NLU] ✅ Professional name detectado: {professional_name}")
+        else:
+            print(f"[NLU] ⚠️ No se detectó nombre de profesional")
         
         return entities
-    
+
     def _extract_especialidad(self, message: str) -> Optional[str]:
         """
         Extrae especialidad mencionada.
@@ -380,8 +454,68 @@ class IntentDetector:
             ('esta_semana', ['esta semana']),
             ('mañana', ['mañana', 'manana', 'para mañana', 'para manana']),  # Después de "pasado mañana"
             ('hoy', ['hoy', 'para hoy', 'ahora', 'ya']),
-            ('ayer', ['ayer', 'para ayer']),  # ⭐ NUEVO - Siempre será rechazada
+            ('ayer', ['ayer', 'para ayer']),  # Siempre será rechazada
         ]
+
+        dias_semana_map = {
+            # Lunes + variantes
+            'lunes': 0, 'lune': 0, 'lnes': 0, 'lun': 0,
+            
+            # Martes + variantes
+            'martes': 1, 'marte': 1, 'marts': 1, 'mar': 1,
+            
+            # Miércoles + variantes
+            'miércoles': 2, 'miercoles': 2, 'miercolees': 2, 'miercols': 2, 
+            'miercol': 2, 'mier': 2, 'mx': 2,
+            
+            # Jueves + variantes
+            'jueves': 3, 'juebe': 3, 'juebes': 3, 'juves': 3, 
+            'jue': 3, 'juev': 3,
+            
+            # Viernes + variantes
+            'viernes': 4, 'vierne': 4, 'biernes': 4, 'bierne': 4,
+            'vier': 4, 'vie': 4,
+            
+            # Sábado + variantes
+            'sábado': 5, 'sabado': 5, 'savado': 5, 'sabdo': 5,
+            'sab': 5, 'sabao': 5,
+            
+            # Domingo + variantes
+            'domingo': 6, 'domigo': 6, 'domino': 6, 'domgo': 6,
+            'dom': 6, 'dgo': 6,
+        }
+
+        for dia_nombre, dia_numero in dias_semana_map.items():
+            # Patrones que indican "próximo X día"
+            patrones_dia = [
+                f'{dia_nombre} que viene',
+                f'el {dia_nombre}',
+                f'para el {dia_nombre}',
+                f'pa el {dia_nombre}',        # ⭐ NUEVO
+                f'pal {dia_nombre}',           # ⭐ NUEVO
+                f'xa el {dia_nombre}',         # ⭐ NUEVO
+                f'próximo {dia_nombre}',
+                f'proximo {dia_nombre}',
+                f'este {dia_nombre}',
+            ]
+            
+            # Verificar si algún patrón está en el mensaje
+            if any(patron in message for patron in patrones_dia):
+                # Calcular próximo día de esa semana
+                today = datetime.now().date()
+                current_weekday = today.weekday()  # 0=lunes, 6=domingo
+                
+                days_ahead = dia_numero - current_weekday
+                
+                # Si el día ya pasó esta semana, ir a la próxima semana
+                if days_ahead <= 0:
+                    days_ahead += 7
+                
+                target_date = today + timedelta(days=days_ahead)
+                fecha_str = target_date.strftime('%Y-%m-%d')
+                
+                print(f"[NLU] Día de semana detectado: '{dia_nombre}' → {fecha_str} ({target_date.strftime('%d/%m')})")
+                return fecha_str
         
         # Buscar en orden de especificidad (más largas primero)
         for fecha_key, keywords in ordered_fechas:
@@ -536,85 +670,235 @@ class IntentDetector:
     
     def _extract_professional_name(self, message: str) -> Optional[str]:
         """
-        Extrae nombre de profesional mencionado.
-        
-        Estrategia:
-        1. Busca patrón "con [nombre]"
-        2. Extrae todas las palabras capitalizadas
-        3. Filtra stopwords al final
+        Extrae nombre de profesional usando:
+        1. Patrones de texto (con/al/a la/ver al + palabras)
+        2. Fuzzy matching contra DB de profesionales
+        3. Match por apellido solo, nombre solo, o nombre completo
         
         Returns:
-            Nombre del profesional en minúsculas para búsqueda flexible
+            Nombre normalizado del profesional (lowercase) o None
         """
         import re
+        from difflib import SequenceMatcher
         
-        # Lista de palabras que NO son parte del nombre
+        # ⭐ DEBUG
+        print(f"[NLU] 🔍 _extract_professional_name() called")
+        print(f"[NLU]    Input: '{message}'")
+        
         stopwords = {
             'para', 'hoy', 'mañana', 'manana', 'pasado', 'ayer',
             'por', 'en', 'de', 'del', 'a', 'la', 'el', 'los', 'las',
-            'tarde', 'noche', 'temprano',
+            'tarde', 'noche', 'temprano', 'tempranito',
             'zona', 'norte', 'sur', 'centro', 'oeste', 'este',
-            'turno', 'cita', 'sesion', 'consulta'
+            'turno', 'cita', 'sesion', 'consulta', 'ver', 'quiero', 'necesito', 'tener', 'tengo'
         }
         
-        # Patrón 1: "con [Dr./Dra.] [palabras]"
-        con_pattern = r'con\s+(?:dr\.?|dra\.?|lic\.?|licenciado|licenciada)?\s*([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
-        match = re.search(con_pattern, message, re.IGNORECASE)
+        # ==========================================
+        # PASO 1: Extraer candidatos del mensaje
+        # ==========================================
+        candidates = []
+
+        print(f"[NLU] 📋 Probando patrones de extracción...")
+
+        # Patrón 1: "con [el/la] [título] [palabras]"
+        con_pattern = r'con\s+(?:el|la)?\s*(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
+        con_match = re.search(con_pattern, message, re.IGNORECASE)
+        if con_match:
+            con_extracted = con_match.group(1).strip()
+            print(f"[NLU]    ✅ Patrón 'con [el/la] [título]': '{con_extracted}'")
+            candidates.append(con_extracted)
+        else:
+            print(f"[NLU]    ❌ Patrón 'con [el/la] [título]': no match")
+
+        # Patrón 2: "al/a la [título] [palabras]"
+        al_pattern = r'(?:al|a\s+la)\s+(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
+        al_match = re.search(al_pattern, message, re.IGNORECASE)
+        if al_match:
+            al_extracted = al_match.group(1).strip()
+            print(f"[NLU]    ✅ Patrón 'al/a la [título]': '{al_extracted}'")
+            candidates.append(al_extracted)
+        else:
+            print(f"[NLU]    ❌ Patrón 'al/a la [título]': no match")
+
+        # Patrón 3: "ver [al/a la] [título] [palabras]"
+        ver_al_pattern = r'ver\s+(?:al|a\s+la)\s+(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
+        ver_al_match = re.search(ver_al_pattern, message, re.IGNORECASE)
+        if ver_al_match:
+            ver_al_extracted = ver_al_match.group(1).strip()
+            print(f"[NLU]    ✅ Patrón 'ver al/a la [título]': '{ver_al_extracted}'")
+            candidates.append(ver_al_extracted)
+        else:
+            print(f"[NLU]    ❌ Patrón 'ver al/a la [título]': no match")
+
+        # Patrón 4: "ver a [palabras]" (sin título obligatorio)
+        ver_pattern = r'ver\s+a\s+(?:la\s+)?([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
+        ver_match = re.search(ver_pattern, message, re.IGNORECASE)
+        if ver_match:
+            ver_extracted = ver_match.group(1).strip()
+            print(f"[NLU]    ✅ Patrón 'ver a': '{ver_extracted}'")
+            candidates.append(ver_extracted)
+        else:
+            print(f"[NLU]    ❌ Patrón 'ver a': no match")
         
-        if match:
-            # Extraer el grupo capturado
-            captured = match.group(1).strip()
+        print(f"[NLU] 📊 Total candidatos extraídos: {len(candidates)}")
+        if not candidates:
+            print(f"[NLU] ⚠️ No se encontraron candidatos")
+            return None
+        
+        # ==========================================
+        # PASO 2: Limpiar candidatos
+        # ==========================================
+        cleaned_candidates = []
+        
+        for candidate in candidates:
+            print(f"[NLU] 🧹 Limpiando: '{candidate}'")
             
             # Dividir en palabras
-            words = captured.split()
-            
-            # ⭐ CLAVE: Filtrar stopwords y tomar solo las primeras 2 palabras válidas
+            words = candidate.split()
             valid_words = []
+            
             for word in words:
                 word_clean = word.lower().strip('.,;:')
                 
-                # Si es stopword, DETENER (no agregar más palabras)
+                # Detener en stopword
                 if word_clean in stopwords:
-                    print(f"[NLU] Deteniendo en stopword: '{word_clean}'")
+                    print(f"[NLU]    ⏹️ Deteniendo en stopword: '{word_clean}'")
                     break
                 
-                # Si es una palabra válida (capitalizada o tiene más de 2 letras)
-                if word and len(word) > 1:
+                # Agregar palabra válida (más de 1 letra)
+                if len(word) > 1:
                     valid_words.append(word)
                 
-                # Máximo 2 palabras (nombre + apellido)
-                if len(valid_words) >= 2:
+                # Máximo 3 palabras (nombre + apellido1 + apellido2)
+                if len(valid_words) >= 3:
                     break
             
             if valid_words:
+                # Remover títulos al inicio
                 name = ' '.join(valid_words)
-                # Limpiar títulos al inicio
-                name = re.sub(r'^(dr\.?|dra\.?|lic\.?|licenciado|licenciada)\s+', '', name, flags=re.IGNORECASE)
-                print(f"[NLU] Nombre profesional detectado (patrón 'con'): {name}")
-                return name.lower()
-        
-        # Patrón 2: Buscar nombres propios (2 palabras capitalizadas) si hay keyword
-        if self._contains_any(message, self.professional_keywords):
-            # Buscar palabras que empiecen con mayúscula
-            capitalized_pattern = r'\b[A-ZÁÉÍÓÚ][a-záéíóúñ]+\b'
-            capitalized_words = re.findall(capitalized_pattern, message)
-            
-            if len(capitalized_words) >= 2:
-                # Filtrar stopwords
-                valid_words = []
-                for word in capitalized_words:
-                    if word.lower() not in stopwords:
-                        valid_words.append(word)
-                        if len(valid_words) >= 2:
-                            break
+                name = re.sub(r'^(dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|doctor|doctora|licenciado|licenciada)\s+', '', name, flags=re.IGNORECASE)
                 
-                if len(valid_words) >= 2:
-                    name = ' '.join(valid_words[:2])
-                    print(f"[NLU] Nombre profesional detectado (capitalizado): {name}")
-                    return name.lower()
+                if name:
+                    print(f"[NLU]    ✅ Candidato limpio: '{name}'")
+                    cleaned_candidates.append(name)
+                else:
+                    print(f"[NLU]    ⚠️ Candidato vacío después de limpiar")
+            else:
+                print(f"[NLU]    ⚠️ No hay palabras válidas")
         
+        print(f"[NLU] 📋 Candidatos limpios: {cleaned_candidates}")
+        
+        # ==========================================
+        # PASO 3: Fuzzy matching contra DB
+        # ==========================================
+        if not cleaned_candidates:
+            print(f"[NLU] ⚠️ No hay candidatos limpios para comparar")
+            return None
+        
+        # Importar Database
+        from src.database.database import db
+        
+        # Obtener todos los profesionales de la DB
+        try:
+            professionals = db.get_all_professionals()
+            if not professionals:
+                print(f"[NLU] ⚠️ No hay profesionales en DB para comparar")
+                return None
+            print(f"[NLU] 📊 Profesionales en DB: {len(professionals)}")
+        except Exception as e:
+            print(f"[NLU] ❌ Error obteniendo profesionales: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        
+        # Función de similaridad
+        def similarity(a: str, b: str) -> float:
+            """Retorna similaridad 0.0-1.0"""
+            return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+        
+        # Normalizar texto para matching (quitar acentos)
+        import unicodedata
+        def normalize_text(text: str) -> str:
+            """Quita acentos y convierte a minúsculas."""
+            nfd = unicodedata.normalize('NFD', text)
+            without_accents = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
+            return without_accents.lower()
+        
+        best_match = None
+        best_score = 0.0
+        
+        for candidate in cleaned_candidates:
+            candidate_normalized = normalize_text(candidate)
+            candidate_words = candidate_normalized.split()
+            
+            print(f"[NLU] 🔍 Buscando match para: '{candidate}' ({len(candidate_words)} palabras)")
+            
+            for prof in professionals:
+                prof_name = prof.get('name', '')
+                if not prof_name:
+                    continue
+                
+                prof_normalized = normalize_text(prof_name)
+                prof_words = prof_normalized.split()
+                
+                # Match 1: Nombre completo exacto
+                if candidate_normalized == prof_normalized:
+                    print(f"[NLU]   ✅ EXACT MATCH: '{prof_name}'")
+                    return prof_name.lower()
+                
+                # Match 2: Solo apellido (última palabra)
+                if len(candidate_words) == 1 and len(prof_words) >= 2:
+                    prof_apellido = prof_words[-1]
+                    score = similarity(candidate_normalized, prof_apellido)
+                    
+                    if score >= 0.85:
+                        print(f"[NLU]   ✅ APELLIDO MATCH ({score:.2f}): '{candidate}' → '{prof_name}'")
+                        if score > best_score:
+                            best_match = prof_name
+                            best_score = score
+                
+                # Match 3: Apellido + Nombre parcial
+                elif len(candidate_words) >= 2:
+                    matches = 0
+                    for cand_word in candidate_words:
+                        for prof_word in prof_words:
+                            if similarity(cand_word, prof_word) >= 0.85:
+                                matches += 1
+                                break
+                    
+                    if matches >= 1:
+                        overall_score = matches / max(len(candidate_words), len(prof_words))
+                        
+                        if overall_score >= 0.5:
+                            print(f"[NLU]   ✅ PARTIAL MATCH ({overall_score:.2f}): '{candidate}' → '{prof_name}'")
+                            if overall_score > best_score:
+                                best_match = prof_name
+                                best_score = overall_score
+                
+                # Match 4: Fuzzy general (fallback)
+                general_score = similarity(candidate_normalized, prof_normalized)
+                if general_score >= 0.75:
+                    print(f"[NLU]   ✅ FUZZY MATCH ({general_score:.2f}): '{candidate}' → '{prof_name}'")
+                    if general_score > best_score:
+                        best_match = prof_name
+                        best_score = general_score
+        
+        # ==========================================
+        # PASO 4: Retornar mejor match si existe
+        # ==========================================
+        if best_match and best_score >= 0.75:
+            print(f"[NLU] 🎯 BEST MATCH: '{best_match}' (score: {best_score:.2f})")
+            return best_match.lower()
+        
+        # Si no hay match, retornar candidato original
+        if cleaned_candidates:
+            fallback = cleaned_candidates[0]
+            print(f"[NLU] ⚠️ No DB match, usando candidato original: '{fallback}'")
+            return fallback.lower()
+        
+        print(f"[NLU] ❌ No se pudo extraer nombre de profesional")
         return None
-    
+
     def _can_shortcut(self, intent: Intent, entities: Dict) -> tuple:
         """
         Determina si puede hacer shortcut (ir directo a resultados).
