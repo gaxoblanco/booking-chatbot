@@ -169,13 +169,14 @@ class ClientService:
                 def check_professional_availability(prof_data):
                     """
                     Helper function to check availability for one professional.
-                    Runs in parallel thread.
+                    Runs in parallel thread with individual timeout.
                     """
                     idx, prof = prof_data
                     try:
                         print(f"[CLIENT] [{idx}/{len(professionals)}] Checking {prof['name']}...")
                         
-                        # Get ALL slots for the day in one request
+                        # ⭐ Get slots con timeout automático (8 seg en professional_service)
+                        # El cache reduce esto a ~50ms si ya está en memoria
                         slots = professional_service.get_available_slots(
                             professional_phone=prof['phone'],
                             date=date_str,
@@ -210,10 +211,38 @@ class ClientService:
                         
                         return prof
                         
+                    except TimeoutError:
+                        print(f"[CLIENT]   ⏱️ Timeout checking {prof['name']}")
+                        return None
                     except Exception as e:
                         print(f"[CLIENT]   ❌ Error checking {prof['name']}: {e}")
                         return None
                 
+                # ⭐ MEJORADO: Execute checks in parallel with timeout
+                # Max 5 workers, individual timeout per request (handled in professional_service)
+                max_workers = min(5, len(professionals))
+                
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
+                
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all tasks
+                    future_to_prof = {
+                        executor.submit(check_professional_availability, (idx, prof)): prof
+                        for idx, prof in enumerate(professionals, 1)
+                    }
+                    
+                    # Collect results as they complete (with timeout per future)
+                    for future in as_completed(future_to_prof, timeout=10):  # ⭐ Max 10s per professional
+                        try:
+                            result = future.result(timeout=2)  # ⭐ Extra safety: 2s para obtener resultado
+                            if result:
+                                available_professionals.append(result)
+                        except FutureTimeoutError:
+                            prof = future_to_prof[future]
+                            print(f"[CLIENT] ⏱️ Future timeout for {prof['name']}")
+                        except Exception as e:
+                            prof = future_to_prof[future]
+                            print(f"[CLIENT] ❌ Error processing {prof['name']}: {e}")
                 # Execute checks in parallel (max 5 workers)
                 # This is safe because Google Calendar API supports concurrent requests
                 max_workers = min(5, len(professionals))
@@ -232,6 +261,22 @@ class ClientService:
                             available_professionals.append(result)
                 
                 professionals = available_professionals
+
+                # Deduplicar por teléfono
+                seen_phones = set()
+                unique_professionals = []
+                for prof in professionals:
+                    phone = prof.get('phone')
+                    if phone not in seen_phones:
+                        seen_phones.add(phone)
+                        unique_professionals.append(prof)
+                    else:
+                        print(f"[CLIENT] ⏭️ Skipping duplicate: {prof.get('name')} ({phone})")
+
+                professionals = unique_professionals
+
+                time_pref_msg = f" in '{time_preference}'" if time_preference else ""
+                print(f"[CLIENT] ✅ {len(professionals)} unique professionals available on {date_str}{time_pref_msg}")
                 
                 time_pref_msg = f" in '{time_preference}'" if time_preference else ""
                 print(f"[CLIENT] ✅ {len(professionals)} professionals available on {date_str}{time_pref_msg}")
