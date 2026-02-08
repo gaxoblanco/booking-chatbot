@@ -1,0 +1,19 @@
+# Requirements para spaCy Intent Detection
+# ==========================================
+
+# Core ML
+spacy>=3.7.0
+spacy-transformers>=1.3.0  # Opcional, solo si quieres usar transformers después
+
+# Modelo español de spaCy (instalar después con: python -m spacy download es_core_news_sm)
+# es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0-py3-none-any.whl
+
+# Utilidades
+scikit-learn>=1.3.0  # Para métricas de evaluación
+numpy>=1.24.0
+pandas>=2.0.0  # Para análisis de resultados
+tqdm>=4.65.0  # Barra de progreso
+
+# Visualización (opcional)
+matplotlib>=3.7.0
+seaborn>=0.12.0
