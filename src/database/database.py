@@ -790,20 +790,34 @@ class Database:
 
     def get_all_professionals(self) -> List[Dict]:
         """
-        Get all professionals (with certificates only).
-
+        Get all professionals (prefer with certificates, fallback to all).
         Returns:
-            List of all verified professionals
+            List of all professionals
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                
+                # Intentar primero con certificados
                 cursor.execute("""
                     SELECT * FROM professionals 
                     WHERE certificate_path IS NOT NULL
                     ORDER BY total_contacts DESC, name ASC
                 """)
-                return [dict(row) for row in cursor.fetchall()]
+                results = [dict(row) for row in cursor.fetchall()]
+                
+                # Fallback: Si no hay con certificados, devolver todos
+                if not results:
+                    print(f"[DB] ⚠️ No professionals with certificates, returning all")
+                    cursor.execute("""
+                        SELECT * FROM professionals 
+                        ORDER BY total_contacts DESC, name ASC
+                    """)
+                    results = [dict(row) for row in cursor.fetchall()]
+                
+                print(f"[DB] ✅ Loaded {len(results)} professionals")
+                return results
+                
         except Exception as e:
             print(f"[DB] ❌ Error getting all professionals: {e}")
             return []
