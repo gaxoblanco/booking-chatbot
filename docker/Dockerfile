@@ -1,16 +1,13 @@
 # ==================================================
-# WHATSAPP BOT WEBHOOK - DOCKERFILE
+# WHATSAPP BOT WEBHOOK - DOCKERFILE (OPTIMIZADO)
 # ==================================================
-# Multi-stage build for optimized image size
+# Multi-stage build optimizado para desarrollo rápido
 # Python 3.10 slim base image
 
 # ==================================================
-# STAGE 1: BASE IMAGE
+# STAGE 1: SYSTEM BASE (Cacheable - rara vez cambia)
 # ==================================================
-FROM python:3.10-slim AS base
-
-# Set working directory
-WORKDIR /app
+FROM python:3.10-slim AS system-base
 
 # Install system dependencies
 # curl: for healthcheck
@@ -21,42 +18,27 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ==================================================
-# STAGE 2: DEPENDENCIES
+# STAGE 2: PYTHON DEPENDENCIES (Cacheable - cambia poco)
 # ==================================================
-FROM base AS dependencies
+FROM system-base AS python-deps
 
-# Copy requirements file
-COPY requirements.txt .
-
-# Install Python dependencies
-# --no-cache-dir: Don't cache pip packages (smaller image)
-# --upgrade: Ensure latest compatible versions
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# ==================================================
-# STAGE 3: APPLICATION
-# ==================================================
-FROM dependencies AS application
-
-# Set working directory
 WORKDIR /app
 
-# Copy application files (desde el contexto raíz)
-COPY src/ /app/src/
-COPY scripts/ /app/scripts/
-COPY .env.example /app/
+# Copy ONLY requirements first (mejor cache)
+COPY requirements.txt .
 
-# Copy Docker entrypoint script (desde el contexto raíz)
-COPY docker/docker-entrypoint.sh /app/docker-entrypoint.sh
+# Install Python dependencies + spaCy model
+# Esta capa se cachea y solo se reconstruye si cambia requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    python -m spacy download es_core_news_sm
 
-# Make entrypoint executable
-RUN chmod +x /app/docker-entrypoint.sh
+# ==================================================
+# STAGE 3: APPLICATION (Cambia frecuentemente)
+# ==================================================
+FROM python-deps AS application
 
-# Create necessary directories
-RUN mkdir -p /app/data/certificates && \
-    mkdir -p /app/data && \
-    mkdir -p /app/src/integrations/google_calendar_service/config/google
+WORKDIR /app
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -64,24 +46,50 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     FLASK_APP=src.api.whatsapp_handler
 
+# Create necessary directories ANTES de copiar archivos
+RUN mkdir -p /app/data/certificates && \
+    mkdir -p /app/data && \
+    mkdir -p /app/data/conversations && \
+    mkdir -p /app/dataset && \
+    mkdir -p /app/src/integrations/google_calendar_service/config/google && \
+    mkdir -p /app/scripts/ml/models
+
+# Copy application files (estos cambian frecuentemente)
+COPY src/ /app/src/
+COPY scripts/ /app/scripts/
+COPY .env.example /app/
+
+# Copy Docker entrypoint script
+COPY docker/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Expose port
 EXPOSE 5000
 
 # ==================================================
 # HEALTH CHECK
 # ==================================================
-# Check if Flask server is responding
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:5000/ || exit 1
 
 # ==================================================
 # STARTUP COMMAND
 # ==================================================
-# Development mode: Uses docker-entrypoint.sh for setup + Flask dev server
-# Production mode: Use gunicorn (uncomment below)
-
 # Development (default)
 CMD ["/app/docker-entrypoint.sh"]
 
-# Production (uncomment for production use)
+# Production (use gunicorn)
 # CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "src.api.whatsapp_handler:app"]
+
+# ==================================================
+# BUILD INSTRUCTIONS
+# ==================================================
+# Fast rebuild (usa cache):
+#   docker-compose build
+#
+# Clean rebuild (sin cache):
+#   docker-compose build --no-cache
+#
+# Rebuild solo dependencies (si cambió requirements.txt):
+#   docker-compose build --no-cache python-deps
+#   docker-compose build

@@ -56,6 +56,9 @@ services:
       # Mount dataset (persistent storage para entrenamiento ML)
       - dataset:/app/dataset
 
+      # Mount modelo ML entrenado
+      - ../scripts/ml/models:/app/scripts/ml/models
+
       # Mount source code for hot reload in development
       # Comment out for production
       - ../src:/app/src
