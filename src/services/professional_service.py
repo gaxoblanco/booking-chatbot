@@ -343,9 +343,13 @@ class ProfessionalService:
         exclude_appointment_id: int = None
     ) -> List[Dict]:
         """
-        Obtener slots disponibles desde Google Calendar.
+        Obtener slots disponibles desde Google Calendar con cache.
+        
+        Cache TTL: 15 minutos
+        IMPORTANTE: No cachea resultados vacíos
         """
         from src.integrations.google_calendar_service import GoogleCalendarService
+        from src.services.cache_manager import get_cached_slots, cache_slots
         import json
         
         try:
@@ -360,6 +364,11 @@ class ProfessionalService:
                 print(f"[PROF_SERVICE] ⚠️ Profesional {professional_phone} sin calendar_id")
                 return []
             
+            # Verificar cache primero
+            cached_slots = get_cached_slots(calendar_id, date)
+            if cached_slots is not None:
+                return cached_slots
+            
             # Obtener working_hours
             working_hours_json = professional.get('working_hours')
             if working_hours_json:
@@ -367,20 +376,37 @@ class ProfessionalService:
             else:
                 working_hours = {'start': '09:00', 'end': '18:00'}
             
+            print(f"[PROF_SERVICE] 🔍 Consultando Google Calendar...")
+            print(f"[PROF_SERVICE]    Calendar: {calendar_id}")
+            print(f"[PROF_SERVICE]    Date: {date}")
+            print(f"[PROF_SERVICE]    Working hours: {working_hours}")
+            
             # Consultar Google Calendar
             calendar_service = GoogleCalendarService()
             slots = calendar_service.get_available_slots(
-                calendar_id=calendar_id,
-                date=date,
-                working_hours=working_hours,
-                slot_duration_minutes=duration_minutes
+                calendar_id,
+                date,
+                working_hours,
+                duration_minutes
             )
+            
+            print(f"[PROF_SERVICE] 📊 Slots obtenidos: {len(slots)}")
+            
+            # ⭐ CRÍTICO: Solo cachear si hay slots
+            if slots:
+                cache_slots(calendar_id, date, slots)
+                print(f"[PROF_SERVICE] 💾 Cached {len(slots)} slots")
+            else:
+                print(f"[PROF_SERVICE] ⚠️ No slots found - NOT CACHING empty result")
             
             return slots
             
         except Exception as e:
             print(f"[PROF_SERVICE] ❌ Error getting slots from Google Calendar: {e}")
+            import traceback
+            traceback.print_exc()
             return []
+        
     def get_available_dates_for_reschedule(
         self,
         professional_phone: str,
