@@ -36,6 +36,7 @@ from src.bot.client_handler import ClientHandler
 from src.config.filter_config import FeatureFlags
 from src.services.user_service import user_service
 from src.services.intent_detector import intent_detector, Intent
+from src.integrations.ml.hybrid_intent_detector import hybrid_intent_detector
 from src.services.conversation_logger import conversation_logger
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
@@ -163,15 +164,17 @@ class BotController:
         ]
         
         if session.state in nlu_enabled_states:
-            # Detectar intent y entidades
-            intent_result = intent_detector.detect(message, context={
+            # ⭐ NUEVO: Detectar con sistema híbrido (ML + Reglas)
+            intent_result = hybrid_intent_detector.detect(message, context={
                 'role': session.role,
                 'state': session.state,
                 'user_info': user_info,
-                'conversation_history': conv_context.get_history_text()  # ⭐ Para ML futuro
+                'conversation_history': conv_context.get_history_text()
             })
             
-            print(f"[NLU] Intent: {intent_result['intent'].value} (confianza: {intent_result['confidence']:.2f})")
+            # ⭐ NUEVO: Logging mejorado con información del sistema híbrido
+            print(f"[NLU] Intent: {intent_result['intent'].value} (conf: {intent_result['confidence']:.2f})")
+            print(f"[NLU] Source: {intent_result['source']} (ML: {intent_result['ml_confidence']:.2f}, Rules: {intent_result['rules_confidence']:.2f})")
             if intent_result['entities']:
                 print(f"[NLU] Entidades: {intent_result['entities']}")
 
@@ -187,7 +190,10 @@ class BotController:
                 user_role=session.role.value if session.role else None,
                 context_data={
                     'has_accumulated_entities': len(conv_context.get_entities()) > 0,
-                    'conversation_turns': len(conv_context.conversation_history)
+                    'conversation_turns': len(conv_context.conversation_history),
+                    'detection_source': intent_result.get('source', 'unknown'),
+                    'ml_confidence': intent_result.get('ml_confidence', 0.0),
+                    'rules_confidence': intent_result.get('rules_confidence', 0.0),
                 }
             )
 
@@ -514,7 +520,7 @@ class BotController:
         hoy = date.today()
         print(f"[DEBUG] Hoy según el servidor: {hoy} ({hoy.strftime('%d/%m/%Y')})")
         print(f"[DEBUG] Fecha entity: '{fecha_entity}'")
-        
+
         # Manejar fecha pasada
         if fecha_entity == 'fecha_pasada':
             return ("⚠️ La fecha que ingresaste ya pasó.\n\n"
@@ -522,12 +528,12 @@ class BotController:
                 "• 'hoy'\n"
                 "• 'mañana'\n"
                 "• 'DD/MM/YYYY'")
-        
+
         # Si no especifica fecha, asumir 'hoy' por defecto
         if not fecha_entity:
             print(f"[NLU] No se especificó fecha, asumiendo 'hoy' por defecto")
             fecha_entity = 'hoy'
-        
+
         if fecha_entity == 'hoy':
             date_obj = date.today()
         elif fecha_entity == 'mañana':
@@ -536,11 +542,26 @@ class BotController:
         elif fecha_entity == 'pasado_mañana':
             date_obj = date.today() + timedelta(days=2)
         elif fecha_entity:
-            # Fecha absoluta DD/MM/YYYY
+            # ⭐ NUEVO: Intentar parsear múltiples formatos
             try:
+                # Formato DD/MM/YYYY
                 date_obj = datetime.strptime(fecha_entity, '%d/%m/%Y').date()
+                print(f"[DEBUG] Fecha parseada DD/MM/YYYY: {date_obj}")
             except:
-                date_obj = date.today()  # Fallback a hoy si falla el parse
+                try:
+                    # ⭐ Formato YYYY-MM-DD (viene del extractor de días de semana)
+                    date_obj = datetime.strptime(fecha_entity, '%Y-%m-%d').date()
+                    print(f"[DEBUG] Fecha parseada YYYY-MM-DD: {date_obj}")
+                except:
+                    try:
+                        # Formato DD/MM (sin año)
+                        day, month = map(int, fecha_entity.split('/'))
+                        year = date.today().year
+                        date_obj = date(year, month, day)
+                        print(f"[DEBUG] Fecha parseada DD/MM: {date_obj}")
+                    except:
+                        print(f"[ERROR] No se pudo parsear fecha: '{fecha_entity}', usando HOY")
+                        date_obj = date.today()  # Fallback a hoy
         else:
             date_obj = date.today()
         
@@ -627,6 +648,7 @@ class BotController:
                 "• Escribir 'otra fecha' para cambiar fecha")
         
         return header + formatted + footer
+
     def _start_filter_flow(self, session: SessionData, entities: Dict, missing: List[str]) -> str:
         """
         Inicia flujo de filtros pidiendo solo lo que falta.
