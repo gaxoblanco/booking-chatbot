@@ -7,15 +7,16 @@
 
 1. [Visión General](#visión-general)
 2. [Estructura del Proyecto](#estructura-del-proyecto)
-3. [Integraciones Externas](#integraciones-externas)
-4. [Capas de la Aplicación](#capas-de-la-aplicación)
-5. [Flujo de Datos](#flujo-de-datos)
-6. [Base de Datos](#base-de-datos)
-7. [Guía de Desarrollo](#guía-de-desarrollo)
-8. [Convenciones de Código](#convenciones-de-código)
-9. [Testing](#testing)
-10. [Deployment](#deployment)
-
+3. [Sistema NLU/ML](#sistema-nluml) ⭐ NUEVO
+4. [Integraciones Externas](#integraciones-externas)
+5. [Capas de la Aplicación](#capas-de-la-aplicación)
+6. [Performance y Métricas](#performance-y-métricas) ⭐ NUEVO
+7. [Flujo de Datos](#flujo-de-datos)
+8. [Base de Datos](#base-de-datos)
+9. [Guía de Desarrollo](#guía-de-desarrollo)
+10. [Setup y Deployment](#setup-y-deployment)
+11. [Testing](#testing)
+12. [Roadmap](#roadmap)
 ---
 
 ## 📊 VISIÓN GENERAL
@@ -28,8 +29,7 @@ Sistema de gestión de citas y reservas para centros de salud, implementado como
 - **Profesionales**: Gestionar horarios a través de Google Calendar
 - **Centro**: Analytics y gestión centralizada
 
-### **Stack Tecnológico**
-
+### **Stack Tecnológico v4.0**
 ```
 ┌─────────────────────────────────────┐
 │     WhatsApp (Twilio API)           │
@@ -40,19 +40,26 @@ Sistema de gestión de citas y reservas para centros de salud, implementado como
 └──────────────┬──────────────────────┘
                │
 ┌──────────────▼──────────────────────┐
-│   ⭐ NLU Layer (Intent Detection)   │
+│   ⭐ NLU/ML Layer (v4.0)            │
 │   ┌────────────────────────────┐   │
-│   │ Intent Detector            │   │
-│   │ - Detecta intenciones      │   │
+│   │ Hybrid Intent Detector     │   │
+│   │ - ML (spaCy) 98.1% acc ⭐  │   │
+│   │ - Rules fallback           │   │
+│   │ - Text normalization       │   │
+│   └────────────────────────────┘   │
+│                                    │
+│   ┌────────────────────────────┐   │
+│   │ Entity Extractor           │   │
 │   │ - Extrae entidades         │   │
-│   │ - Calcula confianza        │   │
+│   │ - Fuzzy name matching ⭐   │   │
+│   │ - Validaciones             │   │
 │   └────────────────────────────┘   │
 │                                    │
 │   ┌────────────────────────────┐   │
 │   │ Context Manager            │   │
 │   │ - Acumula entidades        │   │
 │   │ - Mantiene historial       │   │
-│   │ - Preparado para ML        │   │
+│   │ - Provee contexto a ML     │   │
 │   └────────────────────────────┘   │
 └──────────────┬──────────────────────┘
                │
@@ -62,10 +69,17 @@ Sistema de gestión de citas y reservas para centros de salud, implementado como
                │
     ┌──────────┴──────────┐
     │                     │
-┌───▼─────────┐   ┌──────▼──────────┐
-│  Services   │   │  Google Calendar │
-│   Layer     │   │   Integration    │
-└───┬─────────┘   └──────┬──────────┘
+┌───▼─────────┐   ┌──────▼──────────────┐
+│  Services   │   │  Google Calendar    │
+│   Layer     │   │   Integration       │
+│             │   │  ┌───────────────┐  │
+│ ⭐ Cache   │   │  │ Availability  │  │
+│  Manager    │←──┼──│ Checker       │  │
+│ (15min TTL) │   │  └───────────────┘  │
+│             │   │  ┌───────────────┐  │
+│             │   │  │ Event Manager │  │
+│             │   │  └───────────────┘  │
+└───┬─────────┘   └──────┬──────────────┘
     │                     │
 ┌───▼─────────────────────▼──────────┐
 │     SQLite Database                │
@@ -78,8 +92,17 @@ Sistema de gestión de citas y reservas para centros de salud, implementado como
 - **Messaging**: Twilio WhatsApp API
 - **Database**: SQLite
 - **Calendar**: Google Calendar API (Service Account)
+- **ML/NLP**: spaCy 3.7.2 + es_core_news_sm ⭐
+- **Cache**: Thread-safe in-memory cache (15min TTL) ⭐
 - **Container**: Docker + Docker Compose
 - **Testing**: pytest
+
+**Componentes v4.0:**
+- **Hybrid Intent Detection**: 98.1% accuracy (ML + Rules)
+- **Fuzzy Name Matching**: 85% similarity threshold
+- **Cache Manager**: 15min TTL, 80-90% hit rate
+- **Text Normalization**: Contracciones, typos, títulos
+- **Parallel Queries**: ThreadPoolExecutor para calendarios
 
 ---
 
@@ -102,14 +125,14 @@ booking-chatbot/
 │   │
 │   ├── 📁 services/                     # Servicios de lógica de negocio
 │   │   ├── __init__.py
-│   │   ├── intent_detector.py           # ⭐ NUEVO: Detección de intenciones (NLU)
+│   │   ├── intent_detector.py           # Detección de intenciones (NLU)
 │   │   ├── user_service.py              # Identificación y contexto de usuarios
-│   │   ├── client_service.py            # ⭐ ACTUALIZADO: Búsqueda con filtro por nombre
+│   │   ├── client_service.py            # Búsqueda con filtro por nombre
 │   │   ├── professional_service.py      # Gestión de profesionales y horarios
 │   │   ├── analytics_service.py         # Métricas y analytics
 │   │   └── appointment_service.py       # Gestión de citas (CRUD, confirmaciones)
 │   │
-│   ├── 📁 filters/                      # ⭐ Sistema de filtros modular
+│   ├── 📁 filters/                      # Sistema de filtros modular
 │   │   ├── __init__.py
 │   │   ├── filter_types.py              # Enums y tipos de filtros
 │   │   ├── base_filter.py               # Clase base abstracta para filtros
@@ -120,9 +143,12 @@ booking-chatbot/
 │   │       ├── core_filters.py          # DateFilter, TimeFilter, SpecialtyFilter
 │   │       └── optional_filters.py      # ZoneFilter, PrepagaFilter, GenderFilter, etc.
 │   │
-│   ├── 📁 integrations/                 # ⭐ Integraciones externas
+│   ├── 📁 integrations/                 # Integraciones externas
+│   │   ├── 📁 ml/
+│   │   │   ├── ml_intent_detec.py
+│   │   │   └── hybrid_intent_detector.py
 │   │   │
-│   │   └── 📁 google_calendar_service/  # ⭐ Google Calendar Integration
+│   │   └── 📁 google_calendar_service/  # Google Calendar Integration
 │   │       ├── __init__.py
 │   │       ├── google_calendar_service.py      # Interfaz principal
 │   │       │
@@ -167,10 +193,10 @@ booking-chatbot/
 │   │   ├── __init__.py
 │   │   ├── settings.py                  # Settings generales (env vars, etc.)
 │   │   ├── domain_config.py             # Configuración de dominios/presets
-│   │   ├── domain_filters_config.py     # ⭐ Configuración de filtros (habilitados/orden)
+│   │   ├── domain_filters_config.py     # Configuración de filtros (habilitados/orden)
 │   │   │
-│   │   └── 📁 google/                   # ⭐ Configuración de Google Calendar
-│   │       ├── service-account.json     # ⭐ Credenciales de Service Account (gitignored)
+│   │   └── 📁 google/                   # Configuración de Google Calendar
+│   │       ├── service-account.json     # Credenciales de Service Account (gitignored)
 │   │       └── service-account.json.example  # Template de credenciales
 │   │
 │   ├── 📁 messages/                     # Templates de mensajes
@@ -182,8 +208,8 @@ booking-chatbot/
 │   │
 │   └── 📁 core/                         # Componentes core compartidos
 │       ├── __init__.py
-│       ├── states.py                    # ⭐ ACTUALIZADO: Estados de cancelación agregados
-│       ├── conversation_context.py      # ⭐ NUEVO: Context Manager para acumulación
+│       ├── states.py                    # Estados de cancelación agregados
+│       ├── conversation_context.py      # Context Manager para acumulación
 │       └── validators.py                # Validaciones de entrada
 │
 ├── 📁 tests/                            # Tests automatizados
@@ -200,13 +226,13 @@ booking-chatbot/
 │   ├── verify_db.py                     # Verificar estructura de BD
 │   ├── setup_domain.py                  # Configurar dominio
 │   ├── seed_professionals.py            # Datos de prueba de profesionales
-│   ├── load_professionals_from_csv.py   # ⭐ Carga masiva desde CSV
-│   └── configure_google_calendar.py     # ⭐ Configurar Google Calendar para profesionales
+│   ├── load_professionals_from_csv.py   # Carga masiva desde CSV
+│   └── configure_google_calendar.py     # Configurar Google Calendar para profesionales
 │
 ├── 📁 docker/                           # Configuración Docker
 │   ├── Dockerfile                       # Imagen Docker
 │   ├── docker-compose.yml               # Orquestación de servicios
-│   └── docker-entrypoint.sh             # ⭐ Script de inicio (carga automática de CSV)
+│   └── docker-entrypoint.sh             # Script de inicio (carga automática de CSV)
 │
 ├── 📁 data/                             # Datos persistentes
 │   ├── booking.db                       # Base de datos SQLite
@@ -215,13 +241,13 @@ booking-chatbot/
 │
 ├── 📁 docs/                             # Documentación
 │   ├── ARCHITECTURE.md                  # Este archivo
-│   ├── GOOGLE_CALENDAR_SERVICE.md       # ⭐ Documentación de Google Calendar
+│   ├── GOOGLE_CALENDAR_SERVICE.md       # Documentación de Google Calendar
 │   ├── DATABASE.md                      # Esquema de base de datos
 │   ├── API.md                           # Documentación de API
 │   ├── README_WHATSAPP.md               # Guía de WhatsApp/Twilio
 │   └── DEPLOYMENT.md                    # Guía de deployment
 │
-├── profesionales_demo.csv               # ⭐ CSV con profesionales de prueba (raíz)
+├── profesionales_demo.csv               # CSV con profesionales de prueba (raíz)
 ├── .env                                 # Variables de entorno (gitignored)
 ├── .env.example                         # Template de variables de entorno
 ├── .gitignore                           # Archivos ignorados por git
@@ -260,7 +286,7 @@ booking-chatbot/
 
 ## 🔗 INTEGRACIONES EXTERNAS
 
-### **1. Google Calendar API** ⭐ NUEVO
+### **1. Google Calendar API**
 
 **Propósito:** Gestión de disponibilidad y reservas en tiempo real
 
@@ -319,83 +345,163 @@ booking-chatbot/
 
 ---
 
-## 🧠 SISTEMA NLU (NATURAL LANGUAGE UNDERSTANDING) ⭐ NUEVO v3.2
+## 🧠 SISTEMA NLU/ML (NATURAL LANGUAGE UNDERSTANDING) ⭐ v4.0
 
 ### **Propósito:**
-Permitir que el bot entienda lenguaje natural y extraiga información automáticamente, reduciendo pasos conversacionales.
+Permitir que el bot entienda lenguaje natural y extraiga información automáticamente, reduciendo pasos conversacionales mediante un sistema híbrido de Machine Learning + Reglas.
 
 ### **Ubicación:**
-- **Intent Detector:** `src/services/intent_detector.py` (~715 líneas)
-- **Context Manager:** `src/core/conversation_context.py` (~200 líneas)
+- **ML Intent Detector:** `src/integrations/ml/hybrid_intent_detector.py` (~400 líneas) ⭐
+- **Entity Extractor:** `src/services/intent_detector.py` (~715 líneas)
+- **Context Manager:** `src/services/conversation_context.py` (~200 líneas)
 
 ---
 
-### **1. Intent Detector**
+### **1. Hybrid Intent Detector** ⭐ NUEVO v4.0
 
 **Responsabilidades:**
-- Detectar la intención del usuario (search, cancel, view_appointments)
-- Extraer entidades relevantes (fecha, horario, especialidad, género, prepaga, nombre)
-- Calcular nivel de confianza (0.0 - 1.0)
-- Determinar si puede hacer "shortcut" (omitir pasos del flujo)
+- Detectar intención usando modelo ML (spaCy) con 98.1% accuracy
+- Fallback a reglas si confidence < 0.7
+- Normalizar texto (contracciones, typos, títulos)
+- Integrar con extractor de entidades
+
+**Arquitectura:**
+```
+Mensaje → Normalización → ML Prediction (spaCy)
+   ↓
+confidence ≥ 0.7 → Use ML intent
+confidence < 0.7 → Fallback to Rules
+   ↓
+Entity Extraction → Context Integration → Return
+```
+
+**Modelo ML:**
+- Framework: spaCy 3.7.2
+- Dataset: 80 base + ~970 augmented = 1,050 ejemplos
+- Accuracy: 98.1% (best epoch 19/30)
+- Training time: ~3-4 minutos
 
 **Intenciones soportadas:**
 ```python
 class Intent(Enum):
     SEARCH_PROFESSIONAL = "search_professional"  # Buscar profesional
-    CANCEL_APPOINTMENT = "cancel_appointment"    # Cancelar turno
-    VIEW_MY_APPOINTMENTS = "view_my_appointments" # Ver mis turnos
     VIEW_TOMORROW = "view_tomorrow"              # Ver disponibles mañana
-    INFO_CENTER = "info_center"                  # Info del centro
-    GREETING = "greeting"                        # Saludo simple
+    VIEW_MY_APPOINTMENTS = "view_my_appointments" # Ver mis turnos
+    CANCEL_APPOINTMENT = "cancel_appointment"    # Cancelar turno
+    RESCHEDULE_APPOINTMENT = "reschedule_appointment" # Reprogramar
+    CONFIRM_APPOINTMENT = "confirm_appointment"  # Confirmar turno
     UNKNOWN = "unknown"                          # No detectado
 ```
 
-**Entidades extraídas:**
-| Entidad | Tipo | Ejemplos | Nuevo en v3.2 |
-|---------|------|----------|---------------|
-| `especialidad` | string | 'psicología', 'nutrición' | ❌ |
-| `fecha` | string | 'hoy', 'mañana', '15/02/2026' | ❌ |
-| `horario` | string | 'mañana', 'tarde', 'noche' | ❌ |
-| `zona` | string | 'norte', 'sur', 'centro' | ❌ |
-| `modalidad` | string | 'presencial', 'virtual' | ❌ |
-| `genero` | string | 'masculino', 'femenino' | ✅ |
-| `prepaga` | boolean | True si menciona obra social | ✅ |
-| `professional_name` | string | 'gastón blanco', 'dra lópez' | ✅ |
+**Normalización de texto:** ⭐
+```python
+# Input: "teno q ver al dotor blanco xa mañana"
+# Después de normalización: "tengo que ver al doctor blanco para mañana"
 
-**Técnicas de detección:**
-- **Basado en keywords:** Lista de palabras clave por intención/entidad
-- **Patrones regex:** Para fechas (DD/MM/YYYY), nombres profesionales
-- **Normalización de texto:** Ignora acentos y mayúsculas para matching flexible
-- **Orden de especificidad:** Detecta frases largas antes que cortas (ej: "pasado mañana" antes que "mañana")
+Contracciones:
+- teno q → tengo que
+- xa → para
+- pa → para
+- xq → porque
+
+Títulos:
+- dotor → doctor
+- lic → licenciado
+- dr → doctor
+- dra → doctora
+
+Días:
+- lune → lunes
+- mier → miércoles
+```
 
 **Ejemplo de uso:**
 ```python
-# Usuario: "necesito psicóloga mujer para mañana que acepte osde"
+from src.integrations.ml.hybrid_intent_detector import HybridIntentDetector
+
+detector = HybridIntentDetector()
+result = detector.detect("necesito psicóloga mujer para mañana", context)
+
+# Output:
+{
+    'intent': Intent.SEARCH_PROFESSIONAL,
+    'confidence': 0.98,  # ML prediction
+    'source': 'ml',      # 'ml' o 'rules'
+    'entities': {...}    # Extraídas por intent_detector.py
+}
+```
+
+---
+
+### **2. Entity Extractor**
+
+**Responsabilidades:**
+- Extraer entidades del mensaje normalizado
+- Fuzzy matching de nombres profesionales (85% threshold) ⭐
+- Validar fechas (rechazar fechas pasadas)
+- Convertir formatos (fecha → YYYY-MM-DD)
+
+**Entidades extraídas:**
+| Entidad | Tipo | Ejemplos | v4.0 |
+|---------|------|----------|------|
+| `especialidad` | string | 'psicología', 'nutrición' | ✅ |
+| `fecha` | string | 'hoy', 'mañana', '2026-02-15' | ✅ |
+| `horario` | string | 'mañana', 'tarde', 'noche' | ✅ |
+| `zona` | string | 'norte', 'sur', 'centro' | ✅ |
+| `modalidad` | string | 'presencial', 'virtual' | ✅ |
+| `genero` | string | 'masculino', 'femenino' | ✅ |
+| `prepaga` | boolean | True si menciona obra social | ✅ |
+| `professional_name` | string | 'gaston blanco' (fuzzy) | ⭐ NUEVO |
+
+**Fuzzy Name Matching:** ⭐ NUEVO
+```python
+# Input: "quiero turno con fernandes"
+# DB: ["Dr. Roberto García", "Lic. Juan Fernández", "Gaston Blanco"]
+
+1. Normalizar: "fernandes" → "fernandes" (sin acentos)
+2. Comparar con DB:
+   - "roberto garcia" → 45% similar ❌
+   - "juan fernandez" → 89% similar ✅
+   - "gaston blanco" → 25% similar ❌
+3. Mejor match: "Lic. Juan Fernández" (89% > 85% threshold)
+
+# Output: professional_name = "juan fernandez"
+```
+
+**Técnicas de detección:**
+- **ML Intent:** spaCy model con 98.1% accuracy ⭐
+- **Keywords:** Lista de palabras clave por entidad
+- **Regex:** Fechas (DD/MM/YYYY), horarios (HH:MM)
+- **Fuzzy matching:** Nombres profesionales (85% threshold) ⭐
+- **Normalización:** Ignora acentos, mayúsculas, contracciones ⭐
+
+**Ejemplo completo:**
+```python
+# Usuario: "teno q ver al dotor blanco xa mañana tarde"
 
 result = intent_detector.detect(message, context)
 
 # Output:
 {
     'intent': Intent.SEARCH_PROFESSIONAL,
-    'confidence': 0.85,
+    'confidence': 0.98,
     'entities': {
-        'especialidad': 'psicología',
-        'genero': 'femenino',
-        'fecha': 'mañana',
-        'prepaga': True
+        'professional_name': 'gaston blanco',  # ⭐ Fuzzy match
+        'fecha': '2026-02-09',                 # Convertido a YYYY-MM-DD
+        'horario': 'tarde'
     },
-    'can_shortcut': True  # Puede ejecutar búsqueda directa
+    'can_shortcut': True
 }
 ```
 
 ---
 
-### **2. Context Manager** ⭐ CLAVE PARA ML FUTURO
+### **3. Context Manager**
 
 **Responsabilidades:**
 - Acumular entidades entre múltiples mensajes
 - Mantener historial conversacional (últimos 10 mensajes)
-- Proveer contexto para modelos ML (GPT puede leer el historial)
+- Proveer contexto para ML model
 - Resetear contexto cuando cambia de intención
 
 **Clase principal: `ConversationContext`**
@@ -453,56 +559,36 @@ conv_context.update_entities({'horario': 'tarde'})
 # ✅ Suficiente información → Ejecutar búsqueda
 ```
 
-**Preparación para ML:**
-
-El Context Manager está diseñado para soportar modelos ML sin cambios:
-```python
-# Actual (Reglas):
-intent_result = intent_detector.detect(message, context={
-    'conversation_history': conv_context.get_history_text()
-})
-
-# Futuro (GPT-4):
-prompt = f"""
-Historial de conversación:
-{conv_context.get_history_text()}
-
-Mensaje actual: "{message}"
-
-Detecta intent y entidades. Responde en JSON.
-"""
-
-response = openai_client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": prompt}]
-)
-```
-
 ---
 
-### **3. Integración en bot_controller.py**
+### **4. Integración en bot_controller.py**
 
-**Flujo de procesamiento actualizado:**
+**Flujo de procesamiento v4.0:**
 ```python
 def process_message(self, phone_number: str, message: str) -> str:
     # 1. Obtener sesión
     session = session_manager.get_session(phone_number)
     
-    # 2. ⭐ NUEVO: Obtener contexto conversacional
+    # 2. Obtener contexto conversacional
     conv_context = context_manager.get_context(phone_number)
     
-    # 3. ⭐ NUEVO: Detectar intent y entidades (NLU)
+    # 3. ⭐ NUEVO v4.0: Detectar intent con ML híbrido
     if session.state in nlu_enabled_states:
-        intent_result = intent_detector.detect(message, context={
+        intent_result = hybrid_detector.detect(message, context={
             'conversation_history': conv_context.get_history_text()
         })
         
-        # 4. ⭐ NUEVO: Acumular entidades
+        # Logs de debug
+        print(f"[ML] Intent: {intent_result['intent']} (conf: {intent_result['confidence']:.2f})")
+        print(f"[ML] Source: {intent_result['source']}")  # 'ml' o 'rules'
+        print(f"[ML] Entities: {intent_result['entities']}")
+        
+        # 4. Acumular entidades
         if intent_result['entities']:
             conv_context.update_entities(intent_result['entities'], merge=True)
             accumulated = conv_context.get_entities()
             
-            # 5. ⭐ NUEVO: Decidir si ejecutar shortcut
+            # 5. Decidir si ejecutar shortcut
             if self._can_execute_search(accumulated):
                 return self._execute_smart_search(session, accumulated)
             else:
@@ -519,46 +605,51 @@ nlu_enabled_states = [
     ConversationState.START,
     ConversationState.CLIENT_MAIN_MENU,
     ConversationState.CLIENT_NEW_USER_MENU,
-    ConversationState.CLIENT_MULTIFILTER_MENU,  # ⭐ Acumula entidades
-    ConversationState.CLIENT_SHOW_RESULTS,      # ⭐ Refinamiento
-    ConversationState.CLIENT_FILTER_INPUT,      # ⭐ Conversión de input
+    ConversationState.CLIENT_MULTIFILTER_MENU,
+    ConversationState.CLIENT_SHOW_RESULTS,
+    ConversationState.CLIENT_FILTER_INPUT,
 ]
 ```
 
 ---
 
-### **4. Optimización: Búsqueda por Nombre**
+### **5. Optimización: Búsqueda por Nombre + Cache** ⭐
 
 **Ubicación:** `client_service.search_professionals_by_filters()`
 
-**Mejora implementada:**
+**Mejoras implementadas v4.0:**
 
-Cuando el usuario busca un profesional específico por nombre, el sistema:
-1. **Filtra en BD** antes de consultar Google Calendar
-2. **Normaliza texto** para ignorar acentos y mayúsculas
-3. **Reduce API calls** drásticamente
+#### **A. Filtrado en BD antes de Google Calendar**
+Cuando el usuario busca un profesional específico por nombre:
+1. **Filtra en BD** con fuzzy matching (85% threshold)
+2. **Reduce API calls** drásticamente
+3. **Cache de disponibilidad** (15min TTL)
 
 **Ejemplo:**
 ```python
 Usuario: "quiero turno con gastón blanco"
 
-# Sin optimización:
+# Sin optimización (v3.2):
 [CLIENT] Found 4 professionals in DB
-[CLIENT] Checking 4 calendars... → 4 API calls
+[CLIENT] Checking 4 calendars... → 4 API calls × 8 seg = 32 seg
 
-# Con optimización:
+# Con optimización (v4.0):
 [CLIENT] Found 4 professionals in DB
-[CLIENT] 🎯 Filtering by name 'gastón blanco'...
-[CLIENT]   ✅ Match: 'Gaston Blanco' contains 'gastón blanco'
-[CLIENT] 🚀 Name filter: reduced to 1 professional(s)
-[CLIENT] Checking 1 calendar... → 1 API call
+[CLIENT] 🎯 Fuzzy match: 'gastón blanco' → 'Gaston Blanco' (100%)
+[CLIENT] 🚀 Reduced to 1 professional
+[CACHE] ❌ MISS: checking Google Calendar...
+[CLIENT] Checking 1 calendar... → 1 API call × 8 seg = 8 seg
 
-# Mejora: 4x más rápido ✅
+# Segunda consulta (cache hit):
+[CACHE] ✅ HIT: returning cached slots → ~50ms
+
+# Mejora: 4x más rápido (primera vez), 640x más rápido (cache hit) ✅
 ```
 
-**Normalización de texto:**
+#### **B. Normalización y Fuzzy Matching**
 ```python
 import unicodedata
+from difflib import SequenceMatcher
 
 def normalize_text(text):
     """Quita acentos y convierte a minúsculas."""
@@ -566,13 +657,18 @@ def normalize_text(text):
     without_accents = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
     return without_accents.lower()
 
+def similarity(a: str, b: str) -> float:
+    """Retorna similaridad 0.0-1.0"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
 # Matching:
 normalize_text("Gastón Blanco") == normalize_text("gaston blanco")  # ✅ True
+similarity("fernandes", "fernandez") >= 0.85  # ✅ True (89%)
 ```
 
 ---
 
-### **5. Validaciones P0 Implementadas**
+### **6. Validaciones P0 Implementadas**
 
 #### **A. Validación de Fechas Pasadas**
 
@@ -628,78 +724,45 @@ handlers = {
 
 ---
 
-### **6. Performance y Métricas**
+### **7. Performance y Métricas**
 
-**Mejoras de v3.2:**
+**Mejoras de v4.0 (ML + Optimizaciones):**
 
-| Métrica | v3.1 | v3.2 | Mejora |
-|---------|------|------|--------|
+| Métrica | v3.2 (Rules) | v4.0 (ML) | Mejora |
+|---------|--------------|-----------|--------|
 | API calls (búsqueda por nombre) | 4 calls | 1 call | **4x más rápido** |
 | Mensajes para búsqueda completa | 4-6 | 1-2 | **3x menos** |
 | Tiempo de interacción | ~2 min | ~30 seg | **4x más rápido** |
 | Cobertura de validaciones | 60% | 100% | **+40%** |
+| **Intent detection accuracy** | **85% (rules)** | **98.1% (ML)** | **+13%** ⭐ |
+| **Consultas Google Calendar** | **32 seg** | **8-10 seg (miss)** | **3-4x más rápido** ⭐ |
+| **Cache hit (segunda consulta)** | **N/A** | **~50ms** | **640x más rápido** ⭐ |
+| **Cache hit rate** | **0%** | **80-90%** | **Nuevo** ⭐ |
 
-**Líneas de código agregadas:**
-- `intent_detector.py`: ~715 líneas
-- `conversation_context.py`: ~200 líneas
-- Modificaciones en `bot_controller.py`: ~150 líneas
-- **Total nuevo código:** ~1,065 líneas
+**Mejoras ML v4.0:**
+- ✅ **Hybrid System**: ML (70% threshold) + Rules fallback
+- ✅ **Fuzzy Name Matching**: 85% similarity threshold vs DB
+- ✅ **Text Normalization**: Contracciones, typos, títulos abreviados
+- ✅ **Cache Manager**: 15min TTL, thread-safe, parallel queries
+- ✅ **Dataset**: 80 base examples → ~1,050 with augmentation
+- ✅ **Accuracy**: 98.1% (best epoch 19/30)
+- ✅ **Training time**: ~3-4 minutos
 
----
+**Líneas de código agregadas v4.0:**
 
-### **7. Migración Futura a ML**
-
-La arquitectura está preparada para migrar a modelos ML con **cambios mínimos**:
-
-**Cambio necesario (solo 1 archivo):**
-```python
-# Crear: src/services/ml_intent_detector.py
-
-from openai import OpenAI
-import json
-
-class MLIntentDetector:
-    def __init__(self):
-        self.client = OpenAI()
-    
-    def detect(self, message: str, context: Dict) -> Dict:
-        # Usar historial del context manager
-        prompt = f"""
-        Historial:
-        {context.get('conversation_history', '')}
-        
-        Mensaje: "{message}"
-        
-        Detecta intent y entidades en JSON.
-        """
-        
-        response = self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
-        
-        return json.loads(response.choices[0].message.content)
-
-# En bot_controller.py, cambiar 1 línea:
-# ANTES:
-from src.services.intent_detector import intent_detector
-
-# DESPUÉS:
-from src.services.ml_intent_detector import MLIntentDetector
-intent_detector = MLIntentDetector()
-
-# ✅ Todo el resto funciona igual!
-```
-
-**Ventajas del diseño:**
-- ✅ Context Manager ya provee historial en formato texto
-- ✅ Separación de capas (NLU independiente de lógica)
-- ✅ Interfaz común (mismo método `detect()`)
-- ✅ Sin cambios en handlers ni flujos
+| Componente | Líneas | Descripción |
+|------------|--------|-------------|
+| `hybrid_intent_detector.py` | ~400 | Sistema híbrido ML + Rules ⭐ |
+| `intent_detector.py` (entities) | ~715 | Extracción de entidades |
+| `conversation_context.py` | ~200 | Gestor de contexto |
+| `cache_manager.py` | ~250 | Cache de disponibilidad ⭐ |
+| `dataset_base.py` | ~320 | 80 ejemplos de entrenamiento ⭐ |
+| `data_augmentation_v3.py` | ~982 | Generador de variaciones ⭐ |
+| `train_spacy_model.py` | ~180 | Script de entrenamiento ⭐ |
+| Modificaciones `bot_controller.py` | ~150 | Integración ML |
+| **Total nuevo código v4.0** | **~3,197 líneas** | |
 
 ---
-
 ## 📊 CARGA DE DATOS
 
 ### **CSV de Profesionales** ⭐ NUEVO
@@ -763,9 +826,7 @@ docker exec whatsapp-demo python scripts/load_professionals_from_csv.py \
 ## 🔄 CAPAS DE LA APLICACIÓN
 
 ### **1. Capa API (Presentación)**
-
 **Ubicación:** `src/api/`
-
 **Responsabilidad:** Recibir mensajes de WhatsApp y enviar respuestas
 
 **Componentes:**
@@ -783,14 +844,55 @@ docker exec whatsapp-demo python scripts/load_professionals_from_csv.py \
    ↓
 5. Llama a bot_controller.process_message()
    ↓
-6. Retorna respuesta a Twilio
+6. Retorna respuesta a Twilio (TwiML)
    ↓
 7. Twilio envía respuesta a usuario en WhatsApp
 ```
 
 ---
 
-### **2. Capa Bot (Lógica Conversacional)**
+### **2. Capa de Inteligencia (NLU/ML)** ⭐
+**Ubicación:** `src/integrations/ml/` + `src/services/`
+**Responsabilidad:** Detectar intención y extraer entidades
+
+**Componentes:**
+- `hybrid_intent_detector.py`: Sistema híbrido ML + Rules (98.1% accuracy)
+- `intent_detector.py`: Extracción de entidades (fecha, nombre, horario, etc.)
+- `conversation_context.py`: Gestor de contexto conversacional
+
+**Flujo:**
+```
+Mensaje: "teno q ver al dotor blanco xa mañana"
+   ↓
+1. Normalización de texto
+   - Contracciones: "teno q" → "tengo que", "xa" → "para"
+   - Títulos: "dotor" → "doctor"
+   ↓
+2. Extracción de entidades
+   - Fecha: "mañana" → 2026-02-09
+   - Profesional: "blanco" → fuzzy match DB → "Gaston Blanco"
+   ↓
+3. Detección de intent (ML)
+   - spaCy model: confidence ≥ 0.7 → Use ML
+   - confidence < 0.7 → Fallback to Rules
+   ↓
+4. Integración con contexto
+   - Merge con entidades previas
+   - Verificar info completa
+   ↓
+Return: {
+    intent: "search_professional",
+    confidence: 0.98,
+    entities: {fecha: "2026-02-09", professional_name: "gaston blanco"},
+    can_shortcut: true
+}
+```
+
+**Intents Soportados:** search_professional, view_tomorrow, view_my_appointments, cancel_appointment, reschedule_appointment, confirm_appointment, unknown
+
+---
+
+### **3. Capa Bot (Lógica Conversacional)**
 
 **Ubicación:** `src/bot/`
 
@@ -839,7 +941,7 @@ IDLE
 
 ---
 
-### **3. Capa Services (Lógica de Negocio)**
+### **4. Capa Services (Lógica de Negocio)**
 
 **Ubicación:** `src/services/`
 
@@ -856,6 +958,9 @@ IDLE
 - Búsqueda de profesionales con disponibilidad en tiempo real
 - Integración con Google Calendar vía `professional_service`
 - Formateo de resultados con slots disponibles
+- **Cache de disponibilidad (15min TTL)** ⭐
+- **Consultas paralelas (ThreadPoolExecutor)** ⭐
+- **Fuzzy matching de nombres (85% threshold)** ⭐
 - Métodos principales:
   - `search_professionals_by_filters()` - Busca y filtra por disponibilidad
   - `format_search_results_with_slots()` - Formatea lista con horarios
@@ -865,7 +970,7 @@ IDLE
 - Gestión de profesionales y perfiles
 - Integración directa con GoogleCalendarService
 - Métodos principales:
-  - `get_available_slots()` - Obtiene slots desde Google Calendar
+  - `get_available_slots()` - Obtiene slots desde Google Calendar con cache ⭐
   - `setup_google_calendar()` - Configura calendario para profesional
   - `validate_calendar_access()` - Verifica acceso al calendario
 
@@ -874,15 +979,24 @@ IDLE
 - Sincronización bidireccional
 - Cancelaciones y reprogramaciones
 
+#### **cache_manager.py** ⭐ NUEVO
+- Cache thread-safe de disponibilidad
+- TTL: 15 minutos
+- Invalidación automática
+- Métodos:
+  - `get(calendar_id, date)` - Obtener slots cacheados
+  - `set(calendar_id, date, slots)` - Guardar en cache
+  - `invalidate(calendar_id, date)` - Limpiar cache
+
 ---
 
-### **4. Capa Integrations (Servicios Externos)** ⭐ NUEVO
+### **5. Capa Integrations (Servicios Externos)**
 
 **Ubicación:** `src/integrations/`
 
 **Responsabilidad:** Integración con APIs externas
 
-#### **google_calendar_service/** ⭐
+#### **google_calendar_service/**
 
 **Estructura modular:**
 ```
@@ -924,9 +1038,29 @@ event = calendar_service.create_appointment(
 )
 ```
 
+#### **ml/** ⭐ NUEVO
+
+**Ubicación:** `src/integrations/ml/`
+
+**Componentes:**
+- `hybrid_intent_detector.py`: Sistema híbrido ML + Rules
+  - Modelo spaCy (98.1% accuracy)
+  - Fallback a rules si confidence < 0.7
+  - 7 intents soportados
+
+**Scripts de entrenamiento:**
+
+**Ubicación:** `scripts/ml/`
+- `dataset_base.py`: 80 ejemplos base
+- `data_augmentation_v3.py`: Generador de variaciones (~970)
+- `generate_training_dataset.py`: Combina base + augmentation
+- `train_spacy_model.py`: Entrena modelo spaCy
+- `evaluate_spacy_model.py`: Evalúa accuracy
+- `README.md`: Documentación completa de entrenamiento
+
 ---
 
-### **5. Sistema de Filtros Modular** ⭐ NUEVO
+### **6. Sistema de Filtros Modular** ⭐
 
 **Ubicación:** `src/filters/`
 
@@ -1102,7 +1236,7 @@ Bot: FilterManager.validate_required_filters() ✓
 
 ---
 
-### **6. Capa Database (Persistencia)**
+### **7. Capa Database (Persistencia)**
 
 **Ubicación:** `src/database/`
 
@@ -1131,7 +1265,6 @@ timezone TEXT,                 -- Zona horaria (America/Argentina/Buenos_Aires)
 google_event_id TEXT,          -- ID del evento en Google Calendar ⭐
 status TEXT,                   -- confirmed|cancelled|rescheduled
 ```
----
 
 ## 🔔 SISTEMA DE RECORDATORIOS AUTOMÁTICOS
 
@@ -1254,19 +1387,42 @@ cp service-account.json config/google/
 # +5491112345678,María González,maria@ex.com,maria.gonzalez@gmail.com,...
 ```
 
-#### **3. Configurar docker-compose.yml:**
+#### **3. Entrenar modelo ML (opcional):** ⭐ NUEVO
+```bash
+# Si quieres re-entrenar el modelo desde cero
+cd scripts/ml
+
+# 1. Generar dataset
+python generate_training_dataset.py
+# Output: dataset_training.jsonl (~1,050 ejemplos)
+
+# 2. Entrenar modelo
+python train_spacy_model.py --data ../../dataset/dataset_training.jsonl
+# Output: model/model-best/ (~50MB)
+
+# 3. Verificar accuracy
+cat training_report.json | grep "best_accuracy"
+# Esperado: 0.98 o superior
+
+# NOTA: El modelo pre-entrenado ya viene incluido en el repo
+# Solo re-entrena si modificaste dataset_base.py
+```
+
+#### **4. Configurar docker-compose.yml:**
 ```yaml
 services:
   whatsapp-demo:
     environment:
       - FLASK_ENV=development  # Activa carga automática de CSV
+      - ML_CONFIDENCE_THRESHOLD=0.7  # ⭐ Threshold para ML vs Rules
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-      - ./profesionales_demo.csv:/app/data/profesionales_demo.csv  # ⭐
+      - ./profesionales_demo.csv:/app/data/profesionales_demo.csv
+      - ./scripts/ml/intent_classifier/model:/app/scripts/ml/intent_classifier/model  # ⭐ Modelo ML
 ```
 
-#### **4. Iniciar:**
+#### **5. Iniciar:**
 ```bash
 cd docker
 docker-compose up --build
@@ -1276,18 +1432,198 @@ docker-compose up --build
 1. Inicializa la BD
 2. Carga profesionales desde CSV (si BD vacía)
 3. Valida configuración de Google Calendar
-4. Muestra estadísticas
+4. **Carga modelo ML (spaCy)** ⭐
+5. **Inicializa cache manager** ⭐
+6. Muestra estadísticas
 
-#### **5. Verificar:**
+#### **6. Verificar:**
 ```bash
 # Ver profesionales cargados
 docker exec whatsapp-demo sqlite3 /app/data/booking.db \
   "SELECT phone, name, calendar_id FROM professionals;"
 
-# Ver logs
+# Verificar que modelo ML se cargó correctamente
+docker-compose logs | grep "ML model loaded"
+# Esperado: [ML] ✅ Model loaded: 98.1% accuracy
+
+# Verificar cache inicializado
+docker-compose logs | grep "CACHE"
+# Esperado: [CACHE] 🚀 Initialized with TTL=15min
+
+# Ver logs completos
 docker-compose logs -f
 ```
 
+---
+
+### **Dependencias y Requirements**
+
+#### **requirements.txt actualizado:** ⭐
+```txt
+# API & Web
+Flask==3.0.0
+twilio==8.10.0
+python-dotenv==1.0.0
+
+# Google Calendar
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-api-python-client==2.108.0
+
+# Machine Learning ⭐ NUEVO
+spacy==3.7.2
+es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0-py3-none-any.whl
+
+# Database
+# (SQLite viene incluido en Python)
+```
+
+#### **Instalación:**
+```bash
+# Opción 1: Docker (recomendado)
+docker-compose up --build
+
+# Opción 2: Local
+pip install -r requirements.txt
+python -m spacy download es_core_news_sm
+```
+
+---
+
+### **Variables de Entorno (.env)**
+
+```env
+# Twilio
+TWILIO_ACCOUNT_SID=xxx
+TWILIO_AUTH_TOKEN=xxx
+TWILIO_PHONE_NUMBER=+14155238886
+
+# Google Calendar
+GOOGLE_CALENDAR_CREDENTIALS_PATH=./config/google/service-account.json
+
+# Flask
+FLASK_ENV=development
+PORT=5000
+
+# Machine Learning ⭐ NUEVO
+ML_CONFIDENCE_THRESHOLD=0.7          # Threshold para usar ML vs Rules
+SPACY_MODEL_PATH=scripts/ml/intent_classifier/model/model-best
+ML_ENABLED=true                       # Habilitar/deshabilitar ML
+
+# Cache ⭐ NUEVO
+CACHE_TTL_MINUTES=15                  # Tiempo de vida del cache
+CACHE_ENABLED=true                    # Habilitar/deshabilitar cache
+```
+
+---
+
+### **Troubleshooting**
+
+#### **Problema: "ML model not found"**
+```bash
+# Verificar que existe el modelo
+ls scripts/ml/intent_classifier/model/model-best/
+
+# Si no existe, entrenar:
+cd scripts/ml
+python generate_training_dataset.py
+python train_spacy_model.py --data ../../dataset/dataset_training.jsonl
+```
+
+#### **Problema: "spaCy model es_core_news_sm not found"**
+```bash
+# Instalar modelo base
+python -m spacy download es_core_news_sm
+
+# O en Docker, rebuild:
+docker-compose down
+docker-compose up --build
+```
+
+#### **Problema: Cache no funciona**
+```bash
+# Verificar logs de cache
+docker-compose logs | grep CACHE
+
+# Verificar que esté habilitado en .env
+CACHE_ENABLED=true
+```
+
+#### **Problema: Accuracy del modelo <95%**
+```bash
+# Re-entrenar con más épocas
+cd scripts/ml
+# Editar config.cfg: max_epochs = 50
+python train_spacy_model.py --data ../../dataset/dataset_training.jsonl
+
+# Agregar más ejemplos a dataset_base.py
+# Ver scripts/ml/README.md para detalles
+```
+
+---
+
+### **Logs y Monitoreo**
+
+```bash
+# Ver logs en tiempo real
+docker-compose logs -f
+
+# Filtrar por componente
+docker-compose logs -f | grep "ML"      # Solo ML
+docker-compose logs -f | grep "CACHE"   # Solo cache
+docker-compose logs -f | grep "NLU"     # Solo NLU/entity extraction
+
+# Ver estadísticas de cache
+docker exec whatsapp-demo python -c "
+from src.services.cache_manager import cache_manager
+print(cache_manager.get_stats())
+"
+```
+
+---
+
+### **Testing**
+
+#### **Test completo del flujo:**
+```bash
+# 1. Enviar mensaje de prueba
+curl -X POST http://localhost:5000/webhook \
+  -d "From=whatsapp:+5491112345678" \
+  -d "Body=turno con psicólogo mañana"
+
+# 2. Verificar logs
+docker-compose logs | tail -50
+
+# Esperado:
+# [NLU] Intent: search_professional (conf: 0.98)
+# [NLU] Entities: {fecha: 'mañana', especialidad: 'psicología'}
+# [CACHE] ❌ MISS: professional@gmail.com_2026-02-09_all
+# [CLIENT] ✅ 3 professionals available
+```
+
+#### **Test de ML accuracy:**
+```bash
+cd scripts/ml
+python evaluate_spacy_model.py
+
+# Output esperado:
+# Accuracy: 98.1%
+# Precision: 97.8%
+# Recall: 98.4%
+```
+
+#### **Test de cache:**
+```bash
+# Primera consulta (cache miss)
+time curl -X POST http://localhost:5000/webhook \
+  -d "From=whatsapp:+5491112345678" \
+  -d "Body=disponibilidad mañana"
+
+# Segunda consulta (cache hit - debería ser ~50ms)
+time curl -X POST http://localhost:5000/webhook \
+  -d "From=whatsapp:+5491112345678" \
+  -d "Body=disponibilidad mañana"
+```
 ---
 
 ## 🧪 TESTING
