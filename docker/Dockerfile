@@ -28,10 +28,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python dependencies + spaCy model
-# Esta capa se cachea y solo se reconstruye si cambia requirements.txt
+# Descarga directa del .whl (más confiable que spacy download)
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
-    python -m spacy download es_core_news_sm
+    pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0-py3-none-any.whl
 
 # ==================================================
 # STAGE 3: APPLICATION (Cambia frecuentemente)
