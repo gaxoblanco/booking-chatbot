@@ -1,22 +1,24 @@
 """
-ML Intent Detector - spaCy
-===========================
-Detector de intenciones basado en modelo ML entrenado con spaCy.
+ML Intent Detector - HTTP Client Version
+=========================================
+Detector de intenciones que usa el servicio ML centralizado vía HTTP.
 
-Compatible con IntentDetector de reglas (misma interfaz).
+Compatible 100% con la versión anterior (spaCy local).
+Misma interfaz, mismo comportamiento, pero usa servicio remoto.
 
 Uso:
-    from src.ml.ml_intent_detector import ml_intent_detector
+    from src.integrations.ml.ml_intent_detector import ml_intent_detector
     
     result = ml_intent_detector.detect("necesito psicólogo mañana")
     print(result['intent'])  # Intent.SEARCH_PROFESSIONAL
     print(result['confidence'])  # 0.95
 """
 
-import spacy
-from pathlib import Path
-from typing import Dict, Optional
+import os
 import sys
+import requests
+from pathlib import Path
+from typing import Dict, Optional, List, Tuple
 
 # Importar Intent enum del sistema de reglas
 try:
@@ -29,14 +31,14 @@ except ImportError:
 
 class MLIntentDetector:
     """
-    Detector de intenciones usando modelo ML (spaCy).
+    Detector de intenciones usando servicio ML remoto (HTTP).
     
     Responsabilidades:
     - Detectar INTENT con alta precisión
     - Retornar confianza probabilística
     - NO extrae entidades (para eso usar reglas)
     
-    Compatible con IntentDetector de reglas (misma interfaz).
+    Compatible 100% con versión anterior (spaCy local).
     """
     
     def __init__(self, model_path: str = "scripts/ml/models/intent_classifier"):
@@ -44,13 +46,20 @@ class MLIntentDetector:
         Inicializar detector ML.
         
         Args:
-            model_path: Ruta relativa o absoluta al modelo entrenado
+            model_path: Ignorado (mantiene compatibilidad). Ahora usa servicio HTTP.
         """
-        self.model_path = model_path
-        self.nlp = None
+        # Configuración del servicio HTTP
+        self.ml_service_url = os.getenv('ML_SERVICE_URL', 'http://ml-service:8000')
+        self.api_key = os.getenv('ML_API_KEY')
+        
+        # Timeout y retries
+        self.timeout = int(os.getenv('ML_SERVICE_TIMEOUT', '5'))
+        self.max_retries = int(os.getenv('ML_SERVICE_MAX_RETRIES', '2'))
+        
+        # Estado del servicio
         self.is_loaded = False
         
-        # Mapeo de labels del modelo a Intent enum
+        # Mapeo de labels del modelo a Intent enum (mismo que antes)
         self.intent_map = {
             'search_professional': Intent.SEARCH_PROFESSIONAL,
             'view_my_appointments': Intent.VIEW_MY_APPOINTMENTS,
@@ -61,43 +70,67 @@ class MLIntentDetector:
             'unknown': Intent.UNKNOWN,
         }
         
-        # Intentar cargar modelo al inicializar
-        self._load_model()
+        # Advertencia si model_path fue especificado
+        if model_path != "scripts/ml/models/intent_classifier":
+            print(f"[ML] ⚠️  model_path='{model_path}' ignorado")
+            print(f"[ML]    Ahora se usa ML service en: {self.ml_service_url}")
+        
+        # Validar configuración
+        if not self.api_key:
+            print("[ML] ❌ ML_API_KEY no configurada en variables de entorno")
+            print("[ML]    ML Intent Detector deshabilitado")
+            print("[ML]    Agregar ML_API_KEY a .env")
+            self.is_loaded = False
+        else:
+            # Intentar conectar al servicio
+            self._load_model()
     
     def _load_model(self):
-        """Carga el modelo entrenado."""
+        """
+        Conecta con el servicio ML (equivalente a cargar modelo).
+        
+        Verifica que el servicio esté disponible y el modelo cargado.
+        """
         try:
-            # Buscar modelo en diferentes ubicaciones posibles
-            possible_paths = [
-                self.model_path,  # Ruta original
-                Path(__file__).parent.parent.parent / self.model_path,  # Relativa a src/
-                Path.cwd() / self.model_path,  # Relativa a working directory
-            ]
+            print(f"[ML] Conectando a servicio ML: {self.ml_service_url}")
             
-            model_loaded = False
-            for path in possible_paths:
-                if Path(path).exists():
-                    print(f"[ML] Cargando modelo desde: {path}")
-                    self.nlp = spacy.load(path)
+            # Health check del servicio
+            response = requests.get(
+                f"{self.ml_service_url}/health",
+                timeout=self.timeout
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if data.get('status') == 'healthy' and data.get('model_loaded', False):
                     self.is_loaded = True
-                    model_loaded = True
-                    print(f"[ML] ✅ Modelo cargado correctamente")
-                    break
-            
-            if not model_loaded:
-                print(f"[ML] ⚠️  Modelo no encontrado en ninguna ubicación")
-                print(f"[ML]    Buscado en: {[str(p) for p in possible_paths]}")
-                print(f"[ML]    ML Intent Detector deshabilitado")
+                    accuracy = data.get('model_accuracy', 0)
+                    print(f"[ML] ✅ Servicio ML conectado correctamente")
+                    print(f"[ML]    Accuracy: {accuracy:.1%}")
+                    print(f"[ML]    Intenciones: {data.get('intents_count', 0)}")
+                else:
+                    print(f"[ML] ⚠️  Servicio responde pero modelo no cargado")
+                    print(f"[ML]    Status: {data.get('status', 'unknown')}")
+                    self.is_loaded = False
+            else:
+                print(f"[ML] ⚠️  Servicio ML no disponible (HTTP {response.status_code})")
                 self.is_loaded = False
                 
+        except requests.exceptions.ConnectionError:
+            print(f"[ML] ❌ No se puede conectar a {self.ml_service_url}")
+            print(f"[ML]    Verifica que el servicio ml-service esté corriendo")
+            print(f"[ML]    ML Intent Detector deshabilitado")
+            self.is_loaded = False
+            
         except Exception as e:
-            print(f"[ML] ❌ Error cargando modelo: {e}")
+            print(f"[ML] ❌ Error conectando a servicio ML: {e}")
             print(f"[ML]    ML Intent Detector deshabilitado")
             self.is_loaded = False
     
     def detect(self, message: str, context: Optional[Dict] = None) -> Dict:
         """
-        Detecta intención usando ML.
+        Detecta intención usando ML remoto.
         
         Args:
             message: Mensaje del usuario
@@ -110,7 +143,7 @@ class MLIntentDetector:
                 'entities': dict,  # Siempre vacío (usar reglas para entidades)
                 'can_shortcut': bool,  # Siempre False (calcular con reglas)
                 'missing_entities': list,  # Siempre vacío
-                'ml_scores': dict  # Scores de todos los intents (para debugging)
+                'ml_scores': dict  # Scores de todos los intents
             }
             
         Example:
@@ -120,8 +153,8 @@ class MLIntentDetector:
             >>> print(f"{result['confidence']:.2f}")
             0.95
         """
-        # Si modelo no está cargado, retornar unknown
-        if not self.is_loaded or self.nlp is None:
+        # Si servicio no está disponible, retornar unknown
+        if not self.is_loaded:
             return {
                 'intent': Intent.UNKNOWN,
                 'confidence': 0.0,
@@ -129,43 +162,103 @@ class MLIntentDetector:
                 'can_shortcut': False,
                 'missing_entities': [],
                 'ml_scores': {},
-                'error': 'Model not loaded'
+                'error': 'ML service not available'
             }
         
-        try:
-            # Predecir con modelo spaCy
-            doc = self.nlp(message)
+        # Intentar predicción con retries
+        for attempt in range(self.max_retries + 1):
+            try:
+                # Preparar request
+                headers = {
+                    "X-API-Key": self.api_key,
+                    "Content-Type": "application/json; charset=utf-8"
+                }
+                
+                payload = {"message": message}
+                
+                # Llamar servicio ML
+                response = requests.post(
+                    f"{self.ml_service_url}/predict",
+                    json=payload,
+                    headers=headers,
+                    timeout=self.timeout
+                )
+                
+                # Verificar respuesta
+                response.raise_for_status()
+                
+                # Parsear respuesta
+                data = response.json()
+                
+                # Convertir intent string a enum
+                predicted_label = data['intent']
+                intent = self.intent_map.get(predicted_label, Intent.UNKNOWN)
+                confidence = data['confidence']
+                ml_scores = data.get('ml_scores', {})
+                
+                # Retornar en formato compatible
+                return {
+                    'intent': intent,
+                    'confidence': confidence,
+                    'entities': {},  # ML no extrae entidades (usar reglas)
+                    'can_shortcut': False,  # Calcular con reglas
+                    'missing_entities': [],
+                    'ml_scores': ml_scores  # Todos los scores para debugging
+                }
+                
+            except requests.exceptions.Timeout:
+                if attempt < self.max_retries:
+                    print(f"[ML] ⚠️  Timeout (intento {attempt + 1}/{self.max_retries + 1})")
+                    continue
+                else:
+                    print(f"[ML] ❌ Timeout definitivo del ML service")
+                    return self._fallback_response('Timeout')
             
-            # Obtener intent con mayor score
-            predicted_label = max(doc.cats.items(), key=lambda x: x[1])[0]
-            confidence = doc.cats[predicted_label]
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 401:
+                    print(f"[ML] ❌ API Key inválida")
+                    return self._fallback_response('Invalid API Key')
+                elif e.response.status_code == 503:
+                    print(f"[ML] ⚠️  Servicio no disponible (503)")
+                    if attempt < self.max_retries:
+                        continue
+                    return self._fallback_response('Service unavailable')
+                else:
+                    print(f"[ML] ❌ Error HTTP: {e}")
+                    if attempt < self.max_retries:
+                        continue
+                    return self._fallback_response(f'HTTP {e.response.status_code}')
             
-            # Convertir label a Intent enum
-            intent = self.intent_map.get(predicted_label, Intent.UNKNOWN)
-            
-            # Resultado
-            return {
-                'intent': intent,
-                'confidence': confidence,
-                'entities': {},  # ML no extrae entidades (usar reglas)
-                'can_shortcut': False,  # Calcular con reglas
-                'missing_entities': [],
-                'ml_scores': dict(doc.cats)  # Todos los scores para debugging
-            }
-            
-        except Exception as e:
-            print(f"[ML] ❌ Error en predicción: {e}")
-            return {
-                'intent': Intent.UNKNOWN,
-                'confidence': 0.0,
-                'entities': {},
-                'can_shortcut': False,
-                'missing_entities': [],
-                'ml_scores': {},
-                'error': str(e)
-            }
+            except Exception as e:
+                print(f"[ML] ❌ Error en predicción: {e}")
+                if attempt < self.max_retries:
+                    continue
+                return self._fallback_response(str(e))
+        
+        # Si todos los intentos fallaron
+        return self._fallback_response('All retries failed')
     
-    def get_top_predictions(self, message: str, top_k: int = 3) -> list:
+    def _fallback_response(self, error_msg: str) -> Dict:
+        """
+        Respuesta de fallback cuando falla la predicción.
+        
+        Args:
+            error_msg: Mensaje de error
+            
+        Returns:
+            Dict con intent UNKNOWN en formato compatible
+        """
+        return {
+            'intent': Intent.UNKNOWN,
+            'confidence': 0.0,
+            'entities': {},
+            'can_shortcut': False,
+            'missing_entities': [],
+            'ml_scores': {},
+            'error': error_msg
+        }
+    
+    def get_top_predictions(self, message: str, top_k: int = 3) -> List[Tuple[Intent, float]]:
         """
         Obtiene las top K predicciones.
         
@@ -186,18 +279,23 @@ class MLIntentDetector:
             search_professional: 0.01
             unknown: 0.01
         """
-        if not self.is_loaded or self.nlp is None:
+        if not self.is_loaded:
             return []
         
         try:
-            doc = self.nlp(message)
+            # Obtener predicción completa (incluye ml_scores)
+            result = self.detect(message)
+            ml_scores = result.get('ml_scores', {})
+            
+            if not ml_scores:
+                return []
             
             # Ordenar por score descendente
-            sorted_cats = sorted(doc.cats.items(), key=lambda x: x[1], reverse=True)
+            sorted_scores = sorted(ml_scores.items(), key=lambda x: x[1], reverse=True)
             
             # Convertir a Intent enum y retornar top K
             results = []
-            for label, score in sorted_cats[:top_k]:
+            for label, score in sorted_scores[:top_k]:
                 intent = self.intent_map.get(label, Intent.UNKNOWN)
                 results.append((intent, score))
             
@@ -212,9 +310,9 @@ class MLIntentDetector:
         Verifica si el detector ML está disponible.
         
         Returns:
-            True si el modelo está cargado y listo
+            True si el servicio está conectado y listo
         """
-        return self.is_loaded and self.nlp is not None
+        return self.is_loaded
 
 
 # ==========================================
@@ -228,13 +326,16 @@ ml_intent_detector = MLIntentDetector()
 # ==========================================
 if __name__ == "__main__":
     print("="*60)
-    print("🧪 TEST - ML Intent Detector")
+    print("🧪 TEST - ML Intent Detector (HTTP)")
     print("="*60)
     
     if not ml_intent_detector.is_available():
-        print("\n❌ Modelo no disponible")
-        print("   Entrena el modelo primero con:")
-        print("   python scripts/ml/train_spacy_model.py")
+        print("\n❌ Servicio ML no disponible")
+        print("   Verificar:")
+        print("   1. ML_SERVICE_URL está configurada")
+        print("   2. ML_API_KEY está configurada")
+        print("   3. Servicio ml-service está corriendo")
+        print("   4. docker-compose logs -f ml-service")
         sys.exit(1)
     
     # Test messages
@@ -260,10 +361,11 @@ if __name__ == "__main__":
         
         # Mostrar top 3 predicciones
         top_3 = ml_intent_detector.get_top_predictions(msg, top_k=3)
-        print(f"  Top 3:")
-        for intent, conf in top_3:
-            bar = "█" * int(conf * 20)
-            print(f"    {intent.value:25s}: {conf:.3f} {bar}")
+        if top_3:
+            print(f"  Top 3:")
+            for intent, conf in top_3:
+                bar = "█" * int(conf * 20)
+                print(f"    {intent.value:25s}: {conf:.3f} {bar}")
         print()
     
     print("="*60)
