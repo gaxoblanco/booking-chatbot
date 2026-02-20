@@ -1247,7 +1247,7 @@ Intents críticos (search, view_appointments):
 
 1. **Implementar Detector Híbrido**
 ```python
-# src/ml/hybrid_intent_detector.py
+# src/integration/ml/hybrid_intent_detector.py
 
 class HybridIntentDetector:
     """
@@ -1303,7 +1303,7 @@ class FeatureFlags:
 if FeatureFlags.USE_ML_INTENT_DETECTOR:
     from src.ml.ml_intent_detector import ml_intent_detector as intent_detector
 elif FeatureFlags.USE_HYBRID_DETECTOR:
-    from src.ml.hybrid_intent_detector import hybrid_intent_detector as intent_detector
+    from src.integration.ml.hybrid_intent_detector import hybrid_intent_detector as intent_detector
 else:
     from src.services.intent_detector import intent_detector
 
@@ -1532,7 +1532,7 @@ ml_inference_time < 100ms  # Latencia aceptable
 ### **Próximos Módulos**
 
 - `src/ml/ml_intent_detector.py`: Detector con ML (pendiente)
-- `src/ml/hybrid_intent_detector.py`: Detector híbrido (pendiente)
+- `src/integration/ml/hybrid_intent_detector.py`: Detector híbrido (echo)
 - `scripts/train_intent_model.py`: Entrenamiento (pendiente)
 - `scripts/label_conversations.py`: Etiquetado (pendiente)
 
