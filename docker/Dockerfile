@@ -1,8 +1,10 @@
 # ==================================================
-# WHATSAPP BOT WEBHOOK - DOCKERFILE (OPTIMIZADO)
+# WHATSAPP BOT WEBHOOK - DOCKERFILE (HTTP ML VERSION)
 # ==================================================
 # Multi-stage build optimizado para desarrollo rápido
 # Python 3.10 slim base image
+# SIN spaCy - usa ML service vía HTTP
+# ==================================================
 
 # ==================================================
 # STAGE 1: SYSTEM BASE (Cacheable - rara vez cambia)
@@ -27,11 +29,10 @@ WORKDIR /app
 # Copy ONLY requirements first (mejor cache)
 COPY requirements.txt .
 
-# Install Python dependencies + spaCy model
-# Descarga directa del .whl (más confiable que spacy download)
+# Install Python dependencies
+# ⭐ YA NO instala spaCy model - usa ML service HTTP
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0-py3-none-any.whl
+    pip install --no-cache-dir -r requirements.txt
 
 # ==================================================
 # STAGE 3: APPLICATION (Cambia frecuentemente)
@@ -46,15 +47,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     FLASK_APP=src.api.whatsapp_handler
 
-# Create necessary directories ANTES de copiar archivos
+# Create necessary directories
 RUN mkdir -p /app/data/certificates && \
     mkdir -p /app/data && \
     mkdir -p /app/data/conversations && \
     mkdir -p /app/dataset && \
     mkdir -p /app/src/integrations/google_calendar_service/config/google && \
-    mkdir -p /app/scripts/ml/models
+    mkdir -p /app/scripts
 
-# Copy application files (estos cambian frecuentemente)
+# ⭐ YA NO crea /app/scripts/ml/models - no se usa localmente
+
+# Copy application files
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
 COPY .env.example /app/
@@ -90,6 +93,9 @@ CMD ["/app/docker-entrypoint.sh"]
 # Clean rebuild (sin cache):
 #   docker-compose build --no-cache
 #
-# Rebuild solo dependencies (si cambió requirements.txt):
-#   docker-compose build --no-cache python-deps
-#   docker-compose build
+# NOTAS IMPORTANTES:
+# - Este Dockerfile NO incluye spaCy model
+# - El bot usa ML service vía HTTP (más ligero)
+# - Para usar este Dockerfile, configurar:
+#   ML_SERVICE_URL=http://ml-service:8000
+#   ML_API_KEY=<tu-key>
