@@ -4,8 +4,6 @@
 # Orchestrates the WhatsApp webhook service
 # Run with: docker-compose up --build
 
-version: "3.8"
-
 services:
   # ==================================================
   # WHATSAPP WEBHOOK SERVICE
@@ -48,7 +46,7 @@ services:
     # Volume mounts (desde raíz del proyecto)
     volumes:
       # Mount database (persistent storage)
-      - database:/app/data
+      - ../data/db:/app/data
 
       # Mount conversations logs (persistent storage para ML)
       - conversations:/app/data/conversations
@@ -69,7 +67,9 @@ services:
       # Mount Google Calendar credentials
       - ../src/integrations/google_calendar_service:/app/src/integrations/google_calendar_service
 
-      - ../profesionales_demo.csv:/app/profesionales_demo.csv
+      # Montar carpeta data/ completa (CSV de carga y datos demo)
+      - ../data:/app/data/csv
+    
     # Health check
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
@@ -112,7 +112,7 @@ volumes:
   # Contiene datos revisados y validados manualmente
   dataset:
     driver: local
-  
+
 # ==================================================
 # USAGE INSTRUCTIONS
 # ==================================================
@@ -120,9 +120,9 @@ volumes:
 # 2. Configure access keys in src/config/config.py
 # 3. Build and start: docker-compose up --build
 # 4. Stop: docker-compose down
-# 5. View logs: docker-compose logs -f whatsapp-bot
-# 6. Restart: docker-compose restart whatsapp-bot
-# 7. Generate keys: docker-compose exec whatsapp-bot python scripts/generate_access_keys.py
+# 5. View logs: docker-compose logs -f whatsapp-demo
+# 6. Restart: docker-compose restart whatsapp-demo
+# 7. Generate keys: docker-compose exec whatsapp-demo python scripts/generate_access_keys.py
 #
 # For production:
 # - Remove volume mounts for source code
