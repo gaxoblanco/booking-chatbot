@@ -60,11 +60,18 @@ class AppointmentCalendarService:
     ) -> List[Dict]:
         """
         Obtiene slots disponibles de un profesional para una fecha.
-        
+
+        Manejo de working_hours (formato por día):
+          - Si el JSON tiene claves de días ('lunes', 'martes', etc.)
+            extrae el horario del día que corresponde a la fecha pedida.
+          - Si el día no está configurado → retorna [] (no trabaja ese día).
+          - Retrocompatibilidad: si el JSON tiene formato viejo {'start','end'}
+            lo usa tal cual.
+
         Args:
             professional_phone: Teléfono del profesional
             date: Fecha en formato 'YYYY-MM-DD'
-        
+
         Returns:
             List[Dict]: Lista de slots disponibles
                 [
@@ -78,43 +85,78 @@ class AppointmentCalendarService:
                     },
                     ...
                 ]
-        
+
         Raises:
-            ValueError: Si el profesional no existe o no está configurado
+            ValueError: Si el profesional no existe o no tiene calendar_id
         """
-        logger.info(
-            f"Consultando disponibilidad de {professional_phone} para {date}"
-        )
-        
+        # Mapeo número de día Python (0=lunes) a clave del JSON
+        DIA_SEMANA = {
+            0: 'lunes',
+            1: 'martes',
+            2: 'miercoles',
+            3: 'jueves',
+            4: 'viernes',
+            5: 'sabado',
+            6: 'domingo'
+        }
+        DIAS_CONOCIDOS = set(DIA_SEMANA.values())
+
+        logger.info(f"Consultando disponibilidad de {professional_phone} para {date}")
+
         try:
             # 1. Obtener configuración del profesional desde BD
             professional = self.db.get_professional(professional_phone)
-            
             if not professional:
                 raise ValueError(f"Profesional {professional_phone} no encontrado")
-            
-            # 2. Verificar que tenga calendar_id configurado
+
+            # 2. Verificar calendar_id
             calendar_id = professional.get('calendar_id')
             if not calendar_id:
                 raise ValueError(
                     f"Profesional {professional_phone} no tiene calendar_id configurado. "
                     "Configure primero el email de su calendario de Google."
                 )
-            
-            # 3. Obtener horario laboral (parsear JSON)
-            working_hours_json = professional.get('working_hours')
-            if working_hours_json:
-                working_hours = json.loads(working_hours_json)
-            else:
-                # Default: 9 AM a 6 PM
-                working_hours = {'start': '09:00', 'end': '18:00'}
-                logger.warning(
-                    f"Profesional {professional_phone} sin working_hours, usando default"
+
+            # 3. Obtener slot_duration de la BD (sin fallback hardcodeado)
+            slot_duration = professional.get('slot_duration')
+            if not slot_duration:
+                raise ValueError(
+                    f"Profesional {professional_phone} no tiene slot_duration configurado."
                 )
-            
-            # 4. Obtener duración de consulta
-            slot_duration = professional.get('slot_duration', 60)
-            
+
+            # 4. Parsear working_hours y resolver el día pedido
+            working_hours_json = professional.get('working_hours')
+            if not working_hours_json:
+                raise ValueError(
+                    f"Profesional {professional_phone} no tiene working_hours configurado."
+                )
+
+            working_hours_data = json.loads(working_hours_json)
+
+            # Detectar formato: nuevo (por día) vs viejo (plano)
+            es_formato_por_dia = any(k in DIAS_CONOCIDOS for k in working_hours_data.keys())
+
+            if es_formato_por_dia:
+                # Formato nuevo: extraer el horario del día de la semana
+                from datetime import datetime as dt_parser
+                numero_dia = dt_parser.strptime(date, '%Y-%m-%d').weekday()
+                nombre_dia = DIA_SEMANA[numero_dia]
+
+                if nombre_dia not in working_hours_data:
+                    logger.info(
+                        f"Profesional {professional_phone} no trabaja los {nombre_dia} ({date})"
+                    )
+                    return []
+
+                working_hours = working_hours_data[nombre_dia]
+                logger.info(f"Horario para {nombre_dia}: {working_hours['start']} - {working_hours['end']}")
+            else:
+                # Retrocompatibilidad: formato viejo {'start': '09:00', 'end': '18:00'}
+                working_hours = working_hours_data
+                logger.warning(
+                    f"Profesional {professional_phone} usa formato de horario legacy (plano)"
+                )
+
             # 5. Consultar disponibilidad en Google Calendar
             slots = self.calendar_service.get_available_slots(
                 calendar_id=calendar_id,
@@ -122,17 +164,14 @@ class AppointmentCalendarService:
                 working_hours=working_hours,
                 slot_duration_minutes=slot_duration
             )
-            
-            logger.info(
-                f"Encontrados {len(slots)} slots disponibles para {professional_phone}"
-            )
-            
+
+            logger.info(f"Encontrados {len(slots)} slots disponibles para {professional_phone}")
             return slots
-            
+
         except Exception as e:
             logger.error(f"Error al obtener disponibilidad: {e}")
             raise
-    
+        
     def check_slot_available(
         self,
         professional_phone: str,
