@@ -483,6 +483,51 @@ _Por favor, responde antes de las 20:00 hs_"""
         except Exception as e:
             logger.error(f"Error iniciando cancellation: {e}")
             return {'success': False}
+        
+    # =========================================================================
+    # DEMO - Disparar envío de recordatorios desde WhatsApp
+    # =========================================================================
+
+    def trigger_reminders_now(self) -> Dict:
+        """
+        Ejecuta el envío de recordatorios diarios de forma inmediata.
+
+        Funciona exactamente igual que el CRON de las 17:30, buscando
+        citas para mañana y enviando WhatsApp a cada cliente registrado.
+
+        Usado por el comando secreto "enviar recordatorio(s)" del bot.
+
+        Returns:
+            Dict con estadísticas: {'sent': int, 'checked': int, 'errors': int, 'message': str}
+        """
+        logger.info("[TRIGGER] 🔔 Ejecución manual de recordatorios solicitada")
+
+        stats = self.send_daily_reminders()
+
+        # Construir mensaje de respuesta para el bot
+        sent = stats.get('sent', 0)
+        checked = stats.get('checked', 0)
+        errors = stats.get('errors', 0)
+
+        if checked == 0:
+            message = (
+                "📭 No hay citas programadas para mañana.\n\n"
+                "Creá una cita con fecha de mañana para probar el flujo."
+            )
+        elif sent == 0:
+            message = (
+                f"⚠️ Se revisaron {checked} cita(s) pero no se enviaron recordatorios.\n"
+                "Posibles causas: ya fueron enviados hoy, o falta `TWILIO_REMINDER_TEMPLATE_SID` en `.env`."
+            )
+        else:
+            message = (
+                f"✅ Recordatorios enviados: {sent}/{checked} cita(s).\n"
+                f"{'⚠️ Errores: ' + str(errors) + '.' if errors else ''}"
+            ).strip()
+
+        logger.info(f"[TRIGGER] Resultado: {stats}")
+
+        return {**stats, 'message': message}
 
 
 # Instancia global
