@@ -339,74 +339,127 @@ class ProfessionalService:
         self,
         professional_phone: str,
         date: str,
-        duration_minutes: int = 50,
+        duration_minutes: int = None,      # None = leer de la BD del profesional
         exclude_appointment_id: int = None
     ) -> List[Dict]:
         """
         Obtener slots disponibles desde Google Calendar con cache.
-        
-        Cache TTL: 15 minutos
-        IMPORTANTE: No cachea resultados vacíos
+
+        Prioridad de slot_duration:
+          1. BD del profesional (slot_duration)
+          2. Parámetro duration_minutes si se pasa explícitamente
+          3. Default 50 minutos como último recurso
+
+        Manejo de working_hours (nuevo formato por día):
+          - Si el JSON tiene claves de días ('lunes', 'martes', etc.)
+            extrae el horario del día que corresponde a la fecha pedida.
+          - Si el día no está configurado → retorna [] (no trabaja ese día).
+          - Retrocompatibilidad: si el JSON tiene formato viejo {'start','end'}
+            lo usa tal cual para todos los días.
+
+        Cache TTL: 15 minutos. No cachea resultados vacíos.
         """
         from src.integrations.google_calendar_service import GoogleCalendarService
         from src.services.cache_manager import get_cached_slots, cache_slots
         import json
-        
+
+        # Mapeo número de día Python (0=lunes) a clave del JSON
+        DIA_SEMANA = {
+            0: 'lunes',
+            1: 'martes',
+            2: 'miercoles',
+            3: 'jueves',
+            4: 'viernes',
+            5: 'sabado',
+            6: 'domingo'
+        }
+
         try:
-            # Obtener configuración del profesional
+            # 1. Obtener configuración del profesional desde BD
             professional = self.db.get_professional(professional_phone)
-            
             if not professional:
                 return []
-            
+
             calendar_id = professional.get('calendar_id')
             if not calendar_id:
                 print(f"[PROF_SERVICE] ⚠️ Profesional {professional_phone} sin calendar_id")
                 return []
-            
-            # Verificar cache primero
-            cached_slots = get_cached_slots(calendar_id, date)
+
+            # 2. Resolver slot_duration — prioridad: BD > parámetro > default
+            slot_duration = (
+                professional.get('slot_duration')   # valor de la BD
+                or duration_minutes                  # parámetro recibido
+                or 50                                # último recurso
+            )
+
+            # 3. Verificar cache (clave incluye duración para evitar colisiones)
+            cache_key_date = f"{date}__{slot_duration}min"
+            cached_slots = get_cached_slots(calendar_id, cache_key_date)
             if cached_slots is not None:
+                print(f"[PROF_SERVICE] 💾 Cache hit: {len(cached_slots)} slots")
                 return cached_slots
-            
-            # Obtener working_hours
+
+            # 4. Resolver working_hours para el día pedido
             working_hours_json = professional.get('working_hours')
-            if working_hours_json:
-                working_hours = json.loads(working_hours_json)
+            if not working_hours_json:
+                print(f"[PROF_SERVICE] ⚠️ Profesional {professional_phone} sin working_hours")
+                return []
+
+            working_hours_data = json.loads(working_hours_json)
+
+            # Detectar formato: nuevo (por día) vs viejo (plano)
+            DIAS_CONOCIDOS = set(DIA_SEMANA.values())
+            es_formato_por_dia = any(k in DIAS_CONOCIDOS for k in working_hours_data.keys())
+
+            if es_formato_por_dia:
+                # Formato nuevo: extraer el horario del día de la semana
+                from datetime import datetime as dt_parser
+                numero_dia = dt_parser.strptime(date, '%Y-%m-%d').weekday()
+                nombre_dia = DIA_SEMANA[numero_dia]
+
+                if nombre_dia not in working_hours_data:
+                    print(f"[PROF_SERVICE] 📅 {professional_phone} no trabaja los {nombre_dia} ({date})")
+                    return []
+
+                working_hours = working_hours_data[nombre_dia]
+                print(f"[PROF_SERVICE] 📅 Horario para {nombre_dia}: {working_hours['start']} - {working_hours['end']}")
             else:
-                working_hours = {'start': '09:00', 'end': '18:00'}
-            
+                # Retrocompatibilidad: formato viejo {'start': '09:00', 'end': '18:00'}
+                working_hours = working_hours_data
+                print(f"[PROF_SERVICE] ⚠️ Formato de horario legacy (plano), usando para todos los días")
+
             print(f"[PROF_SERVICE] 🔍 Consultando Google Calendar...")
             print(f"[PROF_SERVICE]    Calendar: {calendar_id}")
             print(f"[PROF_SERVICE]    Date: {date}")
             print(f"[PROF_SERVICE]    Working hours: {working_hours}")
-            
-            # Consultar Google Calendar
+            print(f"[PROF_SERVICE]    Slot duration: {slot_duration} min")
+
+            # 5. Consultar Google Calendar
             calendar_service = GoogleCalendarService()
             slots = calendar_service.get_available_slots(
                 calendar_id,
                 date,
                 working_hours,
-                duration_minutes
+                slot_duration
             )
-            
+
             print(f"[PROF_SERVICE] 📊 Slots obtenidos: {len(slots)}")
-            
-            # ⭐ CRÍTICO: Solo cachear si hay slots
+
+            # 6. Cachear solo si hay slots
             if slots:
-                cache_slots(calendar_id, date, slots)
+                cache_slots(calendar_id, cache_key_date, slots)
                 print(f"[PROF_SERVICE] 💾 Cached {len(slots)} slots")
             else:
                 print(f"[PROF_SERVICE] ⚠️ No slots found - NOT CACHING empty result")
-            
+
             return slots
-            
+
         except Exception as e:
             print(f"[PROF_SERVICE] ❌ Error getting slots from Google Calendar: {e}")
             import traceback
             traceback.print_exc()
             return []
-        
+           
     def get_available_dates_for_reschedule(
         self,
         professional_phone: str,
@@ -568,17 +621,16 @@ class ProfessionalService:
                 }
             
             # Configurar en la BD
-            working_hours = {'start': '09:00', 'end': '18:00'}
-            
+            # working_hours y slot_duration quedan vacíos intencionalmente:
+            # deben cargarse desde el CSV (load_professionals_from_csv.py)
+            # o configurarse manualmente después.
             success = self.db.execute_query("""
                 UPDATE professionals 
                 SET 
                     calendar_id = ?,
-                    working_hours = ?,
-                    slot_duration = 60,
                     timezone = 'America/Argentina/Buenos_Aires'
                 WHERE phone = ?
-            """, (calendar_email, json.dumps(working_hours), phone))
+            """, (calendar_email, phone))
             
             if success:
                 print(f"[PROF_SERVICE] ✅ Google Calendar configurado: {phone}")
