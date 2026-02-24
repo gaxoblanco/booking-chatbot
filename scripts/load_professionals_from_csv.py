@@ -17,6 +17,7 @@ sys.path.append('.')
 
 import csv
 import json
+import time
 from pathlib import Path
 from src.database.database import db
 from src.services.professional_service import professional_service
@@ -27,6 +28,46 @@ def parse_boolean(value: str) -> bool:
     """Convierte string a boolean."""
     return value.lower() in ['1', 'true', 'si', 'sí', 'yes', 's', 'y']
 
+def parse_horario(horario_str: str) -> dict:
+    """
+    Convierte el string de horario del CSV al JSON por día que espera la BD.
+
+    Formato de entrada:  "lunes:09:00-17:00|martes:09:00-17:00|viernes:09:00-13:00"
+    Formato de salida:   {"lunes": {"start": "09:00", "end": "17:00"}, ...}
+
+    Días válidos: lunes, martes, miercoles, jueves, viernes, sabado, domingo
+    Días no incluidos = el profesional no trabaja ese día.
+    Retorna dict vacío si el string es vacío o inválido.
+    """
+    dias_validos = {'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'}
+    result = {}
+
+    if not horario_str or not horario_str.strip():
+        return result
+
+    for bloque in horario_str.strip().split('|'):
+        bloque = bloque.strip()
+        if ':' not in bloque:
+            print(f"      ⚠️  Bloque de horario inválido (sin día): '{bloque}'")
+            continue
+
+        # Separar día del rango horario — el día es la primera parte antes del primer ':'
+        partes = bloque.split(':', 1)
+        dia = partes[0].strip().lower()
+        rango = partes[1].strip()  # "09:00-17:00"
+
+        if dia not in dias_validos:
+            print(f"      ⚠️  Día no reconocido: '{dia}' — se ignora")
+            continue
+
+        if '-' not in rango:
+            print(f"      ⚠️  Rango horario inválido para {dia}: '{rango}'")
+            continue
+
+        start, end = rango.split('-', 1)
+        result[dia] = {'start': start.strip(), 'end': end.strip()}
+
+    return result
 
 def load_professionals_from_csv(csv_path: str):
     """
@@ -89,6 +130,8 @@ def load_professionals_from_csv(csv_path: str):
                 gender = row['gender'].strip().lower()
                 accept_prepaga = parse_boolean(row['accept_prepaga'])
                 category = row['category'].strip()
+                slot_duration = int(row.get('slot_duration', '60').strip() or 60)
+                working_hours = parse_horario(row.get('horario', ''))
                 
                 print(f"\n{'='*70}")
                 print(f"📋 Procesando: {name} ({phone})")
@@ -165,41 +208,58 @@ def load_professionals_from_csv(csv_path: str):
                         print(f"   ❌ Error al crear")
                         continue
                 
-                # 3. Validar acceso a Google Calendar
+                # 3. Validar acceso a Google Calendar con reintentos
                 print(f"\n   📅 Validando acceso a Google Calendar...")
                 print(f"      Calendario: {calendar_email}")
-                
-                has_access = professional_service.validate_calendar_access(calendar_email)
-                
+
+                # 4 intentos con espera incremental: 2s, 5s, 10s, 20s
+                INTENTOS      = 4
+                ESPERAS       = [2, 5, 10, 20]
+                has_access    = False
+
+                for intento in range(1, INTENTOS + 1):
+                    has_access = professional_service.validate_calendar_access(calendar_email)
+                    if has_access:
+                        break
+                    if intento < INTENTOS:
+                        espera = ESPERAS[intento - 1]
+                        print(f"      ⏳ Intento {intento}/{INTENTOS} fallido — reintentando en {espera}s...")
+                        time.sleep(espera)
+                    else:
+                        print(f"      ❌ Intento {intento}/{INTENTOS} fallido — sin acceso")
+
                 if has_access:
-                    print(f"      ✅ Acceso confirmado")
+                    print(f"      ✅ Acceso confirmado (intento {intento}/{INTENTOS})")
                     stats['con_calendar'] += 1
-                    
-                    # Configurar Google Calendar
-                    working_hours = {'start': '09:00', 'end': '18:00'}
-                    
+
+                    # Configurar Google Calendar en BD con horario real del CSV
                     with db.get_connection() as conn:
                         cursor = conn.cursor()
                         cursor.execute("""
-                            UPDATE professionals 
-                            SET 
-                                calendar_id = ?,
+                            UPDATE professionals
+                            SET
+                                calendar_id   = ?,
                                 working_hours = ?,
-                                slot_duration = 60,
-                                timezone = 'America/Argentina/Buenos_Aires'
+                                slot_duration = ?,
+                                timezone      = 'America/Argentina/Buenos_Aires'
                             WHERE phone = ?
-                        """, (calendar_email, json.dumps(working_hours), phone))
-                    
-                    print(f"      ✅ Google Calendar configurado")
-                    
+                        """, (calendar_email, json.dumps(working_hours), slot_duration, phone))
+
+                    dias_configurados = list(working_hours.keys()) if working_hours else []
+                    print(f"      ✅ Google Calendar configurado en BD")
+                    print(f"      ⏱️  Slot duration: {slot_duration} min")
+                    print(f"      📅 Días configurados: {', '.join(dias_configurados) if dias_configurados else 'ninguno'}")
+
                 else:
-                    print(f"      ❌ Sin acceso al calendario")
+                    # Agoté los reintentos → guardar para enviar email
                     stats['sin_calendar'] += 1
                     profesionales_sin_acceso.append({
-                        'name': name,
-                        'phone': phone,
-                        'calendar_email': calendar_email
+                        'name':           name,
+                        'email':          email,
+                        'phone':          phone,
+                        'calendar_email': calendar_email,
                     })
+                    print(f"      📧 Se enviará email de solicitud a {email}")
         
         # Resumen final
         print("\n" + "="*70)
@@ -215,29 +275,42 @@ def load_professionals_from_csv(csv_path: str):
         print(f"   ✅ Con acceso: {stats['con_calendar']}")
         print(f"   ❌ Sin acceso: {stats['sin_calendar']}")
         
-        # Listar profesionales sin acceso
+        # ── Profesionales sin acceso → enviar email ──────────────────────────
         if profesionales_sin_acceso:
             print(f"\n{'='*70}")
             print(f"⚠️  PROFESIONALES SIN ACCESO A GOOGLE CALENDAR")
             print(f"{'='*70}")
-            print(f"\nEstos profesionales NO aparecerán en búsquedas hasta que compartan")
-            print(f"su calendario con: {service_account_email}\n")
-            
+            print(f"\n   {len(profesionales_sin_acceso)} profesional(es) no pudieron validar el calendario")
+            print(f"   después de 4 intentos. Se les enviará email con instrucciones.\n")
+
             for i, prof in enumerate(profesionales_sin_acceso, 1):
-                print(f"{i}. {prof['name']} ({prof['phone']})")
-                print(f"   📧 Calendario: {prof['calendar_email']}")
-                print()
-            
-            print(f"📋 INSTRUCCIONES PARA COMPARTIR:")
-            print(f"1. Abrir Google Calendar: https://calendar.google.com")
-            print(f"2. En 'Mis calendarios' → Click en ⋮ del calendario")
-            print(f"3. 'Configuración y uso compartido'")
-            print(f"4. 'Compartir con personas específicas' → '+ Agregar personas'")
-            print(f"5. Pegar: {service_account_email}")
-            print(f"6. Permisos: 'Hacer cambios en eventos'")
-            print(f"7. Click 'Enviar'")
-            print(f"8. Esperar 1-2 minutos")
-            print(f"9. Ejecutar este script nuevamente")
+                print(f"   {i}. {prof['name']} ({prof['phone']})")
+                print(f"      📧 {prof['email']}  |  📅 {prof['calendar_email']}")
+
+            # Enviar emails si SMTP está configurado
+            try:
+                from src.integrations.email.email_service import is_configured
+                from src.integrations.email.calendar_invitation import send_calendar_invitations
+
+                if is_configured():
+                    print(f"\n   📤 Enviando emails...")
+                    email_stats = send_calendar_invitations(
+                        profesionales_sin_acceso,
+                        service_account_email,
+                    )
+                    print(f"\n   ✅ Enviados  : {email_stats['enviados']}")
+                    print(f"   ❌ Errores   : {email_stats['errores']}")
+                    print(f"   ⚠️  Sin email  : {email_stats['sin_email']}")
+                else:
+                    print(f"\n   💡 SMTP no configurado — emails no enviados.")
+                    print(f"      Agregá SMTP_HOST, SMTP_USER y SMTP_PASSWORD al .env")
+                    print(f"      o ejecutá manualmente:")
+                    print(f"      docker exec -it whatsapp-demo python scripts/send_calendar_invitations.py")
+
+            except ImportError:
+                print(f"\n   ⚠️  Módulo de email no instalado — emails no enviados.")
+                print(f"      Revisá src/integrations/email/")
+
         else:
             print(f"\n✅ Todos los profesionales tienen acceso a Google Calendar")
         
@@ -259,12 +332,12 @@ def create_template_csv():
         writer = csv.writer(file)
         
         # Header
-        writer.writerow(['phone', 'name', 'email', 'calendar_email', 'zone', 'gender', 'accept_prepaga', 'category'])
+        writer.writerow(['phone', 'name', 'email', 'calendar_email', 'zone', 'gender', 'accept_prepaga', 'category', 'slot_duration', 'horario'])
         
         # Ejemplos
-        writer.writerow(['+5491112345678', 'Dr. Juan Pérez', 'juan@email.com', 'juan.perez@gmail.com', 'norte', 'm', '1', 'Médico General'])
-        writer.writerow(['+5491187654321', 'Dra. María González', 'maria@email.com', 'maria.gonzalez@gmail.com', 'sur', 'f', '0', 'Dentista'])
-        writer.writerow(['+5491156789012', 'Lic. Carlos Rodríguez', 'carlos@email.com', 'carlos.rodriguez@gmail.com', 'norte', 'm', '1', 'Psicólogo'])
+        writer.writerow(['+5491112345678', 'Dr. Juan Pérez', 'juan@email.com', 'juan.perez@gmail.com', 'norte', 'm', '1', 'Médico General', '40', 'lunes:09:00-17:00|martes:09:00-17:00|miercoles:09:00-17:00|jueves:09:00-17:00|viernes:09:00-13:00'])
+        writer.writerow(['+5491187654321', 'Dra. María González', 'maria@email.com', 'maria.gonzalez@gmail.com', 'sur', 'f', '0', 'Dentista', '30', 'lunes:10:00-18:00|miercoles:10:00-18:00|viernes:10:00-18:00'])
+        writer.writerow(['+5491156789012', 'Lic. Carlos Rodríguez', 'carlos@email.com', 'carlos.rodriguez@gmail.com', 'norte', 'm', '1', 'Psicólogo', '50', 'martes:09:00-17:00|jueves:09:00-17:00|sabado:10:00-14:00'])
     
     print(f"✅ Template creado: {template_path}")
     print(f"\nEdita este archivo con los datos reales y ejecuta:")
