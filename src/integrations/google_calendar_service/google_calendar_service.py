@@ -590,3 +590,107 @@ class GoogleCalendarService:
         except Exception as e:
             logger.error(f"Error consultando eventos: {e}")
             raise
+
+    # ============================================================================
+    # MÉTODO ADICIONAL: create_recurring_appointment - para citas recurrentes que ya tenga definidas el profecional
+    # ============================================================================
+    def create_recurring_appointment(
+        self,
+        calendar_id: str,
+        start_datetime: str,
+        end_datetime: str,
+        client_name: str,
+        client_phone: str,
+        rrule: str,
+        modality: str = 'presencial',
+        email: Optional[str] = None,
+        notes: Optional[str] = None,
+        timezone_str: str = 'America/Argentina/Buenos_Aires',
+    ) -> Dict:
+        """
+        Crea una cita recurrente semanal en Google Calendar.
+
+        A diferencia de create_appointment(), este método acepta una regla
+        RRULE para generar eventos que se repiten automáticamente.
+
+        Args:
+            calendar_id:    Email del calendario del profesional
+            start_datetime: Inicio de la PRIMERA ocurrencia (ISO con offset)
+                            Ej: '2026-03-04T10:00:00-03:00'
+            end_datetime:   Fin de la primera ocurrencia (ISO con offset)
+                            Ej: '2026-03-04T10:50:00-03:00'
+            client_name:    Nombre del paciente
+            client_phone:   Teléfono del paciente
+            rrule:          Regla de recurrencia en formato iCal
+                            Ej: 'RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261201T235959Z'
+            modality:       'presencial' o 'virtual' (default: 'presencial')
+            email:          Email del paciente (opcional)
+            notes:          Notas internas (opcional)
+            timezone_str:   Zona horaria (default: Argentina)
+
+        Returns:
+            Dict: Evento creado. Contiene 'id' (google_event_id del evento padre).
+
+        Raises:
+            Exception: Si falla la llamada a la API de Google Calendar.
+
+        Ejemplo:
+            >>> event = service.create_recurring_appointment(
+            ...     calendar_id='profesional@gmail.com',
+            ...     start_datetime='2026-03-04T10:00:00-03:00',
+            ...     end_datetime='2026-03-04T10:50:00-03:00',
+            ...     client_name='Juan Pérez',
+            ...     client_phone='+5491112345678',
+            ...     rrule='RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20260630T235959Z',
+            ...     modality='presencial',
+            ... )
+            >>> print(event['id'])  # google_event_id para guardar en BD
+        """
+        logger.info(
+            f"Creando cita recurrente para {client_name} "
+            f"en {calendar_id} | {rrule}"
+        )
+
+        # Construir descripción
+        description_parts = [
+            f"Paciente: {client_name}",
+            f"Teléfono: {client_phone}",
+        ]
+        if email:
+            description_parts.append(f"Email: {email}")
+        description_parts.append(f"Modalidad: {modality}")
+        if notes:
+            description_parts.append(f"Notas: {notes}")
+
+        event_body = {
+            'summary': f'Sesión - {client_name}',
+            'description': '\n'.join(description_parts),
+            'start': {
+                'dateTime': start_datetime,
+                'timeZone': timezone_str,
+            },
+            'end': {
+                'dateTime': end_datetime,
+                'timeZone': timezone_str,
+            },
+            'recurrence': [rrule],
+            'reminders': {
+                'useDefault': False,
+                'overrides': [
+                    {'method': 'popup', 'minutes': 30},
+                ],
+            },
+        }
+
+        service = self._build_service()
+        created = service.events().insert(
+            calendarId=calendar_id,
+            body=event_body,
+        ).execute()
+
+        logger.info(
+            f"Cita recurrente creada: {created['id']} "
+            f"para {client_name} ({client_phone})"
+        )
+
+        return created
