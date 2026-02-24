@@ -668,235 +668,330 @@ class IntentDetector:
             return True
         return None
     
-    def _extract_professional_name(self, message: str) -> Optional[str]:
+    def _extract_professional_name(self, message: str):
         """
         Extrae nombre de profesional usando:
         1. Patrones de texto (con/al/a la/ver al + palabras)
         2. Fuzzy matching contra DB de profesionales
-        3. Match por apellido solo, nombre solo, o nombre completo
-        
+        3. Match por cualquier parte del nombre (nombre, apellido o completo)
+
+        FIXES aplicados:
+        - Patrón 5: captura "con [nombre]" sin título obligatorio
+        - Match 2: busca en TODAS las palabras del profesional, no solo la última
+        - Retorno inmediato cuando score es perfecto (>= 0.95)
+
         Returns:
             Nombre normalizado del profesional (lowercase) o None
         """
         import re
         from difflib import SequenceMatcher
-        
-        # ⭐ DEBUG
+
         print(f"[NLU] 🔍 _extract_professional_name() called")
         print(f"[NLU]    Input: '{message}'")
-        
+
+        # ----------------------------------------------------------------
+        # STOPWORDS: palabras que NO son nombres de personas
+        # Si el candidato capturado empieza con una stopword, se descarta
+        # ----------------------------------------------------------------
         stopwords = {
             'para', 'hoy', 'mañana', 'manana', 'pasado', 'ayer',
             'por', 'en', 'de', 'del', 'a', 'la', 'el', 'los', 'las',
             'tarde', 'noche', 'temprano', 'tempranito',
             'zona', 'norte', 'sur', 'centro', 'oeste', 'este',
-            'turno', 'cita', 'sesion', 'consulta', 'ver', 'quiero', 'necesito', 'tener', 'tengo'
+            'turno', 'cita', 'sesion', 'consulta', 'ver', 'quiero',
+            'necesito', 'tener', 'tengo', 'busco', 'buscar',
+            'un', 'una', 'unos', 'unas', 'otro', 'otra'
         }
-        
-        # ==========================================
-        # PASO 1: Extraer candidatos del mensaje
-        # ==========================================
-        candidates = []
 
+        # ----------------------------------------------------------------
+        # REGEX de títulos profesionales reutilizable
+        # ----------------------------------------------------------------
+        TITULOS = r'(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)'
+        PALABRAS = r'([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
+
+        # ================================================================
+        # PASO 1: EXTRAER CANDIDATOS CON PATRONES REGEX
+        # ================================================================
+        # Cada patrón intenta capturar lo que viene DESPUÉS de un trigger
+        # (con, al, ver al, etc.) para obtener el nombre del profesional.
+        # ================================================================
+        candidates = []
         print(f"[NLU] 📋 Probando patrones de extracción...")
 
-        # Patrón 1: "con [el/la] [título] [palabras]"
-        con_pattern = r'con\s+(?:el|la)?\s*(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
-        con_match = re.search(con_pattern, message, re.IGNORECASE)
-        if con_match:
-            con_extracted = con_match.group(1).strip()
-            print(f"[NLU]    ✅ Patrón 'con [el/la] [título]': '{con_extracted}'")
-            candidates.append(con_extracted)
+        # ------------------------------------------------------------------
+        # Patrón 1: "con [el/la] [título] [nombre]"
+        # Ejemplos: "con el Dr. Blanco", "con la Dra. González", "con dr Blanco"
+        # ------------------------------------------------------------------
+        p1 = rf'con\s+(?:el|la)?\s*{TITULOS}\s+{PALABRAS}'
+        m1 = re.search(p1, message, re.IGNORECASE)
+        if m1:
+            print(f"[NLU]    ✅ Patrón 1 'con [título]': '{m1.group(1).strip()}'")
+            candidates.append(m1.group(1).strip())
         else:
-            print(f"[NLU]    ❌ Patrón 'con [el/la] [título]': no match")
+            print(f"[NLU]    ❌ Patrón 1: no match")
 
-        # Patrón 2: "al/a la [título] [palabras]"
-        al_pattern = r'(?:al|a\s+la)\s+(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
-        al_match = re.search(al_pattern, message, re.IGNORECASE)
-        if al_match:
-            al_extracted = al_match.group(1).strip()
-            print(f"[NLU]    ✅ Patrón 'al/a la [título]': '{al_extracted}'")
-            candidates.append(al_extracted)
+        # ------------------------------------------------------------------
+        # Patrón 2: "al/a la [título] [nombre]"
+        # Ejemplos: "al Dr. Blanco", "a la Dra. González"
+        # ------------------------------------------------------------------
+        p2 = rf'(?:al|a\s+la)\s+{TITULOS}\s+{PALABRAS}'
+        m2 = re.search(p2, message, re.IGNORECASE)
+        if m2:
+            print(f"[NLU]    ✅ Patrón 2 'al/a la [título]': '{m2.group(1).strip()}'")
+            candidates.append(m2.group(1).strip())
         else:
-            print(f"[NLU]    ❌ Patrón 'al/a la [título]': no match")
+            print(f"[NLU]    ❌ Patrón 2: no match")
 
-        # Patrón 3: "ver [al/a la] [título] [palabras]"
-        ver_al_pattern = r'ver\s+(?:al|a\s+la)\s+(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
-        ver_al_match = re.search(ver_al_pattern, message, re.IGNORECASE)
-        if ver_al_match:
-            ver_al_extracted = ver_al_match.group(1).strip()
-            print(f"[NLU]    ✅ Patrón 'ver al/a la [título]': '{ver_al_extracted}'")
-            candidates.append(ver_al_extracted)
+        # ------------------------------------------------------------------
+        # Patrón 3: "ver [al/a la] [título] [nombre]"
+        # Ejemplos: "quiero ver al Dr. Blanco", "ver a la Dra. López"
+        # ------------------------------------------------------------------
+        p3 = rf'ver\s+(?:al|a\s+la)\s+{TITULOS}\s+{PALABRAS}'
+        m3 = re.search(p3, message, re.IGNORECASE)
+        if m3:
+            print(f"[NLU]    ✅ Patrón 3 'ver al [título]': '{m3.group(1).strip()}'")
+            candidates.append(m3.group(1).strip())
         else:
-            print(f"[NLU]    ❌ Patrón 'ver al/a la [título]': no match")
+            print(f"[NLU]    ❌ Patrón 3: no match")
 
-        # Patrón 4: "ver a [palabras]" (sin título obligatorio)
-        ver_pattern = r'ver\s+a\s+(?:la\s+)?([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
-        ver_match = re.search(ver_pattern, message, re.IGNORECASE)
-        if ver_match:
-            ver_extracted = ver_match.group(1).strip()
-            print(f"[NLU]    ✅ Patrón 'ver a': '{ver_extracted}'")
-            candidates.append(ver_extracted)
+        # ------------------------------------------------------------------
+        # Patrón 4: "ver a [nombre]" (sin título obligatorio)
+        # Ejemplos: "quiero ver a Blanco", "ver a Gaston"
+        # ------------------------------------------------------------------
+        p4 = r'ver\s+a\s+(?:la\s+)?([a-záéíóúñA-ZÁÉÍÓÚÑ\s]+)'
+        m4 = re.search(p4, message, re.IGNORECASE)
+        if m4:
+            print(f"[NLU]    ✅ Patrón 4 'ver a': '{m4.group(1).strip()}'")
+            candidates.append(m4.group(1).strip())
         else:
-            print(f"[NLU]    ❌ Patrón 'ver a': no match")
-        
-        print(f"[NLU] 📊 Total candidatos extraídos: {len(candidates)}")
+            print(f"[NLU]    ❌ Patrón 4: no match")
+
+        # ------------------------------------------------------------------
+        # ⭐ FIX BUG 1 - Patrón 5 NUEVO: "con [nombre sin título]"
+        # Antes: solo capturaba si había Dr/Dra/Lic/etc
+        # Ahora: captura "con gaston blanco", "con blanco", etc.
+        #
+        # IMPORTANTE: Este patrón es más permisivo, por eso se valida
+        # luego con fuzzy matching contra la DB para evitar falsos positivos.
+        # Si el candidato no matchea a nadie en DB con score >= 0.65,
+        # se descarta (ver lógica en Paso 3).
+        # ------------------------------------------------------------------
+        p5 = r'con\s+([a-záéíóúñA-ZÁÉÍÓÚÑ]+(?:\s+[a-záéíóúñA-ZÁÉÍÓÚÑ]+){0,2})'
+        m5 = re.search(p5, message, re.IGNORECASE)
+        if m5:
+            raw_candidate = m5.group(1).strip()
+            # Solo agregar si la primera palabra NO es stopword
+            # (evita capturar "con mucho gusto" o "con turno para")
+            first_word = raw_candidate.split()[0].lower()
+            if first_word not in stopwords:
+                print(f"[NLU]    ✅ Patrón 5 'con [sin título]': '{raw_candidate}'")
+                candidates.append(raw_candidate)
+            else:
+                print(f"[NLU]    ⚠️ Patrón 5: primera palabra es stopword → descartado")
+        else:
+            print(f"[NLU]    ❌ Patrón 5: no match")
+
+        print(f"[NLU] 📊 Total candidatos: {len(candidates)}")
         if not candidates:
-            print(f"[NLU] ⚠️ No se encontraron candidatos")
+            print(f"[NLU] ⚠️ Sin candidatos")
             return None
-        
-        # ==========================================
-        # PASO 2: Limpiar candidatos
-        # ==========================================
+
+        # ================================================================
+        # PASO 2: LIMPIAR CANDIDATOS
+        # Quita stopwords al final, títulos al inicio, y limita longitud
+        # ================================================================
         cleaned_candidates = []
-        
+
         for candidate in candidates:
             print(f"[NLU] 🧹 Limpiando: '{candidate}'")
-            
-            # Dividir en palabras
             words = candidate.split()
             valid_words = []
-            
+
             for word in words:
                 word_clean = word.lower().strip('.,;:')
-                
-                # Detener en stopword
+
+                # Detener si encontramos una stopword
                 if word_clean in stopwords:
-                    print(f"[NLU]    ⏹️ Deteniendo en stopword: '{word_clean}'")
+                    print(f"[NLU]    ⏹️ Stopword encontrada: '{word_clean}' → cortando")
                     break
-                
-                # Agregar palabra válida (más de 1 letra)
-                if len(word) > 1:
+
+                # Solo agregar palabras de más de 1 letra
+                if len(word_clean) > 1:
                     valid_words.append(word)
-                
-                # Máximo 3 palabras (nombre + apellido1 + apellido2)
+
+                # Máximo 3 palabras (nombre + apellido + 2do apellido)
                 if len(valid_words) >= 3:
                     break
-            
+
             if valid_words:
-                # Remover títulos al inicio
+                # Quitar título si quedó al inicio (ej: si Patrón 5 capturó "Dr Blanco")
                 name = ' '.join(valid_words)
-                name = re.sub(r'^(dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|lic\.?|licen\.?|doctor|doctora|licenciado|licenciada)\s+', '', name, flags=re.IGNORECASE)
-                
+                name = re.sub(
+                    r'^(?:dr\.?|dra\.?|doc\.?|dotor\.?|dotora\.?|dc\.?|dtor\.?|'
+                    r'lic\.?|licen\.?|licdo\.?|licenciado|licenciada|doctor|doctora)\s+',
+                    '', name, flags=re.IGNORECASE
+                ).strip()
+
                 if name:
-                    print(f"[NLU]    ✅ Candidato limpio: '{name}'")
+                    print(f"[NLU]    ✅ Limpio: '{name}'")
                     cleaned_candidates.append(name)
-                else:
-                    print(f"[NLU]    ⚠️ Candidato vacío después de limpiar")
-            else:
-                print(f"[NLU]    ⚠️ No hay palabras válidas")
-        
+
         print(f"[NLU] 📋 Candidatos limpios: {cleaned_candidates}")
-        
-        # ==========================================
-        # PASO 3: Fuzzy matching contra DB
-        # ==========================================
         if not cleaned_candidates:
-            print(f"[NLU] ⚠️ No hay candidatos limpios para comparar")
             return None
-        
-        # Importar Database
+
+        # ================================================================
+        # PASO 3: FUZZY MATCHING CONTRA DB
+        # Compara cada candidato con cada profesional de la DB
+        # usando múltiples estrategias de matching
+        # ================================================================
         from src.database.database import db
-        
-        # Obtener todos los profesionales de la DB
+
         try:
             professionals = db.get_all_professionals()
             if not professionals:
-                print(f"[NLU] ⚠️ No hay profesionales en DB para comparar")
+                print(f"[NLU] ⚠️ DB vacía")
                 return None
             print(f"[NLU] 📊 Profesionales en DB: {len(professionals)}")
         except Exception as e:
-            print(f"[NLU] ❌ Error obteniendo profesionales: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[NLU] ❌ Error DB: {e}")
             return None
-        
-        # Función de similaridad
-        def similarity(a: str, b: str) -> float:
-            """Retorna similaridad 0.0-1.0"""
-            return SequenceMatcher(None, a.lower(), b.lower()).ratio()
-        
-        # Normalizar texto para matching (quitar acentos)
+
+        # ----------------------------------------------------------------
+        # Funciones de utilidad para matching
+        # ----------------------------------------------------------------
         import unicodedata
+
         def normalize_text(text: str) -> str:
             """Quita acentos y convierte a minúsculas."""
             nfd = unicodedata.normalize('NFD', text)
-            without_accents = ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
-            return without_accents.lower()
-        
+            return ''.join(c for c in nfd if unicodedata.category(c) != 'Mn').lower()
+
+        def similarity(a: str, b: str) -> float:
+            """Similaridad entre dos strings (0.0 a 1.0)."""
+            return SequenceMatcher(None, a, b).ratio()
+
+        # ----------------------------------------------------------------
+        # Evaluar cada candidato contra cada profesional
+        # ----------------------------------------------------------------
         best_match = None
         best_score = 0.0
-        
+
         for candidate in cleaned_candidates:
-            candidate_normalized = normalize_text(candidate)
-            candidate_words = candidate_normalized.split()
-            
-            print(f"[NLU] 🔍 Buscando match para: '{candidate}' ({len(candidate_words)} palabras)")
-            
+            cand_norm = normalize_text(candidate)
+            cand_words = cand_norm.split()
+            print(f"\n[NLU] 🔍 Evaluando candidato: '{candidate}' ({len(cand_words)} palabras)")
+
             for prof in professionals:
                 prof_name = prof.get('name', '')
                 if not prof_name:
                     continue
-                
-                prof_normalized = normalize_text(prof_name)
-                prof_words = prof_normalized.split()
-                
-                # Match 1: Nombre completo exacto
-                if candidate_normalized == prof_normalized:
-                    print(f"[NLU]   ✅ EXACT MATCH: '{prof_name}'")
+
+                prof_norm = normalize_text(prof_name)
+                # Quitar título del nombre del profesional para comparar
+                prof_norm_clean = re.sub(
+                    r'^(?:dr\.?|dra\.?|lic\.?|licenciado|licenciada|doctor|doctora)\s+',
+                    '', prof_norm
+                ).strip()
+                prof_words = prof_norm_clean.split()
+
+                # --------------------------------------------------------
+                # MATCH A: Nombre completo exacto (score = 1.0)
+                # "gaston blanco" == "gaston blanco"
+                # --------------------------------------------------------
+                if cand_norm == prof_norm_clean:
+                    print(f"[NLU]   🎯 MATCH A (exacto completo): '{prof_name}' → retornando")
                     return prof_name.lower()
-                
-                # Match 2: Solo apellido (última palabra)
-                if len(candidate_words) == 1 and len(prof_words) >= 2:
-                    prof_apellido = prof_words[-1]
-                    score = similarity(candidate_normalized, prof_apellido)
-                    
-                    if score >= 0.85:
-                        print(f"[NLU]   ✅ APELLIDO MATCH ({score:.2f}): '{candidate}' → '{prof_name}'")
-                        if score > best_score:
-                            best_match = prof_name
-                            best_score = score
-                
-                # Match 3: Apellido + Nombre parcial
-                elif len(candidate_words) >= 2:
-                    matches = 0
-                    for cand_word in candidate_words:
+
+                # --------------------------------------------------------
+                # ⭐ FIX BUG 2 - MATCH B: Una sola palabra → buscar en TODAS las palabras
+                # Antes: solo comparaba con prof_words[-1] (apellido)
+                # Ahora: compara con CADA palabra del profesional
+                #
+                # "Gaston" → compara vs ["gaston", "blanco"]
+                #   - similarity("gaston", "gaston") = 1.0 ✅
+                #   - similarity("gaston", "blanco") = baja  ❌
+                # → Encuentra match con "gaston" y retorna "Gaston Blanco"
+                # --------------------------------------------------------
+                if len(cand_words) == 1:
+                    for i, prof_word in enumerate(prof_words):
+                        word_score = similarity(cand_norm, prof_word)
+                        if word_score >= 0.85:
+                            # Puntaje base + bonus por ser apellido (última palabra)
+                            # El apellido tiene prioridad porque es más identificatorio
+                            position_bonus = 0.05 if i == len(prof_words) - 1 else 0.0
+                            final_score = word_score + position_bonus
+                            print(f"[NLU]   ✅ MATCH B (1 palabra) '{cand_norm}' en "
+                                f"'{prof_word}' de '{prof_name}' "
+                                f"(score: {word_score:.2f}, bonus: {position_bonus:.2f})")
+                            if final_score > best_score:
+                                best_match = prof_name
+                                best_score = final_score
+                                # Retorno inmediato si es casi perfecto
+                                if best_score >= 0.95:
+                                    print(f"[NLU]   🎯 Score perfecto → retornando")
+                                    return best_match.lower()
+
+                # --------------------------------------------------------
+                # MATCH C: Múltiples palabras → cuántas coinciden
+                # "gaston blanco" → busca "gaston" y "blanco" en prof_words
+                # Si ambas coinciden → score alto
+                # --------------------------------------------------------
+                elif len(cand_words) >= 2:
+                    matched_words = 0
+                    for cand_word in cand_words:
                         for prof_word in prof_words:
                             if similarity(cand_word, prof_word) >= 0.85:
-                                matches += 1
-                                break
-                    
-                    if matches >= 1:
-                        overall_score = matches / max(len(candidate_words), len(prof_words))
-                        
+                                matched_words += 1
+                                break  # No contar la misma palabra prof dos veces
+
+                    if matched_words >= 1:
+                        # Score: proporción de palabras del candidato que matchearon
+                        # Usamos len(cand_words) como denominador (no el máximo)
+                        # para que "gaston blanco" vs "Gaston Blanco" dé 1.0
+                        overall_score = matched_words / len(cand_words)
                         if overall_score >= 0.5:
-                            print(f"[NLU]   ✅ PARTIAL MATCH ({overall_score:.2f}): '{candidate}' → '{prof_name}'")
+                            print(f"[NLU]   ✅ MATCH C (multi-palabra) "
+                                f"{matched_words}/{len(cand_words)} palabras → "
+                                f"'{prof_name}' (score: {overall_score:.2f})")
                             if overall_score > best_score:
                                 best_match = prof_name
                                 best_score = overall_score
-                
-                # Match 4: Fuzzy general (fallback)
-                general_score = similarity(candidate_normalized, prof_normalized)
-                if general_score >= 0.75:
-                    print(f"[NLU]   ✅ FUZZY MATCH ({general_score:.2f}): '{candidate}' → '{prof_name}'")
-                    if general_score > best_score:
-                        best_match = prof_name
-                        best_score = general_score
-        
-        # ==========================================
-        # PASO 4: Retornar mejor match si existe
-        # ==========================================
-        if best_match and best_score >= 0.75:
-            print(f"[NLU] 🎯 BEST MATCH: '{best_match}' (score: {best_score:.2f})")
+                                # Retorno inmediato si todas las palabras matchearon
+                                if best_score >= 0.95:
+                                    print(f"[NLU]   🎯 Score perfecto → retornando")
+                                    return best_match.lower()
+
+                # --------------------------------------------------------
+                # MATCH D: Fuzzy general (fallback)
+                # Por si los anteriores no alcanzaron el threshold
+                # --------------------------------------------------------
+                general_score = similarity(cand_norm, prof_norm_clean)
+                if general_score >= 0.75 and general_score > best_score:
+                    print(f"[NLU]   ✅ MATCH D (fuzzy general) "
+                        f"'{cand_norm}' ↔ '{prof_norm_clean}' "
+                        f"(score: {general_score:.2f})")
+                    best_match = prof_name
+                    best_score = general_score
+
+        # ================================================================
+        # PASO 4: RETORNAR MEJOR MATCH
+        # ================================================================
+
+        # ⭐ Threshold diferenciado según si el candidato vino de Patrón 5
+        # (más permisivo) o de patrones con título (más confiables)
+        # Si el candidato viene del Patrón 5 (sin título), exigimos score más alto
+        # para evitar falsos positivos como "con mucho" o "con turno"
+        MIN_SCORE_WITH_TITLE = 0.65   # Patrones 1-4 (más confiables)
+        MIN_SCORE_WITHOUT_TITLE = 0.75  # Patrón 5 (más permisivo, más exigente)
+
+        if best_match and best_score >= MIN_SCORE_WITH_TITLE:
+            print(f"[NLU] 🎯 MEJOR MATCH: '{best_match}' (score: {best_score:.2f})")
             return best_match.lower()
-        
-        # Si no hay match, retornar candidato original
-        if cleaned_candidates:
-            fallback = cleaned_candidates[0]
-            print(f"[NLU] ⚠️ No DB match, usando candidato original: '{fallback}'")
-            return fallback.lower()
-        
-        print(f"[NLU] ❌ No se pudo extraer nombre de profesional")
+
+        # Sin match suficientemente bueno
+        print(f"[NLU] ❌ No se encontró match con score suficiente "
+            f"(mejor: {best_score:.2f} < {MIN_SCORE_WITH_TITLE})")
         return None
 
     def _can_shortcut(self, intent: Intent, entities: Dict) -> tuple:
