@@ -267,6 +267,16 @@ class BotController:
 
         if message_lower in ['ayuda', 'help', '?']:
             return common_messages.HELP_MESSAGE
+        
+        # ==========================================
+        # Comando secreto: disparar recordatorios manualmente
+        if message_lower in ['enviar recordatorio', 'enviar recordatorios']:
+            import os
+            if os.getenv('FLASK_ENV', 'development') != 'production':
+                from src.services.reminder_service import reminder_service
+                result = reminder_service.trigger_reminders_now()
+                return result['message']
+        # ==========================================
 
         # ==========================================
         # 6. ENRUTAR A HANDLER SEGÚN ESTADO
@@ -946,6 +956,8 @@ class BotController:
             return ""
         
         return " con:\n• " + "\n• ".join(filters_used)
+    
+    
 
 
 # ==========================================
