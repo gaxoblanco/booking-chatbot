@@ -1255,7 +1255,7 @@ Bot: FilterManager.validate_required_filters() ✓
 **Campos nuevos en `professionals`:**
 ```sql
 calendar_id TEXT,              -- Email del calendario de Google ⭐
-working_hours TEXT,            -- JSON: {"start": "09:00", "end": "18:00"}
+working_hours TEXT,            -- JSON: {"lunes":    {"start": "09:00", "end": "17:00"}, "martes":   {"start": "09:00", "end": "17:00"}...}
 slot_duration INTEGER,         -- Duración de slots en minutos
 timezone TEXT,                 -- Zona horaria (America/Argentina/Buenos_Aires)
 ```
