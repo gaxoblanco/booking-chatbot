@@ -354,3 +354,100 @@ class CalendarClient:
             raise
         except Exception:
             return False
+
+    def create_secondary_calendar(
+            self,
+            summary: str,
+            timezone_str: str = 'America/Argentina/Buenos_Aires'
+        ) -> str:
+            """
+            Crea un calendario secundario en la cuenta de la Service Account.
+
+            El calendario se crea en la cuenta de la Service Account y luego
+            se comparte con el profesional vía share_calendar_with_email().
+
+            Args:
+                summary: Nombre del calendario (ej: 'Turnos - Dr. Blanco')
+                timezone_str: Zona horaria del calendario
+
+            Returns:
+                str: ID del calendario creado (ej: 'xyz123@group.calendar.google.com')
+
+            Raises:
+                HttpError: Si hay error en la API
+            """
+            try:
+                logger.info(f"Creando calendario secundario: '{summary}'")
+
+                calendar_body = {
+                    'summary': summary,
+                    'timeZone': timezone_str
+                }
+
+                # Crear el calendario en la cuenta de la Service Account
+                created = self.service.calendars().insert(
+                    body=calendar_body
+                ).execute()
+
+                calendar_id = created.get('id')
+                logger.info(f"Calendario creado exitosamente. ID: {calendar_id}")
+
+                return calendar_id
+
+            except HttpError as e:
+                logger.error(f"Error HTTP al crear calendario: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Error al crear calendario: {e}")
+                raise
+
+    def share_calendar_with_email(
+        self,
+        calendar_id: str,
+        email: str,
+        role: str = 'writer'
+    ) -> bool:
+        """
+        Comparte un calendario con un email usando la API de ACL.
+
+        Roles disponibles:
+          - 'reader'  → solo lectura
+          - 'writer'  → puede crear y editar eventos (recomendado para profesionales)
+          - 'owner'   → control total
+
+        Args:
+            calendar_id: ID del calendario a compartir
+            email: Email con quien compartir (ej: 'profesional@gmail.com')
+            role: Nivel de acceso ('writer' por defecto)
+
+        Returns:
+            bool: True si se compartió exitosamente
+
+        Raises:
+            HttpError: Si hay error en la API
+        """
+        try:
+            logger.info(f"Compartiendo calendario {calendar_id} con {email} (rol: {role})")
+
+            acl_rule = {
+                'scope': {
+                    'type': 'user',
+                    'value': email
+                },
+                'role': role
+            }
+
+            self.service.acl().insert(
+                calendarId=calendar_id,
+                body=acl_rule
+            ).execute()
+
+            logger.info(f"Calendario compartido exitosamente con {email}")
+            return True
+
+        except HttpError as e:
+            logger.error(f"Error HTTP al compartir calendario: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error al compartir calendario: {e}")
+            raise
