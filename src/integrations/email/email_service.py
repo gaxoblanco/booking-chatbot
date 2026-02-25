@@ -54,9 +54,8 @@ def send_email(to: str, subject: str, html: str) -> tuple[bool, str]:
         msg.attach(MIMEText(plain.strip(), 'plain', 'utf-8'))
         msg.attach(MIMEText(html,          'html',  'utf-8'))
 
-        with smtplib.SMTP(host, port) as server:
+        with smtplib.SMTP_SSL(host, port) as server:
             server.ehlo()
-            server.starttls()
             server.login(user, password)
             server.sendmail(user, to, msg.as_string())
 
