@@ -529,7 +529,7 @@ class ProfessionalService:
                 slots = self.get_available_slots(
                     professional_phone,
                     date_str_db,
-                    duration_minutes=50,
+                    duration_minutes=None,
                     exclude_appointment_id=current_appointment_id
                 )
 
@@ -599,57 +599,115 @@ class ProfessionalService:
             print(f"[PROF_SERVICE] ❌ Error validando acceso: {e}")
             return False
 
-    def setup_google_calendar(self, phone: str, calendar_email: str) -> dict:
+    def setup_google_calendar(
+        self,
+        phone: str,
+        calendar_email: str,
+        professional_name: str = None
+    ) -> dict:
         """
         Configura Google Calendar para un profesional.
-        
+
+        Flujo:
+          1. Valida que la Service Account pueda acceder al calendario del profesional
+          2. Crea un calendario secundario dedicado ('Turnos - <nombre>')
+          3. Comparte ese calendario con el email del profesional (rol writer)
+          4. Guarda el ID del calendario secundario en BD (no el email)
+
         Args:
             phone: Teléfono del profesional
-            calendar_email: Email del calendario de Google
-        
+            calendar_email: Email de Google del profesional
+            professional_name: Nombre para el título del calendario (opcional,
+                               si no se pasa se busca en BD)
+
         Returns:
-            dict: {'success': bool, 'message': str}
+            dict: {
+                'success': bool,
+                'message': str,
+                'calendar_id': str  # ID del calendario secundario creado
+            }
         """
         import json
-        
+        from src.integrations.google_calendar_service import GoogleCalendarService
+
         try:
-            # Validar acceso
+            # 1. Validar acceso al calendario del profesional
             if not self.validate_calendar_access(calendar_email):
                 return {
                     'success': False,
-                    'message': 'no_access'
+                    'message': 'no_access',
+                    'calendar_id': None
                 }
-            
-            # Configurar en la BD
-            # working_hours y slot_duration quedan vacíos intencionalmente:
-            # deben cargarse desde el CSV (load_professionals_from_csv.py)
-            # o configurarse manualmente después.
-            success = self.db.execute_query("""
-                UPDATE professionals 
-                SET 
-                    calendar_id = ?,
-                    timezone = 'America/Argentina/Buenos_Aires'
-                WHERE phone = ?
-            """, (calendar_email, phone))
-            
-            if success:
-                print(f"[PROF_SERVICE] ✅ Google Calendar configurado: {phone}")
+
+            # 2. Resolver nombre del profesional para el título del calendario
+            if not professional_name:
+                prof = self.db.get_professional(phone)
+                professional_name = prof.get('name', 'Profesional') if prof else 'Profesional'
+
+            calendar_summary = f"Turnos - {professional_name}"
+
+            # 3. Crear calendario secundario en la cuenta de la Service Account
+            calendar_service = GoogleCalendarService()
+            # Verificar si ya existe un calendario con ese nombre
+            work_calendar_id = None
+            existing_calendars = calendar_service.calendar_client.list_calendars()
+            for cal in existing_calendars:
+                if cal.get('summary') == calendar_summary:
+                    work_calendar_id = cal.get('id')
+                    print(f"[PROF_SERVICE] ♻️  Calendario ya existe, reutilizando: {work_calendar_id}")
+                    break
+
+            # Si no existe, crearlo
+            if not work_calendar_id:
+                work_calendar_id = calendar_service.calendar_client.create_secondary_calendar(
+                    summary=calendar_summary,
+                    timezone_str='America/Argentina/Buenos_Aires'
+                )
+
+            print(f"[PROF_SERVICE] 📅 Calendario creado: '{calendar_summary}'")
+            print(f"[PROF_SERVICE]    ID: {work_calendar_id}")
+
+            # 4. Compartir el calendario con el profesional (rol writer)
+            calendar_service.calendar_client.share_calendar_with_email(
+                calendar_id=work_calendar_id,
+                email=calendar_email,
+                role='writer'
+            )
+
+            print(f"[PROF_SERVICE] 🔗 Calendario compartido con: {calendar_email}")
+
+            # 5. Guardar el ID del calendario secundario en BD
+            # working_hours y slot_duration se cargan desde el CSV
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE professionals
+                    SET
+                        calendar_id = ?,
+                        timezone    = 'America/Argentina/Buenos_Aires'
+                    WHERE phone = ?
+                """, (work_calendar_id, phone))
+
+            if True:
+                print(f"[PROF_SERVICE] ✅ calendar_id guardado en BD: {work_calendar_id}")
                 return {
                     'success': True,
-                    'message': 'configured'
+                    'message': 'configured',
+                    'calendar_id': work_calendar_id
                 }
             else:
                 return {
                     'success': False,
-                    'message': 'db_error'
+                    'message': 'db_error',
+                    'calendar_id': None
                 }
-                
+
         except Exception as e:
             print(f"[PROF_SERVICE] ❌ Error configurando calendar: {e}")
             return {
                 'success': False,
-                'message': 'error'
+                'message': 'error',
+                'calendar_id': None
             }
-
 # Global professional service instance
 professional_service = ProfessionalService()
