@@ -194,82 +194,54 @@ class ProfessionalHandler:
     def handle_prof_main_menu(self, session: SessionData, message: str) -> str:
         """
         Maneja menú principal del profesional.
-
         Opciones:
-        1. Gestionar Horarios Libres
-        2. Cargar Agenda Semanal  
-        3. Ver Mi Agenda Completa
-        4. Actualizar Mi Información
-        5. Carga Rápida de Información
-        6. Mis Citas
+        1. Ver Mi Agenda
+        2. Actualizar Mi Información
+        3. Carga Rápida de Información
+        4. Mis Citas
         0. Volver al inicio
-        """
 
-        # ==========================================
-        # NUEVO: Validar comandos especiales
-        # ==========================================
+        Nota: La gestión de horarios libres y carga de agenda semanal
+        fueron eliminadas en V2. La disponibilidad se calcula
+        automáticamente desde Google Calendar.
+        """
         message_lower = message.lower().strip()
 
-        # Detectar "hola" y resetear conversación
+        # Detectar saludos → resetear y saludar
         if message_lower in ['hola', 'hello', 'hi', 'hey', 'buenos días', 'buenas tardes', 'buenas noches']:
-            # Resetear pero mantener rol profesional
             session.reset()
             session.set_role(UserRole.PROFESSIONAL)
             session.transition_to(ConversationState.PROF_MAIN_MENU)
-
-            # Saludo personalizado si está registrado
             from src.database.database import db
             prof = db.get_professional(session.phone_number)
-
             if prof and prof.get('name') and prof.get('name') != 'Usuario Nuevo':
                 greeting = f"¡Hola Dr/Dra. {prof['name']}! 👋\n\n"
             else:
                 greeting = "¡Hola! 👋\n\n"
-
             return greeting + professional_messages.PROF_MAIN_MENU
 
         # Detectar "menu" o "volver"
         if message_lower in ['menu', 'menú', 'volver']:
             return professional_messages.PROF_MAIN_MENU
 
-        # ==========================================
-        # Opciones del menú (código existente)
-        # ==========================================
-
+        # Opciones del menú
         if message == '1':
-            # Liberar horario
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_FREE_SLOT_DATE)
-            return professional_messages.PROF_FREE_SLOT_ASK_DATE
-
-        elif message == '2':
-            # Cargar semana completa
-            session.clear_temp()
-            session.store_temp('week_schedule', {})
-            session.transition_to(ConversationState.PROF_WEEK_SCHEDULE_QUICK)
-            return professional_messages.PROF_WEEK_QUICK_FORMAT
-
-        elif message == '3':
-            schedule_info = professional_service.get_complete_schedule(
-                session.phone_number)
+            schedule_info = professional_service.get_complete_schedule(session.phone_number)
             return schedule_info['formatted'] + "\n\n" + professional_messages.PROF_MAIN_MENU
 
-        elif message == '4':
-            # Cargar información
+        elif message == '2':
             session.clear_temp()
             if not session.get_temp('prof_info'):
                 session.store_temp('prof_info', {})
             session.transition_to(ConversationState.PROF_INFO_MENU)
             return self.format_prof_info_menu(session)
 
-        elif message == '5':
-            # Carga rápida
+        elif message == '3':
             session.clear_temp()
             session.transition_to(ConversationState.PROF_INFO_QUICK)
             return professional_messages.PROF_INFO_QUICK_FORMAT
 
-        elif message == '6':
-            # Mis Citas
+        elif message == '4':
             session.transition_to(ConversationState.PROF_VIEW_APPOINTMENTS)
             return self.handle_prof_view_appointments(session, message)
 
@@ -278,7 +250,6 @@ class ProfessionalHandler:
             return common_messages.WELCOME
 
         else:
-            # CORREGIDO: Mensaje apropiado para opción inválida
             return "❌ Opción inválida. Selecciona un número del menú.\n\n" + professional_messages.PROF_MAIN_MENU
 
     def format_prof_info_menu(self, session: SessionData) -> str:
@@ -907,442 +878,6 @@ class ProfessionalHandler:
 
         return f"✅ ¡Información guardada!\n\n{summary}\n\n" + professional_messages.PROF_MAIN_MENU
 
-    def parse_week_schedule_quick(self, message: str) -> tuple:
-        """
-        Parse weekly schedule from message.
-
-        Format:
-            lunes 09:00-10:00+11:00-11:40
-            martes 09:00-17:00
-
-        Returns:
-            (schedules_list, errors_list)
-            schedules_list: [{'day': 0, 'start': '09:00', 'end': '10:00'}, ...]
-            errors_list: ['Error message', ...]
-        """
-        import re
-
-        lines = [line.strip()
-                 for line in message.strip().split('\n') if line.strip()]
-
-        schedules = []
-        errors = []
-
-        # Day name to number mapping
-        day_map = {
-            'lunes': 0, 'lun': 0,
-            'martes': 1, 'mar': 1,
-            'miÃ©rcoles': 2, 'miercoles': 2, 'mie': 2, 'miÃ©': 2,
-            'jueves': 3, 'jue': 3,
-            'viernes': 4, 'vie': 4,
-            'sÃ¡bado': 5, 'sabado': 5, 'sab': 5,
-            'domingo': 6, 'dom': 6
-        }
-
-        for line_num, line in enumerate(lines, 1):
-            # Expected format: "dia HH:MM-HH:MM+HH:MM-HH:MM"
-            parts = line.lower().split(maxsplit=1)
-
-            if len(parts) != 2:
-                errors.append(
-                    f"LÃ­nea {line_num}: Formato invÃ¡lido. Debe ser: dia HH:MM-HH:MM")
-                continue
-
-            day_name, times_str = parts
-
-            # Validate day
-            if day_name not in day_map:
-                errors.append(
-                    f"LÃ­nea {line_num}: DÃ­a '{day_name}' no reconocido")
-                continue
-
-            day_num = day_map[day_name]
-
-            # Parse time ranges (separated by +)
-            time_ranges = times_str.split('+')
-
-            for time_range in time_ranges:
-                # Validate format HH:MM-HH:MM
-                match = re.match(
-                    r'^(\d{2}):(\d{2})-(\d{2}):(\d{2})$', time_range.strip())
-
-                if not match:
-                    errors.append(
-                        f"LÃ­nea {line_num}: Horario '{time_range}' invÃ¡lido. Debe ser HH:MM-HH:MM")
-                    continue
-
-                start_h, start_m, end_h, end_m = match.groups()
-
-                # Validate hours and minutes
-                if not (0 <= int(start_h) <= 23 and 0 <= int(start_m) <= 59):
-                    errors.append(
-                        f"LÃ­nea {line_num}: Hora de inicio invÃ¡lida: {start_h}:{start_m}")
-                    continue
-
-                if not (0 <= int(end_h) <= 23 and 0 <= int(end_m) <= 59):
-                    errors.append(
-                        f"LÃ­nea {line_num}: Hora de fin invÃ¡lida: {end_h}:{end_m}")
-                    continue
-
-                start_time = f"{start_h}:{start_m}"
-                end_time = f"{end_h}:{end_m}"
-
-                # Validate end > start
-                if end_time <= start_time:
-                    errors.append(
-                        f"LÃ­nea {line_num}: La hora de fin debe ser mayor que la de inicio")
-                    continue
-
-                # Add to schedules
-                schedules.append({
-                    'day': day_num,
-                    'day_name': day_name.capitalize(),
-                    'start': start_time,
-                    'end': end_time
-                })
-
-        return schedules, errors
-
-    def handle_prof_week_schedule_quick(self, session: SessionData, message: str) -> str:
-        """Handle quick weekly schedule input (all in one message)."""
-
-        if message == '0':
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return professional_messages.PROF_MAIN_MENU
-
-        # Parse the message
-        schedules, errors = self.parse_week_schedule_quick(message)
-
-        if errors:
-            error_msg = "âŒ Errores encontrados:\n\n"
-            error_msg += "\n".join(errors)
-            error_msg += "\n\n" + professional_messages.PROF_WEEK_QUICK_FORMAT
-            return error_msg
-
-        if not schedules:
-            return "âŒ No se encontraron horarios vÃ¡lidos.\n\n" + professional_messages.PROF_WEEK_QUICK_FORMAT
-
-        # Save to database
-        from src.services.professional_service import professional_service
-
-        schedules_list = [
-            {
-                'day_of_week': s['day'],
-                'start_time': s['start'],
-                'end_time': s['end']
-            }
-            for s in schedules
-        ]
-
-        success_count, total = professional_service.add_multiple_weekly_schedules(
-            session.phone_number,
-            schedules_list
-        )
-
-        # Format summary
-        summary_lines = []
-        day_names = ['Lunes', 'Martes', 'MiÃ©rcoles',
-                     'Jueves', 'Viernes', 'SÃ¡bado', 'Domingo']
-
-        # Group by day
-        by_day = {}
-        for s in schedules:
-            day = s['day']
-            if day not in by_day:
-                by_day[day] = []
-            by_day[day].append(f"{s['start']}-{s['end']}")
-
-        for day in sorted(by_day.keys()):
-            times = ', '.join(by_day[day])
-            summary_lines.append(f"â€¢ {day_names[day]}: {times}")
-
-        schedule_summary = "\n".join(summary_lines)
-
-        session.clear_temp()
-        session.transition_to(ConversationState.PROF_MAIN_MENU)
-
-        return f"""âœ… Â¡Semana configurada exitosamente!
-
-    Guardados {success_count}/{total} horarios:
-
-    {schedule_summary}
-
-    Estos horarios se repetirÃ¡n cada semana.
-
-    """ + professional_messages.PROF_MAIN_MENU
-
-    # ==========================================
-    # PROFESSIONAL - LIBERAR HORARIO (FREE SLOT)
-    # ==========================================
-
-    def handle_prof_free_slot_date(self, session: SessionData, message: str) -> str:
-        """Handle date input for freeing a slot."""
-        # Check for back command
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return professional_messages.PROF_MAIN_MENU
-
-        date_obj = parse_date(message)
-
-        if not date_obj:
-            return common_messages.INVALID_DATE + "\n\n" + professional_messages.PROF_FREE_SLOT_ASK_DATE
-
-        # Store date in YYYY-MM-DD format for database
-        date_str_db = date_obj.strftime("%Y-%m-%d")
-
-        session.store_temp('date', date_obj)
-        # Guardar en formato correcto
-        session.store_temp('date_str', date_str_db)
-        # Guardar formato original para mostrar
-        session.store_temp('date_display', message)
-        session.transition_to(ConversationState.PROF_FREE_SLOT_TIME)
-
-        return professional_messages.PROF_FREE_SLOT_ASK_TIME
-
-    def handle_prof_free_slot_time(self, session: SessionData, message: str) -> str:
-        """Handle time input for freeing a slot."""
-        # Check for back command
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return professional_messages.PROF_MAIN_MENU
-
-        time_range = parse_time_range(message)
-
-        if not time_range:
-            return common_messages.INVALID_TIME + "\n\n" + professional_messages.PROF_FREE_SLOT_ASK_TIME
-
-        start_time, end_time = time_range
-
-        # Store time and ask for confirmation
-        session.store_temp('time_start', start_time)
-        session.store_temp('time_end', end_time)
-        session.transition_to(ConversationState.PROF_FREE_SLOT_CONFIRM)
-
-        return professional_messages.PROF_FREE_SLOT_CONFIRM.format(
-            date=session.get_temp('date_str'),
-            time_start=start_time,
-            time_end=end_time
-        )
-
-    def handle_prof_free_slot_confirm(self, session: SessionData, message: str) -> str:
-        """Handle confirmation for freeing a slot."""
-        if message == '1':
-            # Confirmed - save to database
-            date_str = session.get_temp('date_str')
-            time_start = session.get_temp('time_start')
-            time_end = session.get_temp('time_end')
-
-            # Use date_str directly (it's already in correct format from user input)
-            professional_service.mark_slot_as_free(
-                session.phone_number,
-                date_str,
-                time_start,
-                time_end
-            )
-
-            # Clear temp data and return to menu
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-
-            return professional_messages.PROF_FREE_SLOT_SUCCESS.format(
-                date=date_str,
-                time_start=time_start,
-                time_end=time_end
-            ) + "\n\n" + professional_messages.PROF_MAIN_MENU
-
-        elif message == '2' or message == '0':
-            # Cancelled
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return common_messages.OPERATION_CANCELLED + "\n\n" + professional_messages.PROF_MAIN_MENU
-
-        else:
-            return common_messages.INVALID_OPTION + "\n\n" + professional_messages.PROF_FREE_SLOT_CONFIRM.format(
-                date=session.get_temp('date_str', ''),
-                time_start=session.get_temp('time_start', ''),
-                time_end=session.get_temp('time_end', '')
-            )
-    # ==========================================
-    # PROFESSIONAL - CARGAR HORARIO OCUPADO (BUSY SLOT)
-    # ==========================================
-
-    def handle_prof_manage_free_slots(self, session: SessionData, message: str) -> str:
-        """
-        DEPRECATED: Manual schedule management removed.
-        Now uses Google Calendar exclusively.
-        """
-        # Volver al menú principal
-        session.transition_to(ConversationState.PROF_MAIN_MENU)
-        
-        return """⚠️ *Funcionalidad Actualizada*
-
-    La gestión de horarios ahora es automática mediante Google Calendar.
-
-    📅 *Para gestionar tu disponibilidad:*
-    1. Ve a Google Calendar
-    2. Bloquea horarios ocupados creando eventos
-    3. Los espacios libres se muestran automáticamente
-
-    _Escribe *0* para volver al menú_"""
-
-    def handle_prof_delete_free_slot(self, session: SessionData, message: str) -> str:
-        """Handle deleting a free slot."""
-
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return professional_messages.PROF_MAIN_MENU
-
-        try:
-            selection = int(message)
-            free_slots = session.get_temp('free_slots_list', [])
-
-            if 1 <= selection <= len(free_slots):
-                slot = free_slots[selection - 1]
-
-                from src.services.professional_service import professional_service
-                success = professional_service.remove_free_slot(
-                    session.phone_number,
-                    slot['date'],
-                    slot['start_time'],
-                    slot['end_time']
-                )
-
-                if success:
-                    msg = f"âœ… Horario eliminado:\nðŸ“… {slot['date']} {slot['start_time']}-{slot['end_time']}\n\n"
-                    msg += "Este horario ya no estÃ¡ disponible para clientes."
-                else:
-                    msg = "âŒ Error al eliminar horario."
-
-                session.clear_temp()
-                session.transition_to(ConversationState.PROF_MAIN_MENU)
-                return msg + "\n\n" + professional_messages.PROF_MAIN_MENU
-            else:
-                return f"âŒ OpciÃ³n invÃ¡lida. Selecciona un nÃºmero entre 1 y {len(free_slots)}."
-
-        except ValueError:
-            return "âŒ Por favor, ingresa el nÃºmero del horario a eliminar."
-
-    def handle_prof_setup_calendar_email(self, session: SessionData, message: str) -> str:
-        """
-        Solicita el email del calendario de Google.
-        """
-        from src.messages.messages_professional import professional_messages
-        
-        # Validar formato de email básico
-        if '@' not in message or '.' not in message:
-            return """⚠️ Email inválido.
-
-    Por favor, envía tu email de Google Calendar.
-    Ejemplo: profesional@gmail.com"""
-        
-        email = message.strip().lower()
-        
-        # Guardar temporalmente
-        session.store_temp('calendar_email', email)
-        session.transition_to(ConversationState.PROF_SETUP_CALENDAR_CONFIRM)
-        
-        # Obtener email de Service Account
-        from src.integrations.google_calendar_service import GoogleCalendarService
-        calendar_service = GoogleCalendarService()
-        service_account_email = calendar_service.get_service_account_email()
-        
-        return f"""📧 Email recibido: {email}
-
-    ⚠️ IMPORTANTE: Debes compartir tu calendario de Google con:
-
-    📮 {service_account_email}
-
-    📋 PASOS PARA COMPARTIR:
-
-    1. Abre Google Calendar: https://calendar.google.com
-    2. En "Mis calendarios", click en ⋮ de tu calendario
-    3. "Configuración y uso compartido"
-    4. "Compartir con personas específicas" > "+ Agregar personas"
-    5. Pega: {service_account_email}
-    6. Permisos: "Hacer cambios en eventos"
-    7. Click "Enviar"
-
-    ⏱️ Espera 1-2 minutos para que se propaguen los permisos.
-
-    Cuando hayas compartido el calendario, responde:
-    1️⃣ Ya compartí el calendario (validar acceso)
-    0️⃣ Cancelar y volver"""
-
-    def handle_prof_setup_calendar_confirm(self, session: SessionData, message: str) -> str:
-        """
-        Valida el acceso al calendario.
-        """
-        from src.services.professional_service import professional_service
-        
-        if message == '0':
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            from src.messages.messages_professional import professional_messages
-            return professional_messages.PROF_MAIN_MENU
-        
-        if message != '1':
-            return "⚠️ Por favor responde:\n\n1️⃣ Ya compartí el calendario\n0️⃣ Cancelar"
-        
-        calendar_email = session.get_temp('calendar_email')
-        
-        if not calendar_email:
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            return "❌ Error: Email no encontrado. Intenta nuevamente desde el menú."
-        
-        # Validar acceso
-        print(f"[PROF_HANDLER] Validando acceso a calendario: {calendar_email}")
-        
-        result = professional_service.setup_google_calendar(
-            phone=session.phone_number,
-            calendar_email=calendar_email
-        )
-        
-        if result['success']:
-            session.clear_temp()
-            session.transition_to(ConversationState.PROF_MAIN_MENU)
-            
-            from src.messages.messages_professional import professional_messages
-            
-            return f"""✅ ¡CALENDARIO CONFIGURADO!
-
-    Tu calendario de Google ha sido vinculado exitosamente.
-
-    📧 Calendario: {calendar_email}
-
-    Ahora:
-    ✅ Los clientes verán tu disponibilidad real
-    ✅ Las citas se crearán automáticamente en tu calendario
-    ✅ Aparecerás en las búsquedas
-
-    {professional_messages.PROF_MAIN_MENU}"""
-        
-        elif result['message'] == 'no_access':
-            return f"""❌ NO TENGO ACCESO A TU CALENDARIO
-
-    Verifica que hayas compartido el calendario correctamente.
-
-    Pasos:
-    1. Google Calendar → https://calendar.google.com
-    2. Configuración del calendario
-    3. Compartir con: {calendar_service.get_service_account_email()}
-    4. Permisos: "Hacer cambios en eventos"
-
-    ⏱️ Si recién compartiste, espera 1-2 minutos.
-
-    ¿Qué deseas hacer?
-    1️⃣ Intentar validar nuevamente
-    0️⃣ Cancelar y volver al menú"""
-        
-        else:
-            return """❌ Error al configurar el calendario.
-
-    Intenta nuevamente más tarde.
-
-    0️⃣ Volver al menú"""
     # ==========================================
     # PROFESSIONAL - CARGAR SEMANA (WEEKLY SCHEDULE)
     # ==========================================
