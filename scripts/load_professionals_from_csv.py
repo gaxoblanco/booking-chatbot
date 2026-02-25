@@ -232,24 +232,33 @@ def load_professionals_from_csv(csv_path: str):
                     print(f"      ✅ Acceso confirmado (intento {intento}/{INTENTOS})")
                     stats['con_calendar'] += 1
 
-                    # Configurar Google Calendar en BD con horario real del CSV
-                    with db.get_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            UPDATE professionals
-                            SET
-                                calendar_id   = ?,
-                                working_hours = ?,
-                                slot_duration = ?,
-                                timezone      = 'America/Argentina/Buenos_Aires'
-                            WHERE phone = ?
-                        """, (calendar_email, json.dumps(working_hours), slot_duration, phone))
+                    # Crear calendario secundario y compartirlo con el profesional
+                    result = professional_service.setup_google_calendar(
+                        phone=phone,
+                        calendar_email=calendar_email,
+                        professional_name=name
+                    )
 
-                    dias_configurados = list(working_hours.keys()) if working_hours else []
-                    print(f"      ✅ Google Calendar configurado en BD")
-                    print(f"      ⏱️  Slot duration: {slot_duration} min")
-                    print(f"      📅 Días configurados: {', '.join(dias_configurados) if dias_configurados else 'ninguno'}")
+                    if result['success']:
+                        # Guardar working_hours y slot_duration del CSV
+                        # (setup_google_calendar solo guarda calendar_id y timezone)
+                        with db.get_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE professionals
+                                SET
+                                    working_hours = ?,
+                                    slot_duration = ?
+                                WHERE phone = ?
+                            """, (json.dumps(working_hours), slot_duration, phone))
 
+                        dias_configurados = list(working_hours.keys()) if working_hours else []
+                        print(f"      ✅ Calendario secundario: {result['calendar_id']}")
+                        print(f"      ⏱️  Slot duration: {slot_duration} min")
+                        print(f"      📅 Días: {', '.join(dias_configurados) if dias_configurados else 'ninguno'}")
+                    else:
+                        print(f"      ❌ Error creando calendario secundario: {result['message']}")
+                        stats['errores'] += 1
                 else:
                     # Agoté los reintentos → guardar para enviar email
                     stats['sin_calendar'] += 1
