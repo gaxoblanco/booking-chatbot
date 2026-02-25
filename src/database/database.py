@@ -102,53 +102,7 @@ class Database:
                     timezone TEXT DEFAULT 'America/Argentina/Buenos_Aires'
                 )
             """)
-
-            # ==========================================
-            # TABLE: weekly_schedule
-            # ==========================================
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS weekly_schedule (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    professional_phone TEXT NOT NULL,
-                    day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
-                    start TEXT NOT NULL,
-                    end TEXT NOT NULL,
-                    is_busy BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
-                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone) ON DELETE CASCADE,
-                    UNIQUE(professional_phone, day_of_week, start, end)
-                )
-            """)
-
-            # Index for faster queries
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_weekly_schedule_phone 
-                ON weekly_schedule(professional_phone)
-            """)
-
-            # ==========================================
-            # TABLE: specific_free_slots
-            # ==========================================
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS specific_free_slots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    professional_phone TEXT NOT NULL,
-                    date TEXT NOT NULL,
-                    start TEXT NOT NULL,
-                    end TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
-                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone) ON DELETE CASCADE,
-                    UNIQUE(professional_phone, date, start, end)
-                )
-            """)
-
-            # Index for faster queries
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_free_slots_phone_date 
-                ON specific_free_slots(professional_phone, date)
-            """)
+            
 
             # ==========================================
             # TABLE: client_searches
