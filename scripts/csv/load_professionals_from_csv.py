@@ -113,20 +113,24 @@ def load_professionals_from_csv(csv_path: str):
             reader = csv.DictReader(file)
             
             # Validar columnas requeridas
-            required_columns = ['phone', 'name', 'email', 'calendar_email', 'zone', 'gender', 'accept_prepaga', 'category']
+            required_columns = ['phone', 'name', 'email', 'calendar_email', 'gender', 'accept_prepaga', 'category']
             if not all(col in reader.fieldnames for col in required_columns):
                 print(f"❌ ERROR: El CSV debe tener estas columnas:")
                 print(f"   {', '.join(required_columns)}")
                 return
             
             for row in reader:
+                # Saltear fila de descripción (REQUERIDO / opcional)
+                if row['phone'].strip().upper() in ('REQUERIDO', 'OPCIONAL', 'REQUIRED', 'OPTIONAL'):
+                    continue
+
                 stats['total'] += 1
                 
                 phone = row['phone'].strip()
                 name = row['name'].strip()
                 email = row['email'].strip()
                 calendar_email = row['calendar_email'].strip()
-                zone = row['zone'].strip().lower()
+                zone = row.get('zone', '').strip().lower() or None
                 gender = row['gender'].strip().lower()
                 accept_prepaga = parse_boolean(row['accept_prepaga'])
                 category = row['category'].strip()
@@ -207,10 +211,21 @@ def load_professionals_from_csv(csv_path: str):
                         stats['errores'] += 1
                         print(f"   ❌ Error al crear")
                         continue
-                
-                # 3. Validar acceso a Google Calendar con reintentos
+
+                # 3a. Guardar calendar_email en BD siempre (aunque no tenga acceso aún)
+                # Necesario para que validate_pending_calendars.py pueda revalidar después
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        UPDATE professionals
+                        SET calendar_email = ?
+                        WHERE phone = ?
+                    """, (calendar_email, phone))
+
+                # 3b. Validar acceso a Google Calendar con reintentos
                 print(f"\n   📅 Validando acceso a Google Calendar...")
                 print(f"      Calendario: {calendar_email}")
+                
 
                 # 4 intentos con espera incremental: 2s, 5s, 10s, 20s
                 INTENTOS      = 4
@@ -264,7 +279,7 @@ def load_professionals_from_csv(csv_path: str):
                     stats['sin_calendar'] += 1
                     profesionales_sin_acceso.append({
                         'name':           name,
-                        'email':          email,
+                        'email':          calendar_email, # email instructivo va a la cuenta de Google
                         'phone':          phone,
                         'calendar_email': calendar_email,
                     })

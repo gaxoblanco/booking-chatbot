@@ -1,12 +1,15 @@
 """
 Script para eliminar pacientes cargados desde un CSV demo.
 
-Elimina de la BD los clientes y sus citas, y cancela los eventos
-recurrentes en Google Calendar usando el google_event_id almacenado.
+Elimina de la BD los clientes y sus citas, cancela los eventos
+recurrentes en Google Calendar, y elimina los calendarios Turnos-X
+de los profesionales referenciados en el CSV.
+
+Los profesionales NO se eliminan de la BD.
 
 Uso:
-    python scripts/delete_patients_from_csv.py pacientes_demo.csv
-    python scripts/delete_patients_from_csv.py pacientes_demo.csv --dry-run
+    python scripts/csv/delete_patients_from_csv.py pacientes_demo.csv
+    python scripts/csv/delete_patients_from_csv.py pacientes_demo.csv --dry-run
 """
 
 import sys
@@ -14,13 +17,86 @@ import csv
 import argparse
 from pathlib import Path
 
-sys.path.append('.')
+sys.path.insert(0, '/app')
 
 from src.database.database import db
 from src.integrations.google_calendar_service import GoogleCalendarService
 
 
 def sep(c='=', w=70): print(c * w)
+
+
+def delete_calendars(professional_phones: set, calendar_service, dry_run: bool) -> dict:
+    """
+    Elimina los calendarios Turnos-X de los profesionales indicados.
+    También limpia el calendar_id en BD para que queden como pendientes.
+
+    Args:
+        professional_phones: Set de teléfonos de profesionales
+        calendar_service: Instancia de GoogleCalendarService
+        dry_run: Si True, solo simula
+
+    Returns:
+        dict con stats: {'eliminados': int, 'errores': int, 'sin_calendario': int}
+    """
+    stats = {'eliminados': 0, 'errores': 0, 'sin_calendario': 0}
+
+    print()
+    sep()
+    print("🗑️  ELIMINANDO CALENDARIOS TURNOS-X")
+    sep()
+
+    for phone in sorted(professional_phones):
+        prof = db.get_professional(phone)
+        if not prof:
+            print(f"   ⚠️  Profesional {phone} no encontrado en BD")
+            continue
+
+        name        = prof.get('name', phone)
+        calendar_id = prof.get('calendar_id')
+
+        if not calendar_id:
+            print(f"   ℹ️  {name} — sin calendar_id, nada que eliminar")
+            stats['sin_calendario'] += 1
+            continue
+
+        print(f"   👤 {name}")
+        print(f"      ID: {calendar_id}")
+
+        if dry_run:
+            print(f"      🔍 DRY RUN: eliminaría calendario de Google y limpiaría BD")
+            stats['eliminados'] += 1
+            continue
+
+        # 1. Eliminar calendario de Google Calendar
+        try:
+            service = calendar_service._build_service()
+            service.calendars().delete(calendarId=calendar_id).execute()
+            print(f"      ✅ Calendario eliminado de Google")
+        except Exception as e:
+            if 'notFound' in str(e) or '404' in str(e):
+                print(f"      ℹ️  Calendario ya no existe en Google")
+            else:
+                print(f"      ⚠️  Error eliminando de Google: {e}")
+                stats['errores'] += 1
+                continue
+
+        # 2. Limpiar calendar_id en BD (queda como pendiente)
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE professionals
+                    SET calendar_id = NULL
+                    WHERE phone = ?
+                """, (phone,))
+            print(f"      ✅ calendar_id limpiado en BD")
+            stats['eliminados'] += 1
+        except Exception as e:
+            print(f"      ❌ Error limpiando BD: {e}")
+            stats['errores'] += 1
+
+    return stats
 
 
 def delete_patients(csv_path: str, dry_run: bool):
@@ -41,13 +117,20 @@ def delete_patients(csv_path: str, dry_run: bool):
     stats   = {'total': 0, 'ok': 0, 'errores': 0, 'no_encontrados': 0}
     errores = []
 
+    # Registrar qué profesionales están involucrados para limpiar sus calendarios
+    professional_phones = set()
+
     with open(csv_path, encoding='utf-8') as f:
         reader = csv.DictReader(f)
 
         for row in reader:
             stats['total'] += 1
-            phone = row['phone'].strip()
-            name  = row['name'].strip()
+            phone     = row['phone'].strip()
+            name      = row['name'].strip()
+            prof_phone = row.get('professional_phone', '').strip()
+
+            if prof_phone:
+                professional_phones.add(prof_phone)
 
             sep('-')
             print(f"Fila {stats['total']}: {name} ({phone})")
@@ -62,8 +145,8 @@ def delete_patients(csv_path: str, dry_run: bool):
                 for apt in appointments:
                     apt_id          = apt['id']
                     google_event_id = apt.get('google_event_id')
-                    prof_phone      = apt['professional_phone']
-                    professional    = db.get_professional(prof_phone)
+                    apt_prof_phone  = apt['professional_phone']
+                    professional    = db.get_professional(apt_prof_phone)
                     calendar_id     = professional.get('calendar_id') if professional else None
 
                     print(f"   📅 Cita #{apt_id} | {apt['appointment_date']} {apt['start']}")
@@ -71,28 +154,26 @@ def delete_patients(csv_path: str, dry_run: bool):
                     # ── Cancelar evento en Google Calendar ─────────────────
                     if google_event_id and calendar_id:
                         if dry_run:
-                            print(f"   🔍 DRY RUN: cancelaría evento {google_event_id} en Calendar")
+                            print(f"      🔍 DRY RUN: cancelaría evento {google_event_id}")
                         else:
                             try:
-                                # Eliminar todas las ocurrencias (evento recurrente padre)
                                 service = calendar_service._build_service()
                                 service.events().delete(
                                     calendarId=calendar_id,
                                     eventId=google_event_id,
                                 ).execute()
-                                print(f"   ✅ Evento eliminado de Calendar: {google_event_id}")
+                                print(f"      ✅ Evento eliminado de Calendar")
                             except Exception as e:
-                                # Si ya no existe en Calendar, continuar igual
                                 if 'notFound' in str(e) or '404' in str(e):
-                                    print(f"   ℹ️  Evento ya no existe en Calendar")
+                                    print(f"      ℹ️  Evento ya no existe en Calendar")
                                 else:
-                                    print(f"   ⚠️  Error en Calendar (se elimina igual de BD): {e}")
+                                    print(f"      ⚠️  Error en Calendar (continúa): {e}")
                     else:
-                        print(f"   ℹ️  Sin google_event_id, solo se elimina de BD")
+                        print(f"      ℹ️  Sin google_event_id, solo se elimina de BD")
 
                     # ── Eliminar cita de BD ────────────────────────────────
                     if dry_run:
-                        print(f"   🔍 DRY RUN: eliminaría cita #{apt_id} de BD")
+                        print(f"      🔍 DRY RUN: eliminaría cita #{apt_id} de BD")
                     else:
                         try:
                             with db.get_connection() as conn:
@@ -100,9 +181,9 @@ def delete_patients(csv_path: str, dry_run: bool):
                                 cursor.execute(
                                     "DELETE FROM appointments WHERE id = ?", (apt_id,)
                                 )
-                            print(f"   ✅ Cita #{apt_id} eliminada de BD")
+                            print(f"      ✅ Cita #{apt_id} eliminada de BD")
                         except Exception as e:
-                            print(f"   ❌ Error eliminando cita #{apt_id}: {e}")
+                            print(f"      ❌ Error eliminando cita #{apt_id}: {e}")
                             stats['errores'] += 1
                             errores.append((phone, name, str(e)))
 
@@ -123,26 +204,33 @@ def delete_patients(csv_path: str, dry_run: bool):
                         cursor.execute(
                             "DELETE FROM clients WHERE phone = ?", (phone,)
                         )
-                    print(f"   ✅ Paciente eliminado de BD")
+                    print(f"   ✅ Paciente {name} eliminado de BD")
                     stats['ok'] += 1
                 except Exception as e:
                     print(f"   ❌ Error eliminando paciente: {e}")
                     stats['errores'] += 1
                     errores.append((phone, name, str(e)))
 
+    # ── Eliminar calendarios Turnos-X ─────────────────────────────────────────
+    cal_stats = delete_calendars(professional_phones, calendar_service, dry_run)
+
     # ── Resumen ───────────────────────────────────────────────────────────────
     print()
     sep()
     print("📊 RESUMEN")
     sep()
+    print(f"\n👥 Pacientes:")
     print(f"   Total procesados  : {stats['total']}")
     print(f"   ✅ Eliminados      : {stats['ok']}")
     print(f"   ℹ️  No encontrados  : {stats['no_encontrados']}")
     print(f"   ❌ Errores         : {stats['errores']}")
+    print(f"\n📅 Calendarios:")
+    print(f"   ✅ Eliminados      : {cal_stats['eliminados']}")
+    print(f"   ℹ️  Sin calendario  : {cal_stats['sin_calendario']}")
+    print(f"   ❌ Errores         : {cal_stats['errores']}")
 
     if errores:
-        print()
-        print("   Detalle de errores:")
+        print(f"\n   Detalle de errores:")
         for phone, name, msg in errores:
             print(f"   {name} ({phone}) → {msg}")
 
@@ -158,11 +246,11 @@ def delete_patients(csv_path: str, dry_run: bool):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Elimina pacientes demo cargados desde un CSV.',
+        description='Elimina pacientes demo y sus calendarios Turnos-X.',
         epilog="""
 Ejemplos:
-  python scripts/delete_patients_from_csv.py pacientes_demo.csv
-  python scripts/delete_patients_from_csv.py pacientes_demo.csv --dry-run
+  python scripts/csv/delete_patients_from_csv.py /app/data/csv/pacientes_demo.csv
+  python scripts/csv/delete_patients_from_csv.py /app/data/csv/pacientes_demo.csv --dry-run
         """
     )
     parser.add_argument('csv_path', help='Ruta al CSV con los pacientes a eliminar')
