@@ -33,6 +33,20 @@ echo ""
 # ==================================================
 # DATABASE INITIALIZATION
 # ==================================================
+
+# Si RESET_DB=true, borrar la DB existente para recrearla desde cero
+# Uso: docker compose run -e RESET_DB=true whatsapp-demo
+#   o: RESET_DB=true docker compose up
+if [ "$RESET_DB" = "true" ]; then
+    if [ -f "database.db" ]; then
+        echo "⚠️  RESET_DB=true — borrando database.db existente..."
+        rm database.db
+        echo "🗑️  database.db eliminada"
+    else
+        echo "ℹ️  RESET_DB=true — no había database.db, continuando..."
+    fi
+fi
+
 if [ ! -f "database.db" ]; then
     echo "📄 Initializing database..."
     python scripts/init_db.py
