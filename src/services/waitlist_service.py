@@ -128,29 +128,32 @@ class WaitlistService:
         self,
         professional_phone: str,
         freed_date: str,
-        freed_time: str
+        freed_time: str,
+        exclude_phone: str = None,
+        freed_apt_id: int = None
     ) -> List[Dict]:
         """
         Busca clientes candidatos para adelantar turno.
-        
+
         Criterios:
         - Mismo profesional
         - Turno en días posteriores (próximos 30 días)
         - Estado = 'confirmada'
         - wants_earlier_slot = 1
-        - No tiene oferta pendiente activa
-        
-        Ordenados por:
-        1. Fecha más cercana primero
-        2. Hora más cercana primero
-        
+        - Sin oferta pending activa
+        - Sin 3+ rechazos en los últimos 30 días con este profesional (anti-spam)
+        - No rechazó ya este slot específico en la cascada actual
+
         Args:
             professional_phone: Teléfono del profesional
             freed_date: Fecha del turno liberado (YYYY-MM-DD)
             freed_time: Hora del turno liberado (HH:MM)
-        
+            exclude_phone: Excluir explícitamente (quien acaba de rechazar)
+            freed_apt_id: ID del slot liberado — excluye a todos los que
+                          ya rechazaron este slot específico en la cascada
+
         Returns:
-            Lista de candidatos con sus datos de cita
+            Lista de candidatos ordenados por fecha más cercana primero
         """
         query = """
             SELECT 
@@ -168,11 +171,35 @@ class WaitlistService:
             AND a.status = 'confirmada'
             AND (a.wants_earlier_slot IS NULL OR a.wants_earlier_slot = 1)
             AND a.client_phone NOT IN (
-                SELECT offered_to_client_phone 
-                FROM slot_offers 
+                -- Excluir clientes con oferta pendiente activa
+                SELECT offered_to_client_phone
+                FROM slot_offers
                 WHERE status = 'pending'
                 AND expires_at > CURRENT_TIMESTAMP
             )
+            AND a.client_phone NOT IN (
+                -- Anti-spam: excluir clientes que rechazaron 3+ veces con el MISMO
+                -- profesional en los últimos 30 días.
+                -- Acotado a profesional: si el cliente tiene turno con otro profesional
+                -- o el mismo pasados 30 días, vuelve a aparecer como candidato.
+                SELECT offered_to_client_phone
+                FROM slot_offers
+                WHERE status = 'rejected'
+                AND professional_phone = ?
+                AND offered_at >= DATE('now', '-30 days')
+                GROUP BY offered_to_client_phone
+                HAVING COUNT(*) >= 3
+            )
+            AND a.client_phone NOT IN (
+                -- Cascada: excluir a todos los que ya rechazaron ESTE slot específico.
+                -- Evita que la cascada vuelva a ofrecer a alguien que ya dijo que no
+                -- en la misma ronda, aunque no haya llegado al límite del anti-spam.
+                SELECT offered_to_client_phone
+                FROM slot_offers
+                WHERE status = 'rejected'
+                AND freed_appointment_id = ?
+            )
+            AND a.client_phone != ?
             ORDER BY a.appointment_date ASC, a.start ASC
             LIMIT 10
         """
@@ -180,13 +207,31 @@ class WaitlistService:
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(query, (professional_phone, freed_date, freed_date))
-                
+                # Params posicionales:
+                # 1. professional_phone (WHERE)
+                # 2. freed_date (fecha posterior)
+                # 3. freed_date (rango 30 días)
+                # 4. professional_phone (filtro anti-spam)
+                # 5. freed_apt_id (rechazos de este slot específico)
+                #    Si no se provee usamos -1 — nunca coincide con un ID real
+                # 6. exclude_phone (quien acaba de rechazar ahora mismo)
+                #    Si no hay nadie usamos '' — nunca coincide con un teléfono real
+                params = [
+                    professional_phone,
+                    freed_date,
+                    freed_date,
+                    professional_phone,
+                    freed_apt_id if freed_apt_id else -1,
+                    exclude_phone if exclude_phone else '',
+                ]
+
+                cursor.execute(query, params)
+
                 columns = [desc[0] for desc in cursor.description]
                 candidates = [dict(zip(columns, row)) for row in cursor.fetchall()]
-                
+
                 return candidates
-                
+
         except Exception as e:
             logger.error(f"Error buscando candidatos: {e}")
             return []
@@ -423,16 +468,25 @@ _Esta oferta expira en {self.offer_expiration_minutes} minutos_"""
             
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                # Actualizar oferta
+
+                # Paso 1: Cancelar el turno liberado para liberar la constraint UNIQUE
+                # (professional_phone, appointment_date, start)
+                # Sin esto el UPDATE de la cita del cliente falla con UNIQUE constraint
+                cursor.execute("""
+                    UPDATE appointments
+                    SET status = 'cancelada_cliente'
+                    WHERE id = ?
+                """, (offer['freed_appointment_id'],))
+
+                # Paso 2: Marcar oferta como aceptada
                 cursor.execute("""
                     UPDATE slot_offers
                     SET status = 'accepted',
                         response_received_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (offer['id'],))
-                
-                # Actualizar cita del cliente
+
+                # Paso 3: Mover la cita del cliente a la nueva fecha/hora
                 cursor.execute("""
                     UPDATE appointments
                     SET appointment_date = ?,
@@ -445,8 +499,8 @@ _Esta oferta expira en {self.offer_expiration_minutes} minutos_"""
                     offer['id'],
                     offer['original_appointment_id']
                 ))
-                
-                logger.info("✅ Turno movido exitosamente")
+
+                logger.info("✅ Turno liberado cancelado, turno del cliente movido exitosamente")
             
             return {
                 'success': True,
@@ -468,10 +522,27 @@ Tu turno anterior fue cancelado automáticamente."""
             }
     
     def _reject_offer(self, offer: Dict) -> Dict:
-        """Cliente rechaza la oferta - ofrecer al siguiente."""
+        """
+        Cliente rechaza la oferta.
+
+        Cascada:
+            1. Marca la oferta actual como 'rejected'
+            2. Busca el siguiente candidato para el mismo slot liberado
+               (excluye a quien acaba de rechazar y a quienes ya rechazaron)
+            3. Si hay siguiente → envía nueva oferta
+            4. Si no hay más → slot queda libre, fin del ciclo
+
+        Anti-spam (via _find_candidates):
+            Si un cliente rechazó 3+ veces en 30 días no aparece más como candidato.
+        """
         try:
-            logger.info(f"❌ Cliente {offer['offered_to_client_phone']} rechazó oferta #{offer['id']}")
-            
+            client = offer['offered_to_client_phone']
+            offer_id = offer['id']
+            freed_apt_id = offer['freed_appointment_id']
+
+            logger.info(f"❌ Cliente {client} rechazó oferta #{offer_id}")
+
+            # Paso 1: Marcar como rechazada
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -479,17 +550,55 @@ Tu turno anterior fue cancelado automáticamente."""
                     SET status = 'rejected',
                         response_received_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (offer['id'],))
-            
-            # Buscar siguiente candidato
-            # TODO: Ofrecer al siguiente en la lista
-            
+                """, (offer_id,))
+
+            # Paso 2: Obtener datos del slot liberado para buscar siguiente candidato
+            freed_apt = self.db.get_appointment(freed_apt_id)
+            if not freed_apt:
+                logger.warning(f"No se encontró cita #{freed_apt_id} para continuar cascada")
+                return {
+                    'success': True,
+                    'action': 'rejected',
+                    'message': "👍 Entendido. Mantenés tu turno original."
+                }
+
+            # Paso 3: Buscar siguiente candidato
+            # _find_candidates ya excluye:
+            #   - Clientes con oferta pending activa
+            #   - Clientes con 3+ rechazos en 30 días (anti-spam)
+            # Aquí además excluimos al cliente que acaba de rechazar esta oferta
+            candidates = self._find_candidates(
+                professional_phone=freed_apt['professional_phone'],
+                freed_date=freed_apt['appointment_date'],
+                freed_time=freed_apt['start'],
+                exclude_phone=client,
+                freed_apt_id=freed_apt_id  # Excluir todos los que ya rechazaron este slot
+            )
+
+            if not candidates:
+                logger.info(f"No hay más candidatos para el slot #{freed_apt_id} — fin de cascada")
+                return {
+                    'success': True,
+                    'action': 'rejected',
+                    'message': "👍 Entendido. Mantenés tu turno original."
+                }
+
+            # Paso 4: Ofrecer al siguiente candidato
+            next_candidate = candidates[0]
+            logger.info(f"→ Ofreciendo al siguiente candidato: {next_candidate['client_phone']}")
+
+            self._send_offer(
+                freed_appointment_id=freed_apt_id,
+                candidate=next_candidate,
+                freed_apt=freed_apt
+            )
+
             return {
                 'success': True,
                 'action': 'rejected',
                 'message': "👍 Entendido. Mantenés tu turno original."
             }
-            
+
         except Exception as e:
             logger.error(f"Error rechazando oferta: {e}")
             return {'success': False}
