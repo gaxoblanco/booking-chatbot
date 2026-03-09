@@ -22,8 +22,8 @@ import sys
 import csv
 import argparse
 from pathlib import Path
-from datetime import timedelta, date
-from typing import Optional
+from datetime import timedelta, date, datetime
+from typing import Optional, List, Dict
 
 sys.path.append('.')
 
@@ -83,6 +83,111 @@ def dt_iso(d: date, t: str) -> str:
 
 def sep(c='=', w=70): print(c * w)
 
+
+def time_to_minutes(t: str) -> int:
+    """Convierte HH:MM a minutos desde medianoche."""
+    h, m = map(int, t.split(':'))
+    return h * 60 + m
+
+
+def check_overlap(prof_phone: str, weekday_idx: int, start_time: str,
+                  end_time: str, patient_phone: str) -> Optional[Dict]:
+    """
+    Verifica si el horario propuesto solapa con alguna cita existente
+    del profesional en ese día de la semana.
+
+    Busca citas del profesional en la próxima ocurrencia del día,
+    ya que la BD guarda la primera fecha real de cada cita recurrente.
+
+    Args:
+        prof_phone:    Teléfono del profesional
+        weekday_idx:   Día de la semana (0=lunes ... 6=domingo)
+        start_time:    Inicio propuesto "HH:MM"
+        end_time:      Fin propuesto "HH:MM"
+        patient_phone: Teléfono del paciente a cargar
+
+    Returns:
+        Dict con info del conflicto si hay solapamiento, None si está libre.
+        Ejemplo: {'tipo': 'solapado', 'ocupado_por': 'Juan Pérez', 'inicio': '09:00', 'fin': '09:50'}
+        O:       {'tipo': 'duplicado', 'ocupado_por': 'mismo paciente'}
+    """
+    # Calcular la próxima fecha del día de la semana
+    target_date = next_weekday_date(weekday_idx).isoformat()
+
+    # Obtener todas las citas del profesional en esa fecha
+    try:
+        with db.get_connection() as conn:
+            conn.row_factory = __import__('sqlite3').Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT a.id, a.client_phone, a.start, a.end, c.name as client_name
+                FROM appointments a
+                LEFT JOIN clients c ON a.client_phone = c.phone
+                WHERE a.professional_phone = ?
+                AND a.appointment_date = ?
+                AND a.status NOT IN ('cancelada_cliente', 'cancelada_profesional')
+            """, (prof_phone, target_date))
+            existing = [dict(r) for r in cursor.fetchall()]
+    except Exception:
+        return None  # Si falla la consulta, dejamos pasar
+
+    new_start = time_to_minutes(start_time)
+    new_end   = time_to_minutes(end_time)
+
+    for apt in existing:
+        apt_start = time_to_minutes(apt['start'])
+        apt_end   = time_to_minutes(apt['end'])
+
+        # Solapamiento: los rangos se tocan (excluimos el caso borde donde uno empieza justo cuando termina el otro)
+        if new_start < apt_end and new_end > apt_start:
+            # Caso 1: mismo paciente, mismo horario exacto → duplicado
+            if apt['client_phone'] == patient_phone and apt['start'] == start_time:
+                return {
+                    'tipo':        'duplicado',
+                    'ocupado_por': f"{apt['client_name'] or apt['client_phone']} (mismo paciente)",
+                    'inicio':      apt['start'],
+                    'fin':         apt['end'],
+                }
+            # Caso 2: horario solapado (mismo u otro paciente)
+            return {
+                'tipo':        'solapado',
+                'ocupado_por': apt['client_name'] or apt['client_phone'],
+                'inicio':      apt['start'],
+                'fin':         apt['end'],
+            }
+
+    return None  # Sin conflicto
+
+
+def write_rejected_csv(rechazados: List[Dict], output_dir: str = '/app/data/rechazados') -> str:
+    """
+    Escribe el CSV de pacientes no cargados.
+
+    Args:
+        rechazados: Lista de dicts con los datos del rechazo
+        output_dir: Directorio de salida
+
+    Returns:
+        Ruta del archivo generado
+    """
+    today     = datetime.now().strftime('%Y-%m-%d')
+    filename  = f"pacientes_no_cargados_{today}.csv"
+    filepath  = Path(output_dir) / filename
+
+    # Crear directorio si no existe
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    fieldnames = ['phone', 'name', 'professional_phone', 'weekday',
+                  'start_time', 'duration_minutes', 'motivo', 'ocupado_por']
+
+    with open(filepath, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rechazados:
+            writer.writerow({k: r.get(k, '') for k in fieldnames})
+
+    return str(filepath)
+
 # ── Carga principal ───────────────────────────────────────────────────────────
 
 def load_patients(csv_path: str, weeks: int, dry_run: bool):
@@ -104,8 +209,9 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
     # Inicializar servicio de Calendar una sola vez
     calendar_service = GoogleCalendarService()
 
-    stats    = {'total': 0, 'ok': 0, 'errores': 0}
+    stats    = {'total': 0, 'ok': 0, 'errores': 0, 'rechazados': 0}
     errores  = []
+    rechazados: List[Dict] = []  # Pacientes no cargados por conflicto de horario
 
     try:
         with open(csv_path, encoding='utf-8') as f:
@@ -158,6 +264,12 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
                     print(f"         docker exec whatsapp-demo python scripts/load_professionals_from_csv.py /app/data/csv/profesionales_demo.csv")
                     stats['errores'] += 1
                     errores.append((n, name, msg))
+                    rechazados.append({
+                        'phone': phone, 'name': name,
+                        'professional_phone': prof_phone, 'weekday': weekday_str,
+                        'start_time': start_time, 'duration_minutes': duration_minutes,
+                        'motivo': msg, 'ocupado_por': '',
+                    })
                     continue
 
                 calendar_id = professional.get('calendar_id')
@@ -166,6 +278,12 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
                     print(f"   ❌ {msg}")
                     stats['errores'] += 1
                     errores.append((n, name, msg))
+                    rechazados.append({
+                        'phone': phone, 'name': name,
+                        'professional_phone': prof_phone, 'weekday': weekday_str,
+                        'start_time': start_time, 'duration_minutes': duration_minutes,
+                        'motivo': msg, 'ocupado_por': '',
+                    })
                     continue
 
                 # ── Calcular horarios ─────────────────────────────────────
@@ -184,7 +302,36 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
                     stats['ok'] += 1
                     continue
 
-                # ── 1. Crear/actualizar paciente en BD ────────────────────
+                # ── 0. Validar solapamiento antes de tocar Calendar ───────
+                conflicto = check_overlap(
+                    prof_phone    = prof_phone,
+                    weekday_idx   = weekday_idx,
+                    start_time    = start_time,
+                    end_time      = end_time,
+                    patient_phone = phone,
+                )
+
+                if conflicto:
+                    if conflicto['tipo'] == 'duplicado':
+                        motivo = f"Paciente ya cargado en ese horario"
+                    else:
+                        motivo = f"Horario solapado con {conflicto['inicio']}-{conflicto['fin']}"
+
+                    ocupado_por = conflicto['ocupado_por']
+                    print(f"   ⚠️  {motivo} — ocupado por: {ocupado_por}")
+
+                    stats['rechazados'] += 1
+                    rechazados.append({
+                        'phone':             phone,
+                        'name':              name,
+                        'professional_phone': prof_phone,
+                        'weekday':           weekday_str,
+                        'start_time':        start_time,
+                        'duration_minutes':  duration_minutes,
+                        'motivo':            motivo,
+                        'ocupado_por':       ocupado_por,
+                    })
+                    continue
                 db.add_client(phone=phone, name=name, email=email)
                 print(f"   ✅ Paciente en BD")
 
@@ -245,6 +392,7 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
     sep()
     print(f"   Total procesados : {stats['total']}")
     print(f"   ✅ Exitosos       : {stats['ok']}")
+    print(f"   ⚠️  Rechazados     : {stats['rechazados']}")
     print(f"   ❌ Errores        : {stats['errores']}")
 
     if errores:
@@ -252,6 +400,16 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
         print("   Detalle de errores:")
         for row_n, pname, msg in errores:
             print(f"   Fila {row_n}: {pname} → {msg}")
+
+    # ── Generar CSV de rechazados si hay alguno ───────────────────────────
+    if rechazados and not dry_run:
+        try:
+            csv_path_out = write_rejected_csv(rechazados)
+            print()
+            print(f"   📄 CSV de no cargados: {csv_path_out}")
+            print(f"      {len(rechazados)} paciente(s) requieren revisión del profesional")
+        except Exception as e:
+            print(f"\n   ⚠️  No se pudo generar CSV de rechazados: {e}")
 
     if dry_run:
         print(f"\n⚠️  DRY RUN: ningún dato fue modificado.")
