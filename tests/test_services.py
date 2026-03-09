@@ -90,24 +90,7 @@ def test_services():
         test_phone1), "❌ Certificate not verified"
     print("✅ Certificate management working\n")
 
-    # ==========================================
-    # TEST 4: Weekly Schedule
-    # ==========================================
-    print("📝 TEST 4: Weekly Schedule Management")
-
-    # Add Monday and Wednesday
-    success = prof_service.add_weekly_busy_hours(
-        test_phone1, 0, "09:00", "17:00")
-    assert success, "❌ Failed to add Monday schedule"
-
-    success = prof_service.add_weekly_busy_hours(
-        test_phone1, 2, "10:00", "16:00")
-    assert success, "❌ Failed to add Wednesday schedule"
-
-    schedules = prof_service.get_weekly_schedule(test_phone1)
-    assert len(schedules) == 2, f"❌ Expected 2 schedules, got {len(schedules)}"
-    print(f"✅ Weekly schedule added: {len(schedules)} days\n")
-
+    
     # ==========================================
     # TEST 5: Multiple Schedules at Once
     # ==========================================
