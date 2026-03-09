@@ -64,6 +64,9 @@ services:
       # Mount scripts (if needed for debugging)
       - ../scripts:/app/scripts
 
+      # Mount test
+      - ../tests:/app/tests
+
       # Mount Google Calendar credentials
       - ../src/integrations/google_calendar_service:/app/src/integrations/google_calendar_service
 
