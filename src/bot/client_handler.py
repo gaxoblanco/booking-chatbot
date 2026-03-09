@@ -734,7 +734,7 @@ class ClientHandler:
                 session.transition_to(ConversationState.CLIENT_FILTER_INPUT)
                 
                 # Mostrar prompt del filtro seleccionado
-                return filter_obj.get_input_prompt(session.get_temp_all())
+                return filter_obj.get_input_prompt(session.temp_data)
             
             except ValueError:
                 return "⚠️ Opción inválida\n\n" + self.format_multifilter_menu(session)
@@ -772,7 +772,7 @@ class ClientHandler:
         print(f"🎯 Current filter type from session: '{filter_type_str}'")
         
         # Mostrar TODO el contenido de temp
-        all_temp = session.get_temp_all()
+        all_temp = session.temp_data
         print(f"📦 ALL session.temp data: {all_temp}")
         
         if not filter_type_str:
@@ -805,14 +805,14 @@ class ClientHandler:
         # ===== OPCIÓN 0: VOLVER SIN GUARDAR =====
         if message == '0':
             print(f"↩️ User pressed 0 (back)")
-            session.remove_temp('current_filter_type')
+            session.temp_data.pop('current_filter_type', None)
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
             print(f"{'='*60}\n")
             return self.format_multifilter_menu(session)
         
         # ===== VALIDAR INPUT =====
         print(f"\n🔍 Validating input...")
-        session_data = session.get_temp_all()
+        session_data = session.temp_data
         is_valid, error_msg = filter_obj.validate_input(message, session_data)
         print(f"✅ Validation result: {is_valid}")
         if not is_valid:
@@ -865,7 +865,7 @@ class ClientHandler:
         
         # ===== LIMPIAR TEMP Y VOLVER AL MENÚ =====
         print(f"\n🧹 Cleaning up...")
-        session.remove_temp('current_filter_type')
+        session.temp_data.pop('current_filter_type', None)
         session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
         
         print(f"{'='*60}\n")
@@ -1331,9 +1331,6 @@ class ClientHandler:
             
             # Guardar slot seleccionado
             session.set_temp('selected_slot', selected_slot)
-            
-            # Transición a confirmación de datos
-            session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRM_NAME)
             
             # Solicitar nombre del cliente
             return """📝 *Confirmación de Turno*
@@ -2440,13 +2437,9 @@ class ClientHandler:
                 search_date = session.get_temp('search_date')
 
                 formatted = client_service.format_search_results_with_slots(
-
                     professionals=results,
-
                     date_str=search_date,
-
                     show_max_slots=3
-
                 )
                 session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
                 
@@ -2665,164 +2658,3 @@ O escribe '0' para volver al menú."""
         
         else:
             return "⚠️ Opción inválida.\n\n1️⃣ Ver mis citas\n2️⃣ Nueva búsqueda\n0️⃣ Menú principal"
-        
-    def handle_client_booking_confirm_name(self, session: SessionData, message: str) -> str:
-        """
-        Solicita y guarda el nombre del cliente para la reserva.
-        """
-        if message == '0':
-            # Cancelar reserva
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return "Reserva cancelada.\n\n" + client_messages.CLIENT_MAIN_MENU
-        
-        # Validar nombre (al menos 2 palabras)
-        name_parts = message.strip().split()
-        if len(name_parts) < 2:
-            return "⚠️ Por favor, ingresá tu nombre completo (nombre y apellido).\n\n_(Escribe '0' para cancelar)_"
-        
-        # Guardar nombre
-        client_name = message.strip()
-        session.set_temp('client_name', client_name)
-        
-        # Transicionar a solicitud de email
-        session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRM_EMAIL)
-        
-        return f"""✅ Perfecto, *{client_name}*
-
-    Ahora necesito tu *email* para enviarte la confirmación del turno.
-
-    ¿Cuál es tu email?
-
-    _(Escribe '0' para cancelar)_"""
-
-
-    def handle_client_booking_confirm_email(self, session: SessionData, message: str) -> str:
-        """
-        Solicita y guarda el email del cliente para la reserva.
-        """
-        if message == '0':
-            # Cancelar reserva
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return "Reserva cancelada.\n\n" + client_messages.CLIENT_MAIN_MENU
-        
-        # Validar email básico
-        import re
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        
-        if not re.match(email_pattern, message.strip()):
-            return "⚠️ Email inválido. Por favor, ingresá un email válido.\n\nEjemplo: nombre@ejemplo.com\n\n_(Escribe '0' para cancelar)_"
-        
-        # Guardar email
-        client_email = message.strip().lower()
-        session.set_temp('client_email', client_email)
-        
-        # Transicionar a confirmación final
-        session.transition_to(ConversationState.CLIENT_BOOKING_FINAL_CONFIRMATION)
-        
-        # Obtener todos los datos guardados
-        professional = session.get_temp('selected_professional')
-        selected_slot = session.get_temp('selected_slot')
-        search_date = session.get_temp('search_date')
-        client_name = session.get_temp('client_name')
-        
-        # Formatear fecha
-        from datetime import datetime
-        try:
-            date_obj = datetime.strptime(search_date, "%Y-%m-%d")
-            day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            day_name = day_names[date_obj.weekday()]
-            formatted_date = f"{day_name} {date_obj.strftime('%d de %B de %Y')}"
-        except:
-            formatted_date = search_date
-        
-        # Mostrar resumen
-        message = "📋 *RESUMEN DE TU CITA*\n\n"
-        message += f"👤 *Paciente:* {client_name}\n"
-        message += f"📧 *Email:* {client_email}\n\n"
-        message += f"👨‍⚕️ *Profesional:* {professional.get('title', '')} {professional.get('name')}\n"
-        
-        if professional.get('address'):
-            message += f"📍 {professional['address']}\n"
-        
-        message += f"\n📅 *Fecha:* {formatted_date}\n"
-        message += f"⏰ *Horario:* {selected_slot['start']} - {selected_slot['end']}\n\n"
-        
-        if professional.get('price'):
-            message += f"💰 *Valor:* ${professional['price']:,}\n\n"
-        
-        message += "─" * 40 + "\n"
-        message += "*¿Confirmas el turno?*\n\n"
-        message += "1️⃣ Sí, confirmar turno\n"
-        message += "0️⃣ Cancelar\n"
-        
-        return message
-
-
-    def handle_client_booking_final_confirmation(self, session: SessionData, message: str) -> str:
-        """
-        Confirma y crea el turno en Google Calendar.
-        """
-        if message == '0':
-            # Cancelar reserva
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return "Reserva cancelada.\n\n" + client_messages.CLIENT_MAIN_MENU
-        
-        if message != '1':
-            return "⚠️ Por favor, elegí una opción:\n\n1️⃣ Confirmar\n0️⃣ Cancelar"
-        
-        # ⭐ CREAR EL TURNO
-        try:
-            # TODO: Implementar en FASE 2
-            # Por ahora, solo simulamos la creación
-            
-            professional = session.get_temp('selected_professional')
-            selected_slot = session.get_temp('selected_slot')
-            search_date = session.get_temp('search_date')
-            client_name = session.get_temp('client_name')
-            client_email = session.get_temp('client_email')
-            
-            # Mensaje de éxito
-            message = "✅ *¡TURNO CONFIRMADO!*\n\n"
-            message += "📋 *Detalles de tu cita:*\n\n"
-            message += f"📅 {search_date}\n"
-            message += f"⏰ {selected_slot['start']} - {selected_slot['end']}\n\n"
-            message += f"👨‍⚕️ {professional.get('title', '')} {professional.get('name')}\n"
-            
-            if professional.get('address'):
-                message += f"📍 {professional['address']}\n"
-            
-            if professional.get('phone'):
-                message += f"📞 {professional['phone']}\n"
-            
-            message += "\n💡 *Recordatorios:*\n"
-            message += "• Llega 10 minutos antes\n"
-            message += "• Trae tu DNI y carnet de prepaga (si corresponde)\n"
-            message += "• Si necesitas cancelar, avísanos con 24hs de anticipación\n\n"
-            message += "📧 Te enviamos la confirmación por email\n\n"
-            message += "─" * 40 + "\n"
-            message += "*¿Qué querés hacer ahora?*\n\n"
-            message += "1️⃣ Ver mis turnos\n"
-            message += "2️⃣ Buscar otro profesional\n"
-            message += "0️⃣ Volver al menú\n"
-            
-            # Limpiar temporales y volver al menú
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            
-            return message
-            
-        except Exception as e:
-            print(f"[CLIENT] ❌ Error creating appointment: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            return """❌ Hubo un error al crear el turno.
-
-    Por favor, intenta nuevamente más tarde o contacta directamente al profesional.
-
-    Escribe 'menu' para volver al menú principal."""
-        
-    
