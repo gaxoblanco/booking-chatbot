@@ -96,6 +96,7 @@ class Database:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                            
                     -- GOOGLE CALENDAR INTEGRATION
+                    calendar_email TEXT,
                     calendar_id TEXT,
                     working_hours TEXT,
                     slot_duration INTEGER DEFAULT 60,
@@ -212,7 +213,16 @@ class Database:
                     cancellation_reason TEXT,
                     reminder_sent BOOLEAN DEFAULT 0,
                     reminder_sent_at TIMESTAMP,
-                    
+
+                    -- Waitlist: cliente acepta adelantar turno si se libera uno
+                    wants_earlier_slot BOOLEAN DEFAULT 1,
+                    -- ID de oferta que originó este movimiento
+                    moved_from_offer_id INTEGER,
+
+                    -- Reminder: confirmación explícita del cliente
+                    confirmed_by_client BOOLEAN DEFAULT 0,
+                    confirmed_by_client_at TIMESTAMP,
+
                     -- Timestamps
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -352,23 +362,31 @@ class Database:
                 CREATE TABLE IF NOT EXISTS appointment_reminders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     appointment_id INTEGER NOT NULL,
-                    reminder_type TEXT CHECK(reminder_type IN ('24h', '1h')) NOT NULL,
-                    
-                    -- Estado de envío
-                    sent BOOLEAN DEFAULT 0,
-                    sent_at TIMESTAMP,
-                    
-                    -- Respuesta del usuario
-                    response_received BOOLEAN DEFAULT 0,
-                    response TEXT,
-                    responded_at TIMESTAMP,
-                    
-                    -- Programación
-                    scheduled_for TIMESTAMP NOT NULL,
+
+                    -- Quién recibe el recordatorio
+                    client_phone TEXT NOT NULL,
+                    professional_phone TEXT NOT NULL,
+
+                    -- Datos de la cita (desnormalizados para consultas rápidas)
+                    appointment_date DATE NOT NULL,
+                    appointment_time TEXT NOT NULL,
+
+                    -- Estado del recordatorio
+                    -- sent: enviado, esperando respuesta
+                    -- confirmed: cliente confirmó asistencia
+                    -- rescheduled: cliente quiere reprogramar
+                    -- cancelled: cliente canceló
+                    status TEXT CHECK(status IN ('sent', 'confirmed', 'rescheduled', 'cancelled'))
+                            DEFAULT 'sent',
+
+                    -- Timestamps de ciclo de vida
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    confirmed_at TIMESTAMP,
+                    response_received_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
+
                     FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
-                    UNIQUE(appointment_id, reminder_type)
+                    FOREIGN KEY (client_phone) REFERENCES clients(phone)
                 )
             """)
 
@@ -378,14 +396,64 @@ class Database:
             """)
 
             cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_reminders_scheduled 
-                ON appointment_reminders(scheduled_for, sent)
+                CREATE INDEX IF NOT EXISTS idx_reminders_client
+                ON appointment_reminders(client_phone, status)
             """)
 
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_reminders_status 
-                ON appointment_reminders(sent, response_received)
+                ON appointment_reminders(status)
             """)
+
+            # ==========================================
+            # TABLE: slot_offers
+            # Ofertas de turno adelantado (sistema waitlist)
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS slot_offers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                    -- Turno que se liberó (origen de la oferta)
+                    freed_appointment_id INTEGER NOT NULL,
+
+                    -- Cliente al que se le ofrece adelantar
+                    offered_to_client_phone TEXT NOT NULL,
+
+                    -- Turno original del cliente (el que se adelantaría)
+                    original_appointment_id INTEGER NOT NULL,
+
+                    -- Datos del slot libre
+                    freed_date DATE NOT NULL,
+                    freed_time TEXT NOT NULL,
+                    professional_phone TEXT NOT NULL,
+                    professional_name TEXT,
+
+                    -- Estado
+                    status TEXT CHECK(status IN ('pending', 'accepted', 'rejected', 'expired'))
+                             DEFAULT 'pending',
+
+                    -- Timestamps
+                    offered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL,
+                    response_received_at TIMESTAMP,
+
+                    FOREIGN KEY (offered_to_client_phone) REFERENCES clients(phone),
+                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_slot_offers_client
+                ON slot_offers(offered_to_client_phone, status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_slot_offers_freed
+                ON slot_offers(freed_appointment_id)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_slot_offers_expires
+                ON slot_offers(expires_at, status)
+            """)
+
 
     # ==========================================
     # PROFESSIONAL CRUD OPERATIONS
