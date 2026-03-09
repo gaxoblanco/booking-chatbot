@@ -72,6 +72,9 @@ services:
 
       # Montar carpeta data/ completa (CSV de carga y datos demo)
       - ../data:/app/data/csv
+
+      # CSVs de pacientes no cargados (rechazados por solapamiento u otros errores)
+      - ../data/rechazados:/app/data/rechazados
     
     # Health check
     healthcheck:
