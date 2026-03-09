@@ -485,6 +485,93 @@ _Por favor, responde antes de las 20:00 hs_"""
             return {'success': False}
         
     # =========================================================================
+    # AUTO-CONFIRMACIÓN POR TIMEOUT
+    # =========================================================================
+
+    def auto_confirm_unanswered(self, timeout_hours: int = 3) -> Dict:
+        """
+        Confirma automáticamente citas cuyos recordatorios no recibieron
+        respuesta dentro del período de timeout.
+
+        Lógica:
+            - Busca reminders con status='sent'
+            - Cuyo sent_at sea anterior a (ahora - timeout_hours)
+            - Para cada uno llama _confirm_appointment() — función real existente
+
+        Diseño deliberado:
+            - Si el cliente no responde asumimos que asiste (reduce no-shows)
+            - El cliente igual recibió el recordatorio, está avisado
+            - No se envía nuevo WhatsApp (evita spam)
+
+        Args:
+            timeout_hours: Horas sin respuesta para auto-confirmar (default: 3)
+
+        Returns:
+            checked: reminders evaluados
+            confirmed: auto-confirmados
+            errors: errores
+            appointments: IDs de citas confirmadas
+        """
+        logger.info("=" * 60)
+        logger.info(f"AUTO-CONFIRMACION POR TIMEOUT ({timeout_hours}h sin respuesta)")
+        logger.info("=" * 60)
+
+        stats = {"checked": 0, "confirmed": 0, "errors": 0, "appointments": []}
+
+        query = """
+            SELECT
+                r.id            AS reminder_id,
+                r.appointment_id,
+                r.client_phone,
+                r.sent_at,
+                a.appointment_date,
+                a.start
+            FROM appointment_reminders r
+            JOIN appointments a ON r.appointment_id = a.id
+            WHERE r.status = "sent"
+            AND r.sent_at <= datetime("now", :timeout)
+            AND a.appointment_date >= DATE("now")
+            ORDER BY r.sent_at ASC
+        """
+
+        try:
+            timeout_param = f"-{timeout_hours} hours"
+
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, {"timeout": timeout_param})
+                columns = [desc[0] for desc in cursor.description]
+                pending = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+            stats["checked"] = len(pending)
+            logger.info(f"Reminders sin respuesta: {len(pending)}")
+
+            for reminder in pending:
+                apt_id  = reminder["appointment_id"]
+                client  = reminder["client_phone"]
+                sent_at = reminder["sent_at"]
+
+                logger.info(f"  > Cita #{apt_id} | {client} | enviado {sent_at}")
+                result = self._confirm_appointment(apt_id, client)
+
+                if result.get("success"):
+                    stats["confirmed"] += 1
+                    stats["appointments"].append(apt_id)
+                    logger.info(f"  OK Cita #{apt_id} auto-confirmada")
+                else:
+                    stats["errors"] += 1
+                    logger.error(f"  ERROR auto-confirmando #{apt_id}")
+
+        except Exception as e:
+            logger.error(f"Error en auto_confirm_unanswered: {e}")
+            import traceback
+            traceback.print_exc()
+            stats["errors"] += 1
+
+        logger.info(f"Completado - confirmados: {stats['confirmed']}, errores: {stats['errors']}")
+        return stats
+
+    # =========================================================================
     # DEMO - Disparar envío de recordatorios desde WhatsApp
     # =========================================================================
 
