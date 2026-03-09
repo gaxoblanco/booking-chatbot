@@ -48,6 +48,7 @@ from src.core.states import (
     SessionData
 )
 from src.core.conversation_context import context_manager
+from src.bot.reminder_handler import should_handle_as_reminder, handle_reminder_response
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import sys
@@ -255,6 +256,15 @@ class BotController:
                 )
                 if shortcut_response:
                     return shortcut_response
+        # ==========================================
+        # 4.5 PRIORIDAD: RESPUESTA A RECORDATORIO
+        # Debe evaluarse ANTES de los comandos globales y el routing normal
+        # porque "1", "2", "0" también son opciones de menú y el reminder
+        # tiene que ganarles en prioridad cuando hay uno pendiente.
+        # ==========================================
+        if should_handle_as_reminder(session, message):
+            return handle_reminder_response(session, message)
+
         # ==========================================
         # 5. COMANDOS GLOBALES
         # ==========================================
@@ -624,7 +634,7 @@ class BotController:
             filter_text = self._format_applied_filters(entities)
             return (f"😔 No encontré profesionales disponibles para {date_formatted}{filter_text}\n\n"
                     "Podés intentar:\n"
-                    "• Otra fecha (ej: 'mañana', 'pasado mañana')\n"
+                    "• Otra fecha (ej: 'mañana', 'pasado mañana', '01/02/2026)\n"
                     "• Cambiar filtros (escribe 'filtros')\n"
                     "• Escribir 'buscar' para empezar de nuevo")
         
