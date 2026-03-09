@@ -170,7 +170,7 @@ class WebhookTester:
         print(f"{Colors.WARNING}Type 'reset' to restart conversation (send 'hola'){Colors.ENDC}\n")
 
         # Start conversation
-        self.send_message("hola")
+        #self.send_message("hola")
 
         while True:
             try:
