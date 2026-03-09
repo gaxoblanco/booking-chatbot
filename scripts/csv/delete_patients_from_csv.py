@@ -81,20 +81,11 @@ def delete_calendars(professional_phones: set, calendar_service, dry_run: bool) 
                 stats['errores'] += 1
                 continue
 
-        # 2. Limpiar calendar_id en BD (queda como pendiente)
-        try:
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE professionals
-                    SET calendar_id = NULL
-                    WHERE phone = ?
-                """, (phone,))
-            print(f"      ✅ calendar_id limpiado en BD")
-            stats['eliminados'] += 1
-        except Exception as e:
-            print(f"      ❌ Error limpiando BD: {e}")
-            stats['errores'] += 1
+        # NOTA: NO se limpia el calendar_id del profesional.
+        # El calendario secundario "Turnos-X" fue eliminado de Google,
+        # pero el profesional sigue activo en BD con su configuración intacta.
+        print(f"      ✅ Calendario eliminado de Google (profesional conservado en BD)")
+        stats['eliminados'] += 1
 
     return stats
 
