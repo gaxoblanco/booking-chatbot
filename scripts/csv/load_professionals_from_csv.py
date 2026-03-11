@@ -10,6 +10,7 @@ Ejemplo:
 
 Uso:
     python scripts/load_professionals_from_csv.py profesionales.csv
+    docker exec whatsapp-demo python3 scripts/csv/load_professionals_from_csv.py /app/data/csv/profesionales_demo.csv
 """
 
 import sys
