@@ -1,19 +1,17 @@
 """
-Conversation States v3.0
+Conversation States v3.1
 =========================
 Define todos los estados posibles en el flujo conversacional.
 Usa un patrón de máquina de estados para gestionar interacciones del usuario.
 
-CAMBIOS EN v3.0:
-- ❌ Eliminado: ROLE_SELECTION (ya no preguntamos rol)
-- ❌ Eliminado: PROF_NEED_CERTIFICATE (sin registro desde bot)
-- ❌ Eliminado: PROF_NEED_ACCESS_KEY (sin claves de acceso)
-- ❌ Eliminado: PROF_FREE_SLOT_* (agenda en Google Calendar)
-- ❌ Eliminado: PROF_WEEK_SCHEDULE_* (agenda en Google Calendar)
+CAMBIOS EN v3.1:
 - ✅ Simplificado: Solo estados esenciales de cliente y menú profesional
+- ✅ Timeout de sesión: Sesiones expiran tras 30 min de inactividad
+- ✅ Mejor manejo de datos temporales en sesión
 """
 
 from enum import Enum
+from datetime import datetime, timedelta
 
 
 class UserRole(Enum):
@@ -38,33 +36,9 @@ class ConversationState(Enum):
     # ESTADOS INICIALES
     # ==========================================
     START = "start"  # Estado inicial
-    
-    # ❌ DEPRECATED en v3.0 - Ya no preguntamos "¿Eres cliente o profesional?"
-    # ROLE_SELECTION = "role_selection"
-
-    # ==========================================
-    # ESTADOS DE PROFESIONAL (Solo para registrados manualmente)
-    # ==========================================
-    
-    # ❌ DEPRECATED en v3.0 - No hay registro desde el bot
-    # PROF_NEED_CERTIFICATE = "prof_need_certificate"
-    # PROF_UPLOADING_CERTIFICATE = "prof_uploading_certificate"
-    # PROF_NEED_ACCESS_KEY = "prof_need_access_key"
-    # PROF_VERIFY_KEY = "prof_verify_key"
 
     # Menú principal (solo lectura para profesionales registrados)
     PROF_MAIN_MENU = "prof_main_menu"
-    
-    # ❌ DEPRECATED en v3.0 - Horarios se gestionan en Google Calendar
-    # PROF_FREE_SLOT_DATE = "prof_free_slot_date"
-    # PROF_FREE_SLOT_TIME = "prof_free_slot_time"
-    # PROF_FREE_SLOT_CONFIRM = "prof_free_slot_confirm"
-    # PROF_WEEK_SCHEDULE_QUICK = "prof_week_schedule_quick"
-    # PROF_WEEK_SCHEDULE_DAY = "prof_week_schedule_day"
-    # PROF_WEEK_SCHEDULE_TIME = "prof_week_schedule_time"
-    # PROF_WEEK_SCHEDULE_MORE = "prof_week_schedule_more"
-    # PROF_MANAGE_FREE_SLOTS = "prof_manage_free_slots"
-    # PROF_DELETE_FREE_SLOT = "prof_delete_free_slot"
 
     # Ver citas agendadas (lectura desde Google Calendar)
     PROF_VIEW_APPOINTMENTS = "prof_view_appointments"
@@ -156,6 +130,7 @@ class SessionData:
         self.role = UserRole.UNKNOWN
         self.temp_data = {}
         self.conversation_history = []
+        self.last_activity = datetime.now()  # Para control de expiración
 
     @property
     def state(self):
@@ -209,6 +184,13 @@ class SessionData:
         """Limpiar todos los datos temporales."""
         self.temp_data = {}
 
+    def touch(self):
+        """
+        Actualiza el timestamp de última actividad.
+        Llamar en cada mensaje recibido para evitar expiración prematura.
+        """
+        self.last_activity = datetime.now()
+
     def reset(self):
         """
         Resetear sesión completamente.
@@ -220,6 +202,7 @@ class SessionData:
         self.current_state = ConversationState.START
         self.role = UserRole.UNKNOWN
         self.temp_data = {}
+        self.last_activity = datetime.now()
 
 
 # ==========================================
@@ -234,6 +217,8 @@ class SessionManager:
     En producción, esto debería usar Redis o similar para persistencia.
     """
 
+    SESSION_TIMEOUT_MINUTES = 30  # Sesión expira tras 30 minutos de inactividad
+
     def __init__(self):
         """Inicializar gestor de sesiones."""
         self.sessions = {}
@@ -241,6 +226,9 @@ class SessionManager:
     def get_session(self, phone_number: str) -> SessionData:
         """
         Obtener o crear sesión para un usuario.
+        
+        Si la sesión existe pero lleva más de SESSION_TIMEOUT_MINUTES
+        sin actividad, se resetea automáticamente (como si fuera nueva).
         
         Args:
             phone_number: Número de teléfono del usuario
@@ -251,6 +239,16 @@ class SessionManager:
         if phone_number not in self.sessions:
             print(f"[SESSION] Nueva sesión creada para: {phone_number}")
             self.sessions[phone_number] = SessionData(phone_number)
+        else:
+            session = self.sessions[phone_number]
+            elapsed = datetime.now() - session.last_activity
+            if elapsed > timedelta(minutes=self.SESSION_TIMEOUT_MINUTES):
+                print(f"[SESSION] ⏰ Sesión expirada para {phone_number} "
+                      f"(inactiva {int(elapsed.total_seconds() / 60)} min) → Reset")
+                session.reset()
+
+        # Actualizar timestamp en cada acceso
+        self.sessions[phone_number].touch()
         return self.sessions[phone_number]
 
     def clear_session(self, phone_number: str):
