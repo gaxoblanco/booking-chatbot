@@ -162,6 +162,9 @@ class BotController:
             ConversationState.CLIENT_MULTIFILTER_MENU,  
             ConversationState.CLIENT_SHOW_RESULTS,      
             ConversationState.CLIENT_FILTER_INPUT,
+            ConversationState.CLIENT_VIEW_APPOINTMENTS,
+            ConversationState.CLIENT_APPOINTMENT_DETAIL,
+            ConversationState.PROF_MAIN_MENU,          
         ]
         
         if session.state in nlu_enabled_states:
