@@ -1708,6 +1708,18 @@ class ClientHandler:
             # Error al cargar - pero permitir volver con 0
             session.set_temp('cancel_error_shown', True)
             return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
+        
+        # ── Validación de ownership ─────────────────────────────────────────
+        # Verificar que la cita pertenece al usuario de la sesión.
+        # Defensivo: session.phone_number puede diferir de client_phone si
+        # hay un bug de estado o manipulación de sesión.
+        if apt.get('client_phone') != session.phone_number:
+            print(f"[CLIENT] 🚨 SECURITY: {session.phone_number} intentó acceder "
+                  f"a la cita #{appointment_id} que pertenece a {apt.get('client_phone')}")
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return "⚠️ No podemos procesar esa solicitud.\n\nEscribí *menu* para volver al inicio."
+        # ── Fin validación ownership ─────────────────────────────────────────
 
         # ==========================================
         # VALIDAR ESTADO DE LA CITA

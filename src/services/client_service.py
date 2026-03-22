@@ -669,6 +669,7 @@ class ClientService:
                 cursor.execute("""
                     SELECT 
                         a.id,
+                        a.client_phone,
                         a.google_event_id,
                         a.appointment_date,
                         a.start as time,
@@ -708,7 +709,22 @@ class ClientService:
                     })
                 
                 print(f"[CLIENT] ✅ Encontrados {len(appointments)} turnos activos")
-                return appointments
+                
+                # Doble verificación: filtrar por si acaso hay un bug en la query.
+                # Ningún turno de otro paciente debe llegar al caller.
+                appointments_safe = [
+                    a for a in appointments
+                    if a.get('client_phone') == phone_number
+                       or a.get('professional_phone') is not None  # turno sin client_phone explícito
+                ]
+                
+                # Si el filtro descartó algo, es un bug — loggearlo
+                discarded = len(appointments) - len(appointments_safe)
+                if discarded > 0:
+                    print(f"[CLIENT] 🚨 SECURITY: get_user_appointments filtró {discarded} "
+                          f"turnos que no pertenecían a {phone_number}")
+                
+                return appointments_safe
                 
         except Exception as e:
             print(f"[CLIENT] ❌ Error obteniendo turnos: {e}")

@@ -1051,13 +1051,17 @@ class Database:
 
     def get_appointment(self, appointment_id: int) -> Optional[Dict]:
         """
-        Get appointment by ID.
+        Obtiene una cita por ID.
+
+        SCOPE: admin / sistema — no filtra por cliente.
+        NO usar directamente en handlers de cliente sin verificar ownership.
+        Para verificar ownership usar: apt['client_phone'] == session.phone_number
 
         Args:
-            appointment_id: Appointment ID
+            appointment_id: ID de la cita
 
         Returns:
-            Dictionary with appointment data or None
+            Diccionario con datos completos o None si no existe
         """
         try:
             with self.get_connection() as conn:
@@ -1082,14 +1086,17 @@ class Database:
 
     def get_appointments_by_client(self, client_phone: str, from_date: str = None) -> List[Dict]:
         """
-        Obtiene citas de un cliente desde una fecha.
-        
+        Obtiene citas de un cliente.
+
+        SCOPE: client-scoped — siempre filtra por client_phone.
+        Seguro para uso directo en handlers de cliente.
+
         Args:
-            client_phone: Teléfono del cliente
+            client_phone: Teléfono del cliente (obligatorio — no tiene default)
             from_date: Fecha desde (YYYY-MM-DD), opcional
-        
+
         Returns:
-            Lista de citas
+            Lista de citas del cliente
         """
         query = """
             SELECT 
