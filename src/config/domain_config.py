@@ -195,6 +195,14 @@ class DomainConfig:
     MAX_ACTIVE_APPOINTMENTS_PER_CLIENT_PER_PROFESSIONAL = 2
     # Máximo de turnos activos totales en todo el sistema para un mismo número
     MAX_ACTIVE_APPOINTMENTS_GLOBAL_PER_CLIENT = 5
+    
+    # Rate limiting — protección del webhook contra abuso
+    # Máximo de mensajes permitidos por número en la ventana de tiempo
+    RATE_LIMIT_MAX_MESSAGES_PER_WINDOW = 10
+    # Tamaño de la ventana en segundos (60 = 1 minuto)
+    RATE_LIMIT_WINDOW_SECONDS = 60
+    # Minutos de bloqueo cuando se supera el límite
+    RATE_LIMIT_BLOCK_MINUTES = 5
 
     # Agendamiento para terceros
     ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?

@@ -14,6 +14,7 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from src.config.config import Config
 from src.config.domain_config import DomainConfig, load_preset
+from src.core.rate_limiter import rate_limiter
 
 # ==========================================
 # LOAD DOMAIN PRESET BEFORE IMPORTING BOT
@@ -75,6 +76,20 @@ def webhook():
     incoming_msg = request.values.get('Body', '').strip()
     sender = request.values.get('From', '')  # Format: whatsapp:+1234567890
     sender_clean = sender.replace('whatsapp:', '')  # Remove prefix for storage
+
+
+    # ── Rate limiting — bloqueo silencioso si supera el límite ──────────────
+    if rate_limiter.is_blocked(sender_clean):
+        # Respuesta vacía — no revelar el bloqueo al atacante
+        return '', 200
+
+    if not rate_limiter.record(sender_clean):
+        # record() activó el bloqueo en este mismo mensaje
+        return '', 200
+    # ── Fin rate limiting ────────────────────────────────────────────────────
+
+    # Log received message (for debugging)
+    print(f"\n{'='*50}")
 
     # Check if message contains media (images, PDFs, etc.)
     num_media = int(request.values.get('NumMedia', 0))
