@@ -766,6 +766,7 @@ class ClientService:
                     SELECT 
                         id,
                         client_phone,
+                        patient_phone,
                         professional_phone,
                         google_event_id,
                         appointment_date,
@@ -783,10 +784,28 @@ class ClientService:
                 
                 appointment = dict(row)
             
-            # Validar que pertenece al usuario
-            if appointment['client_phone'] != phone_number:
-                print(f"[CLIENT] ❌ Turno no pertenece al usuario {phone_number}")
+            # Validar que quien cancela es el dueño (client_phone)
+            # O el paciente registrado (patient_phone) — Issue 8
+            is_owner   = appointment['client_phone'] == phone_number
+            is_patient = (
+                appointment.get('patient_phone')
+                and appointment['patient_phone'] == phone_number
+            )
+
+            if not is_owner and not is_patient:
+                print(
+                    f"[CLIENT] ❌ Cancelación no autorizada: {phone_number} "
+                    f"no es dueño ni paciente del turno #{appointment_id}. "
+                    f"owner={appointment['client_phone']}, "
+                    f"patient={appointment.get('patient_phone')}"
+                )
                 return False
+
+            if is_patient and not is_owner:
+                print(
+                    f"[CLIENT] ✅ Cancelación autorizada: {phone_number} "
+                    f"es el paciente del turno #{appointment_id}"
+                )
             
             # Validar que no esté ya cancelado
             if 'cancelada' in appointment['status']:
@@ -870,6 +889,7 @@ class ClientService:
                     a.id,
                     a.google_event_id,
                     a.client_phone,
+                    a.patient_phone,
                     a.professional_phone,
                     a.appointment_date,
                     a.start as time,

@@ -489,6 +489,24 @@ class Database:
                 ON slot_offers(expires_at, status)
             """)
 
+            # ==========================================
+            # MIGRACIONES DEFENSIVAS
+            # Columnas agregadas en versiones posteriores.
+            # ALTER TABLE falla silenciosamente si ya existen.
+            # ==========================================
+            _safe_migrations = [
+                # Issue 7
+                "ALTER TABLE appointments ADD COLUMN cancellation_notified BOOLEAN DEFAULT 0",
+                "ALTER TABLE appointments ADD COLUMN last_google_sync TIMESTAMP DEFAULT NULL",
+                # Issue 8
+                "ALTER TABLE appointments ADD COLUMN patient_phone TEXT DEFAULT NULL",
+            ]
+            for migration_sql in _safe_migrations:
+                try:
+                    cursor.execute(migration_sql)
+                    conn.commit()
+                except Exception:
+                    pass  # Columna ya existe — ignorar
 
     # ==========================================
     # PROFESSIONAL CRUD OPERATIONS
@@ -1036,26 +1054,30 @@ class Database:
         duration_minutes: int = 50,
         session_type: str = 'primera_vez',
         modality: str = 'presencial',
-        google_event_id: str = None,  # ⭐ NUEVO PARÁMETRO
-        notes: str = None
+        google_event_id: str = None,
+        notes: str = None,
+        patient_phone: str = None      # ← Issue 8: teléfono del paciente real
     ) -> Optional[int]:
         """
         Create a new appointment.
-        
+
         Args:
-            client_phone: Client's phone
-            professional_phone: Professional's phone
-            appointment_date: Date in YYYY-MM-DD format
-            start: Start time in HH:MM format
-            end: End time in HH:MM format
-            duration_minutes: Duration in minutes
-            session_type: Type ('primera_vez', 'seguimiento', 'evaluacion')
-            modality: Modality ('presencial', 'virtual', 'ambas')
-            google_event_id: Google Calendar event ID (for sync) ⭐ NUEVO
-            notes: Optional notes
-        
+            client_phone:       Quien agenda (dueño del turno)
+            professional_phone: Teléfono del profesional
+            appointment_date:   Fecha en YYYY-MM-DD
+            start:              Hora inicio HH:MM
+            end:                Hora fin HH:MM
+            duration_minutes:   Duración en minutos
+            session_type:       'primera_vez' | 'seguimiento' | 'evaluacion'
+            modality:           'presencial' | 'virtual' | 'ambas'
+            google_event_id:    ID del evento en Google Calendar
+            notes:              Notas opcionales
+            patient_phone:      Teléfono del paciente real si se agendó para
+                                un tercero. Permite que el paciente cancele
+                                su propio turno desde su número.
+
         Returns:
-            appointment_id if successful, None if failed
+            appointment_id si exitoso, None si falló
         """
         try:
             with self.get_connection() as conn:
@@ -1064,12 +1086,14 @@ class Database:
                     INSERT INTO appointments (
                         client_phone, professional_phone, appointment_date,
                         start, end, duration_minutes,
-                        session_type, modality, google_event_id, notes, status
+                        session_type, modality, google_event_id, notes,
+                        patient_phone, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmada')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmada')
                 """, (client_phone, professional_phone, appointment_date,
-                    start, end, duration_minutes,
-                    session_type, modality, google_event_id, notes))
+                      start, end, duration_minutes,
+                      session_type, modality, google_event_id, notes,
+                      patient_phone))
                 
                 appointment_id = cursor.lastrowid
                 
