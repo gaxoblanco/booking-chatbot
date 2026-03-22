@@ -16,6 +16,9 @@ Uso:
     python scripts/load_patients_from_csv.py pacientes.csv --weeks 20
     python scripts/load_patients_from_csv.py pacientes.csv --dry-run
     python scripts/load_patients_from_csv.py --template
+
+     docker exec -it whatsapp-demo python3 scripts/csv/load_patients_from_csv.py /app/data/csv/pacientes_demo.csv --weeks 4
+     docker exec -it whatsapp-demo python3 scripts/csv/delete_patients_from_csv.py /app/data/csv/pacientes_demo.csv
 """
 
 import sys
@@ -70,10 +73,94 @@ def add_minutes(time_str: str, minutes: int) -> str:
 
 
 def build_rrule(weekday_idx: int, until: date) -> str:
-    """Construye RRULE semanal hasta la fecha indicada."""
+    """Construye RRULE semanal hasta la fecha indicada.
+    DEPRECATED: usar build_rrule_from_sessions() para soportar múltiples frecuencias.
+    """
     day = RRULE_DAY[weekday_idx]
     end = until.strftime('%Y%m%dT235959Z')
     return f'RRULE:FREQ=WEEKLY;BYDAY={day};UNTIL={end}'
+
+
+# Valores válidos de sessions_per_month y su descripción legible
+VALID_SESSIONS_PER_MONTH = {
+    1: 'mensual',
+    2: 'quincenal',
+    4: 'semanal',
+}
+# Nota: 3 sesiones/mes no está soportado por limitaciones del estándar RRULE.
+# El sistema rechaza filas con sessions_per_month=3 con mensaje explicativo.
+
+DEFAULT_SESSIONS_PER_MONTH = 4  # semanal — compatibilidad con CSVs existentes sin la columna
+
+# Valores válidos de week_of_month (solo aplica para sessions_per_month=1)
+# -1 = último del mes, 1-4 = 1ra a 4ta semana del mes
+VALID_WEEK_OF_MONTH = {-1, 1, 2, 3, 4}
+
+
+def week_of_month(d: date) -> int:
+    """
+    Retorna qué número de semana dentro del mes es la fecha d.
+    Ejemplo: si d es el 2do miércoles del mes → retorna 2.
+    Si cae en la 5ta semana → retorna -1 (último del mes, más robusto en RRULE).
+    """
+    nth = (d.day - 1) // 7 + 1
+    return -1 if nth == 5 else nth
+
+
+def build_rrule_from_sessions(weekday_idx: int, until: date, sessions_per_month: int,
+                               first_date: date,
+                               week_of_month_override: Optional[int] = None) -> str:
+    """
+    Construye la RRULE correcta según la frecuencia mensual deseada.
+
+    Args:
+        weekday_idx:            Día de la semana (0=lunes ... 6=domingo)
+        until:                  Fecha límite de la recurrencia
+        sessions_per_month:     Frecuencia mensual — solo acepta 1, 2 o 4
+        first_date:             Primera fecha real de la sesión
+        week_of_month_override: Semana del mes explícita para casos mensuales.
+                                Valores válidos: 1, 2, 3, 4, -1 (último).
+                                Si es None, se infiere desde first_date.
+                                Solo aplica cuando sessions_per_month=1, se ignora en otros casos.
+
+    Returns:
+        String RRULE válido para Google Calendar API
+
+    Raises:
+        ValueError: si sessions_per_month no es 1, 2 ni 4
+
+    Ejemplos:
+        sessions_per_month=4                    → RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;UNTIL=...
+        sessions_per_month=2                    → RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;UNTIL=...
+        sessions_per_month=1, override=None     → RRULE:FREQ=MONTHLY;BYDAY=2MO;UNTIL=...  (inferido)
+        sessions_per_month=1, override=1        → RRULE:FREQ=MONTHLY;BYDAY=1MO;UNTIL=...  (explícito)
+        sessions_per_month=1, override=-1       → RRULE:FREQ=MONTHLY;BYDAY=-1MO;UNTIL=... (último)
+    """
+    if sessions_per_month not in VALID_SESSIONS_PER_MONTH:
+        raise ValueError(
+            f"sessions_per_month={sessions_per_month} no está soportado. "
+            f"Valores válidos: {sorted(VALID_SESSIONS_PER_MONTH.keys())} "
+            f"(3 sesiones/mes no es representable en RRULE estándar)"
+        )
+
+    day       = RRULE_DAY[weekday_idx]
+    until_str = until.strftime('%Y%m%dT235959Z')
+
+    if sessions_per_month == 4:
+        # Semanal: cada 1 semana
+        return f'RRULE:FREQ=WEEKLY;INTERVAL=1;BYDAY={day};UNTIL={until_str}'
+
+    if sessions_per_month == 2:
+        # Quincenal: cada 2 semanas
+        return f'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY={day};UNTIL={until_str}'
+
+    if sessions_per_month == 1:
+        # Mensual: usar week_of_month explícito si viene, sino inferir desde first_date
+        if week_of_month_override is not None:
+            nth = week_of_month_override
+        else:
+            nth = week_of_month(first_date)
+        return f'RRULE:FREQ=MONTHLY;BYDAY={nth}{day};UNTIL={until_str}'
 
 
 def dt_iso(d: date, t: str) -> str:
@@ -178,7 +265,7 @@ def write_rejected_csv(rechazados: List[Dict], output_dir: str = '/app/data/rech
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     fieldnames = ['phone', 'name', 'professional_phone', 'weekday',
-                  'start_time', 'duration_minutes', 'motivo', 'ocupado_por']
+                  'start_time', 'duration_minutes', 'sessions_per_month', 'motivo', 'ocupado_por']
 
     with open(filepath, 'w', encoding='utf-8', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -242,6 +329,78 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
                 modality = row.get('modality', 'presencial').strip() or 'presencial'
                 notes    = row.get('notes',    '').strip() or None
 
+                # sessions_per_month — opcional, default 4 (semanal)
+                # Valores válidos: 1 (mensual), 2 (quincenal), 4 (semanal)
+                # Valor 3 rechazado: no representable en RRULE estándar
+                raw_spm = row.get('sessions_per_month', '').strip()
+                if raw_spm == '':
+                    sessions_per_month = DEFAULT_SESSIONS_PER_MONTH
+                else:
+                    try:
+                        sessions_per_month = int(raw_spm)
+                    except ValueError:
+                        msg = f"sessions_per_month inválido: '{raw_spm}' (debe ser 1, 2 o 4)"
+                        print(f"   ❌ {msg}")
+                        stats['errores'] += 1
+                        errores.append((n, name, msg))
+                        continue
+
+                    if sessions_per_month not in VALID_SESSIONS_PER_MONTH:
+                        if sessions_per_month == 3:
+                            msg = (
+                                "sessions_per_month=3 no está soportado. "
+                                "3 sesiones/mes no es representable en RRULE estándar. "
+                                "Usá 2 (quincenal) o 4 (semanal) y coordiná la excepción manualmente."
+                            )
+                        else:
+                            msg = (
+                                f"sessions_per_month={sessions_per_month} inválido. "
+                                f"Valores válidos: 1 (mensual), 2 (quincenal), 4 (semanal)"
+                            )
+                        print(f"   ❌ {msg}")
+                        stats['errores'] += 1
+                        errores.append((n, name, msg))
+                        rechazados.append({
+                            'phone': phone, 'name': name,
+                            'professional_phone': prof_phone, 'weekday': weekday_str,
+                            'start_time': start_time, 'duration_minutes': duration_minutes,
+                            'sessions_per_month': sessions_per_month,
+                            'motivo': msg, 'ocupado_por': '',
+                        })
+                        continue
+
+                # week_of_month — opcional, solo aplica para sessions_per_month=1 (mensual)
+                # Valores válidos: 1, 2, 3, 4, -1 (último del mes)
+                # Si está vacío → se infiere automáticamente desde la primera fecha
+                raw_wom = row.get('week_of_month', '').strip()
+                week_of_month_override = None  # default: inferir desde first_date
+
+                if raw_wom != '':
+                    try:
+                        week_of_month_override = int(raw_wom)
+                    except ValueError:
+                        msg = f"week_of_month inválido: '{raw_wom}' (debe ser 1, 2, 3, 4 o -1)"
+                        print(f"   ❌ {msg}")
+                        stats['errores'] += 1
+                        errores.append((n, name, msg))
+                        continue
+
+                    if week_of_month_override not in VALID_WEEK_OF_MONTH:
+                        msg = (
+                            f"week_of_month={week_of_month_override} inválido. "
+                            f"Valores válidos: 1, 2, 3, 4, -1 (último del mes)"
+                        )
+                        print(f"   ❌ {msg}")
+                        stats['errores'] += 1
+                        errores.append((n, name, msg))
+                        continue
+
+                    # Advertencia si se usa con frecuencia no mensual (no es error fatal)
+                    if sessions_per_month != 1:
+                        freq_label = VALID_SESSIONS_PER_MONTH[sessions_per_month]
+                        print(f"   ⚠️  week_of_month={week_of_month_override} se ignora "
+                              f"para frecuencia {freq_label} (solo aplica con sessions_per_month=1)")
+
                 sep('-')
                 print(f"Fila {n}: {name} ({phone})")
                 sep('-')
@@ -289,11 +448,24 @@ def load_patients(csv_path: str, weeks: int, dry_run: bool):
                 # ── Calcular horarios ─────────────────────────────────────
                 end_time   = add_minutes(start_time, duration_minutes)
                 first_date = next_weekday_date(weekday_idx)
-                rrule      = build_rrule(weekday_idx, until_date)
+                rrule      = build_rrule_from_sessions(weekday_idx, until_date,
+                                                       sessions_per_month, first_date,
+                                                       week_of_month_override)
+                freq_label = VALID_SESSIONS_PER_MONTH[sessions_per_month]
+
+                # Para mensual: mostrar qué semana del mes se usó (explícita o inferida)
+                if sessions_per_month == 1:
+                    nth_used   = week_of_month_override if week_of_month_override is not None \
+                                 else week_of_month(first_date)
+                    nth_origen = 'explícito' if week_of_month_override is not None else 'inferido'
+                    wom_info   = f" | semana del mes: {nth_used} ({nth_origen})"
+                else:
+                    wom_info   = ''
 
                 print(f"   👤 Paciente    : {name} ({phone})")
                 print(f"   👨‍⚕️ Profesional : {professional['name']}")
                 print(f"   📅 Día         : {weekday_str} | {start_time}–{end_time} ({duration_minutes} min)")
+                print(f"   🔁 Frecuencia  : {freq_label} ({sessions_per_month}x/mes){wom_info}")
                 print(f"   📆 Primera     : {first_date}")
                 print(f"   🔁 RRULE       : {rrule}")
 
@@ -427,15 +599,36 @@ def create_template():
     path = 'pacientes_template.csv'
     with open(path, 'w', encoding='utf-8', newline='') as f:
         w = csv.writer(f)
+        # Encabezado con todas las columnas
         w.writerow(['phone', 'name', 'professional_phone', 'weekday',
-                    'start_time', 'duration_minutes', 'email', 'modality', 'notes'])
-        w.writerow(['+5491112345678', 'Juan Pérez',   '+5491100000001', 'martes',  '10:00', '50', 'juan@email.com', 'presencial', ''])
-        w.writerow(['+5491187654321', 'María García',  '+5491100000002', 'jueves',  '14:00', '50', '',               'virtual',    ''])
-        w.writerow(['+5491156789012', 'Carlos López',  '+5491100000001', 'viernes', '09:00', '50', '',               'presencial', 'Paciente fijo'])
+                    'start_time', 'duration_minutes', 'sessions_per_month',
+                    'week_of_month', 'email', 'modality', 'notes'])
+        # Semanal — week_of_month vacío (no aplica)
+        w.writerow(['+5491112345678', 'Juan Pérez',   '+5491100000001', 'martes',  '10:00', '50', '4', '',  'juan@email.com', 'presencial', 'Semanal'])
+        # Quincenal — week_of_month vacío (no aplica)
+        w.writerow(['+5491187654321', 'María García', '+5491100000002', 'jueves',  '14:00', '50', '2', '',  '',               'virtual',    'Quincenal'])
+        # Mensual con semana explícita — 1er viernes del mes
+        w.writerow(['+5491156789012', 'Carlos López', '+5491100000001', 'viernes', '09:00', '50', '1', '1', '',               'presencial', 'Mensual - 1er viernes'])
+        # Mensual con semana explícita — último jueves del mes
+        w.writerow(['+5491198765432', 'Ana Martínez', '+5491100000001', 'jueves',  '11:00', '50', '1', '-1','',               'virtual',    'Mensual - último jueves'])
+        # Mensual sin semana explícita — se infiere desde la primera fecha
+        w.writerow(['+5491167891234', 'Pedro Suárez', '+5491100000002', 'lunes',   '16:00', '50', '1', '',  '',               'presencial', 'Mensual - semana inferida'])
 
     print(f"✅ Template creado: {path}")
     print(f"\nRequeridas : phone, name, professional_phone, weekday, start_time, duration_minutes")
-    print(f"Opcionales : email, modality, notes")
+    print(f"Opcionales : sessions_per_month (default: 4), week_of_month, email, modality, notes")
+    print(f"\nValores de sessions_per_month:")
+    print(f"   4 → semanal    (default, compatible con CSVs sin esta columna)")
+    print(f"   2 → quincenal")
+    print(f"   1 → mensual")
+    print(f"   3 → NO soportado (rechazado con mensaje explicativo)")
+    print(f"\nValores de week_of_month (solo aplica con sessions_per_month=1):")
+    print(f"   1  → 1er semana del mes  (ej: 1er jueves)")
+    print(f"   2  → 2da semana del mes")
+    print(f"   3  → 3ra semana del mes")
+    print(f"   4  → 4ta semana del mes")
+    print(f"   -1 → última semana del mes")
+    print(f"   vacío → se infiere automáticamente desde la primera fecha calculada")
     print(f"\nDías válidos: lunes, martes, miércoles, jueves, viernes, sábado, domingo")
     print(f"\nEjecutar con:")
     print(f"   python scripts/load_patients_from_csv.py {path}")

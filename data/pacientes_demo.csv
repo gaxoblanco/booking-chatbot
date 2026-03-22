@@ -1,16 +1,16 @@
-phone,name,professional_phone,weekday,start_time,duration_minutes,modality,notes
-+5491155001001,Lucía Fernández,+5491100000001,lunes,09:00,50,presencial,Ansiedad generalizada - TCC
-+5491155001002,Martín Gómez,+5491100000001,lunes,11:00,80,presencial,Depresión - sesiones de 80 min por indicación
-+5491155001003,Valentina López,+5491100000001,lunes,14:30,50,virtual,Terapia de pareja - asiste sola por ahora
-+5491155001004,Diego Torres,+5491100000001,martes,08:00,50,presencial,Ataques de pánico - horario temprano por trabajo
-+5491155001005,Camila Ruiz,+5491100000001,martes,12:00,50,presencial,Mindfulness y gestión del estrés
-+5491155001006,Sebastián Morales,+5491100000001,martes,17:00,50,virtual,Fobia social - prefiere virtual
-+5491155001007,Florencia Pérez,+5491100000001,miércoles,09:30,50,presencial,TCC - lleva 6 meses en tratamiento
-+5491155001008,Tomás Sánchez,+5491100000001,miércoles,16:00,100,presencial,Terapia de pareja - sesiones de 100 min con su pareja
-+5491155001009,Agustina Díaz,+5491100000001,jueves,10:00,50,virtual,Duelo - paciente fija desde 2023
-+5491155001010,Ramiro Castro,+5491100000001,jueves,18:00,50,presencial,Ansiedad laboral - único horario disponible post trabajo
-+5491155001011,Micaela Vega,+5491100000001,viernes,09:00,50,presencial,Baja autoestima - inicio de tratamiento
-+5491155001012,Ignacio Herrera,+5491100000001,viernes,11:00,50,virtual,TOC - seguimiento mensual previo ahora semanal
-+5491155001013,Rocío Álvarez,+5491100000001,viernes,15:00,80,presencial,Trauma - EMDR en proceso requiere 80 min
-+5491155001014,Facundo Méndez,+5491100000001,sábado,10:00,50,presencial,Único día disponible por viajes laborales
-+5491155001015,Julia Navarro,+5491100000001,sábado,11:00,50,virtual,Paciente del interior - solo puede virtual
+phone,name,professional_phone,weekday,start_time,duration_minutes,sessions_per_month,week_of_month,modality,notes
++5491155001001,Lucía Fernández,+5491100000001,lunes,09:00,50,4,,presencial,Ansiedad generalizada - TCC
++5491155001002,Martín Gómez,+5491100000001,lunes,11:00,80,4,,presencial,Depresión - sesiones de 80 min por indicación
++5491155001003,Valentina López,+5491100000001,lunes,14:30,50,2,,virtual,Terapia de pareja - asiste sola por ahora
++5491155001004,Diego Torres,+5491100000001,martes,08:00,50,4,,presencial,Ataques de pánico - horario temprano por trabajo
++5491155001005,Camila Ruiz,+5491100000001,martes,12:00,50,4,,presencial,Mindfulness y gestión del estrés
++5491155001006,Sebastián Morales,+5491100000001,martes,17:00,50,2,,virtual,Fobia social - prefiere virtual
++5491155001007,Florencia Pérez,+5491100000001,miércoles,09:30,50,4,,presencial,TCC - lleva 6 meses en tratamiento
++5491155001008,Tomás Sánchez,+5491100000001,miércoles,16:00,100,2,,presencial,Terapia de pareja - sesiones de 100 min con su pareja
++5491155001009,Agustina Díaz,+5491100000001,jueves,10:00,50,1,2,virtual,Duelo - paciente fija desde 2023
++5491155001010,Ramiro Castro,+5491100000001,jueves,18:00,50,4,,presencial,Ansiedad laboral - único horario disponible post trabajo
++5491155001011,Micaela Vega,+5491100000001,viernes,09:00,50,4,,presencial,Baja autoestima - inicio de tratamiento
++5491155001012,Ignacio Herrera,+5491100000001,viernes,11:00,50,4,,virtual,TOC - seguimiento mensual previo ahora semanal
++5491155001013,Rocío Álvarez,+5491100000001,viernes,15:00,80,1,1,presencial,Trauma - EMDR en proceso requiere 80 min
++5491155001014,Facundo Méndez,+5491100000001,sábado,10:00,50,1,-1,presencial,Único día disponible por viajes laborales
++5491155001015,Julia Navarro,+5491100000001,sábado,11:00,50,2,,virtual,Paciente del interior - solo puede virtual
