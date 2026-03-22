@@ -4,7 +4,7 @@ Database Tests
 Test CRUD operations and data integrity.
 """
 
-from database import Database
+from src.database.database import Database
 import sys
 import os
 from datetime import datetime, timedelta
@@ -201,6 +201,80 @@ def test_database():
     print("="*50)
     print("✅ ALL DATABASE TESTS PASSED!")
     print("="*50 + "\n")
+
+def test_count_active_appointments_for_client_with_professional():
+    """
+    Verifica que el contador de turnos activos por cliente+profesional funciona.
+    
+    Casos:
+    - 0 turnos: retorna 0
+    - 1 turno activo: retorna 1
+    - 2 turnos (1 activo + 1 cancelado): retorna 1 (solo cuenta activos)
+    - 2 turnos activos: retorna 2
+    """
+    from src.database.database import db
+
+    CLIENT  = "+5490000000099"
+    PROF    = "+5490000000001"
+    DATE_1  = "2099-01-10"  # Fecha futura para no colisionar
+    DATE_2  = "2099-01-11"
+    DATE_3  = "2099-01-12"
+
+    # Setup: limpiar datos de prueba previos
+    with db.get_connection() as conn:
+        conn.execute(
+            "DELETE FROM appointments WHERE client_phone = ? AND professional_phone = ?",
+            (CLIENT, PROF)
+        )
+
+    # Caso 1: sin turnos → 0
+    count = db.count_active_appointments_for_client_with_professional(CLIENT, PROF)
+    assert count == 0, f"Esperado 0, obtenido {count}"
+
+    # Insertar 1 turno confirmado
+    with db.get_connection() as conn:
+        conn.execute("""
+            INSERT INTO appointments
+                (client_phone, professional_phone, appointment_date, start, end, status)
+            VALUES (?, ?, ?, '10:00', '11:00', 'confirmada')
+        """, (CLIENT, PROF, DATE_1))
+
+    # Caso 2: 1 turno activo → 1
+    count = db.count_active_appointments_for_client_with_professional(CLIENT, PROF)
+    assert count == 1, f"Esperado 1, obtenido {count}"
+
+    # Insertar 1 turno cancelado (no debe contar)
+    with db.get_connection() as conn:
+        conn.execute("""
+            INSERT INTO appointments
+                (client_phone, professional_phone, appointment_date, start, end, status)
+            VALUES (?, ?, ?, '10:00', '11:00', 'cancelada_cliente')
+        """, (CLIENT, PROF, DATE_2))
+
+    # Caso 3: 1 activo + 1 cancelado → sigue siendo 1
+    count = db.count_active_appointments_for_client_with_professional(CLIENT, PROF)
+    assert count == 1, f"Esperado 1 (ignorando cancelado), obtenido {count}"
+
+    # Insertar 1 turno pendiente
+    with db.get_connection() as conn:
+        conn.execute("""
+            INSERT INTO appointments
+                (client_phone, professional_phone, appointment_date, start, end, status)
+            VALUES (?, ?, ?, '10:00', '11:00', 'pendiente_confirmacion')
+        """, (CLIENT, PROF, DATE_3))
+
+    # Caso 4: 1 confirmado + 1 pendiente → 2
+    count = db.count_active_appointments_for_client_with_professional(CLIENT, PROF)
+    assert count == 2, f"Esperado 2, obtenido {count}"
+
+    # Teardown: limpiar
+    with db.get_connection() as conn:
+        conn.execute(
+            "DELETE FROM appointments WHERE client_phone = ? AND professional_phone = ?",
+            (CLIENT, PROF)
+        )
+
+    print("✅ test_count_active_appointments_for_client_with_professional — OK")
 
 
 if __name__ == "__main__":

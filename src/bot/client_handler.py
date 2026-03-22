@@ -2527,6 +2527,11 @@ O escribe '0' para volver al menú."""
         User must confirm with '1' or cancel with '0'.
         """
         from datetime import datetime
+        from src.services.appointment_service import appointment_service
+        from src.database.database import db
+        # Protege la agenda del profesional contra bloqueos intencionales.
+        from src.database.database import db
+        from src.config.domain_config import DomainConfig
         
         # Check for cancellation
         if message == '0':
@@ -2560,12 +2565,34 @@ O escribe '0' para volver al menú."""
             return "❌ Error: Información incompleta.\n\n" + client_messages.CLIENT_MAIN_MENU
         
         # ✅ CREAR CITA EN GOOGLE CALENDAR
-        from src.services.appointment_service import appointment_service
-        from src.database.database import db
         
         # Obtener nombre del cliente
         client = db.get_client(session.phone_number)
         client_name = client.get('name', 'Cliente') if client else 'Cliente'
+
+        # ── Validación de límite de turnos por cliente+profesional ──────────
+
+        professional_phone = professional['phone']
+
+        active_count = db.count_active_appointments_for_client_with_professional(
+            client_phone=session.phone_number,
+            professional_phone=professional_phone
+        )
+
+        if active_count >= DomainConfig.MAX_ACTIVE_APPOINTMENTS_PER_CLIENT_PER_PROFESSIONAL:
+            print(f"[CLIENT] ⚠️ Límite de turnos alcanzado: {session.phone_number} "
+                  f"tiene {active_count} turnos activos con {professional_phone}")
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            prof_name = professional.get('name', 'este profesional')
+            return (
+                f"⚠️ Ya tenés {active_count} turno{'s' if active_count > 1 else ''} "
+                f"activo{'s' if active_count > 1 else ''} con {prof_name}.\n\n"
+                f"Si necesitás otro horario, primero cancelá uno de los turnos existentes.\n\n"
+                f"Escribí *mis turnos* para verlos."
+            )
+        # ── Fin validación ──────────────────────────────────────────────────
+
         
         try:
             # Crear en Google Calendar

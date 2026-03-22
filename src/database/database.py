@@ -1114,6 +1114,45 @@ class Database:
             columns = [desc[0] for desc in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
+    def count_active_appointments_for_client_with_professional(
+        self,
+        client_phone: str,
+        professional_phone: str
+    ) -> int:
+        """
+        Cuenta turnos activos de un cliente con un profesional específico.
+
+        Se usa para detectar abuso: un mismo número agendando múltiples
+        turnos con el mismo profesional para bloquear su agenda.
+
+        Args:
+            client_phone: Teléfono del cliente
+            professional_phone: Teléfono del profesional
+
+        Returns:
+            Cantidad de turnos con status 'pendiente_confirmacion' o 'confirmada'
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) as count
+                    FROM appointments
+                    WHERE client_phone = ?
+                    AND professional_phone = ?
+                    AND status IN ('pendiente_confirmacion', 'confirmada')
+                """, (client_phone, professional_phone))
+
+                row = cursor.fetchone()
+                count = row['count'] if row else 0
+
+                print(f"[DB] 📊 Turnos activos de {client_phone} con {professional_phone}: {count}")
+                return count
+
+        except Exception as e:
+            print(f"[DB] ❌ Error contando turnos activos: {e}")
+            return 0
+        
     def get_appointments_by_professional(
         self,
         professional_phone: str,

@@ -189,6 +189,13 @@ class DomainConfig:
     CANCELLATION_HOURS_LIMIT = 22  # Horas mínimas de anticipación para cancelar
     RESCHEDULE_HOURS_LIMIT = 22  # Horas mínimas de anticipación para reprogramar
 
+    # Límites de abuso — protección de agenda
+    # Máximo de turnos activos simultáneos que un mismo número puede tener
+    # con el mismo profesional (status: pendiente_confirmacion o confirmada)
+    MAX_ACTIVE_APPOINTMENTS_PER_CLIENT_PER_PROFESSIONAL = 2
+    # Máximo de turnos activos totales en todo el sistema para un mismo número
+    MAX_ACTIVE_APPOINTMENTS_GLOBAL_PER_CLIENT = 5
+
     # Agendamiento para terceros
     ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?
     REQUIRE_PATIENT_DATA = True  # Si es para terceros, ¿pedir datos del paciente?
