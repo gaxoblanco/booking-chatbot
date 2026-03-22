@@ -1152,6 +1152,46 @@ class Database:
         except Exception as e:
             print(f"[DB] ❌ Error contando turnos activos: {e}")
             return 0
+
+    def count_active_appointments_for_client(
+        self,
+        client_phone: str
+    ) -> int:
+        """
+        Cuenta el total de turnos activos de un cliente en todo el sistema.
+
+        Se usa para detectar abuso global: un mismo número agendando turnos
+        con múltiples profesionales para degradar el servicio.
+
+        A diferencia de count_active_appointments_for_client_with_professional(),
+        este método no filtra por profesional — cuenta todos los turnos activos
+        del número sin importar con quién estén agendados.
+
+        Args:
+            client_phone: Teléfono del cliente
+
+        Returns:
+            Cantidad total de turnos con status 'pendiente_confirmacion' o 'confirmada'
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT COUNT(*) as count
+                    FROM appointments
+                    WHERE client_phone = ?
+                    AND status IN ('pendiente_confirmacion', 'confirmada')
+                """, (client_phone,))
+
+                row = cursor.fetchone()
+                count = row['count'] if row else 0
+
+                print(f"[DB] 📊 Turnos activos globales de {client_phone}: {count}")
+                return count
+
+        except Exception as e:
+            print(f"[DB] ❌ Error contando turnos activos globales: {e}")
+            return 0
         
     def get_appointments_by_professional(
         self,

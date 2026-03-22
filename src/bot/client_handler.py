@@ -2529,59 +2529,71 @@ O escribe '0' para volver al menú."""
         from datetime import datetime
         from src.services.appointment_service import appointment_service
         from src.database.database import db
-        # Protege la agenda del profesional contra bloqueos intencionales.
-        from src.database.database import db
         from src.config.domain_config import DomainConfig
-        
+
         # Check for cancellation
         if message == '0':
             professional = session.get_temp('selected_professional')
             search_date = session.get_temp('search_date')
-            
+
             session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
-            # Format professional detail with slots
             search_date = session.get_temp('search_date')
             time_preference = session.get_temp('time_preference')
-            
+
             return client_service.format_professional_detail_with_slots(
                 professional=professional,
                 date_str=search_date,
                 time_preference=time_preference
             )
-        
+
         # Validate confirmation
         if message != '1':
             return "⚠️ Por favor, ingresa:\n\n1️⃣ Para confirmar\n0️⃣ Para cancelar"
-        
+
         # Get booking data
         professional = session.get_temp('selected_professional')
         booking_date = session.get_temp('booking_date')
         booking_start_time = session.get_temp('booking_start_time')
         booking_end_time = session.get_temp('booking_end_time')
-        
+
         if not all([professional, booking_date, booking_start_time, booking_end_time]):
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return "❌ Error: Información incompleta.\n\n" + client_messages.CLIENT_MAIN_MENU
-        
-        # ✅ CREAR CITA EN GOOGLE CALENDAR
-        
+
         # Obtener nombre del cliente
         client = db.get_client(session.phone_number)
         client_name = client.get('name', 'Cliente') if client else 'Cliente'
 
-        # ── Validación de límite de turnos por cliente+profesional ──────────
-
         professional_phone = professional['phone']
 
+        # ── Validación global: límite de turnos en todo el sistema ──────────────
+        # Se ejecuta primero — consulta más barata (sin filtro por profesional).
+        global_count = db.count_active_appointments_for_client(
+            client_phone=session.phone_number
+        )
+
+        if global_count >= DomainConfig.MAX_ACTIVE_APPOINTMENTS_GLOBAL_PER_CLIENT:
+            print(f"[CLIENT] ⚠️ Límite global alcanzado: {session.phone_number} "
+                f"tiene {global_count} turnos activos en total")
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return (
+                f"⚠️ Tenés {global_count} turnos activos en total.\n\n"
+                f"Para agendar uno nuevo, primero cancelá alguno de los existentes.\n\n"
+                f"Escribí *mis turnos* para verlos."
+            )
+        # ── Fin validación global ────────────────────────────────────────────────
+
+        # ── Validación por profesional: protege agenda individual ───────────────
         active_count = db.count_active_appointments_for_client_with_professional(
             client_phone=session.phone_number,
             professional_phone=professional_phone
         )
 
         if active_count >= DomainConfig.MAX_ACTIVE_APPOINTMENTS_PER_CLIENT_PER_PROFESSIONAL:
-            print(f"[CLIENT] ⚠️ Límite de turnos alcanzado: {session.phone_number} "
-                  f"tiene {active_count} turnos activos con {professional_phone}")
+            print(f"[CLIENT] ⚠️ Límite por profesional alcanzado: {session.phone_number} "
+                f"tiene {active_count} turnos activos con {professional_phone}")
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             prof_name = professional.get('name', 'este profesional')
@@ -2591,9 +2603,8 @@ O escribe '0' para volver al menú."""
                 f"Si necesitás otro horario, primero cancelá uno de los turnos existentes.\n\n"
                 f"Escribí *mis turnos* para verlos."
             )
-        # ── Fin validación ──────────────────────────────────────────────────
+        # ── Fin validación por profesional ───────────────────────────────────────
 
-        
         try:
             # Crear en Google Calendar
             google_event_id = appointment_service.create_appointment(
@@ -2606,19 +2617,19 @@ O escribe '0' para volver al menú."""
                 appointment_type="Consulta"
             )
             appointment_id = google_event_id
-            
+
             print(f"[CLIENT] ✅ Cita creada en Google Calendar:")
             print(f"         Event ID: {google_event_id}")
             print(f"         Cliente: {session.phone_number} ({client_name})")
             print(f"         Profesional: {professional['phone']}")
             print(f"         Fecha: {booking_date}")
             print(f"         Horario: {booking_start_time} - {booking_end_time}")
-            
+
         except Exception as e:
             print(f"[CLIENT] ❌ Error al crear cita en Google Calendar: {e}")
             import traceback
             traceback.print_exc()
-            
+
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return f"""❌ Error al agendar la cita.
@@ -2626,19 +2637,19 @@ O escribe '0' para volver al menú."""
     Por favor, intenta nuevamente o contacta al profesional directamente.
 
     {client_messages.CLIENT_MAIN_MENU}"""
-        
+
         session.set_temp('appointment_id', appointment_id)
         session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRMED)
-        
+
         # Format success message
         date_obj = datetime.strptime(booking_date, "%Y-%m-%d")
         date_formatted = date_obj.strftime("%d/%m/%Y")
         day_names = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
         day_name = day_names[date_obj.weekday()]
-        
+
         prof_name = professional.get('name', 'Profesional')
         prof_phone = professional.get('phone', '')
-        
+
         return f"""✅ ¡CITA AGENDADA CON ÉXITO!
     {'=' * 40}
 
@@ -2660,7 +2671,7 @@ O escribe '0' para volver al menú."""
     1️⃣ Ver mis citas
     2️⃣ Nueva búsqueda
     0️⃣ Menú principal"""
-
+    
     def handle_client_booking_confirmed(self, session: SessionData, message: str) -> str:
         """
         Handle post-booking options.
