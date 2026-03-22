@@ -910,6 +910,11 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
+        # Validación defensiva de formato — segunda línea de defensa
+        from src.core.validators import validate_phone_e164
+        if not validate_phone_e164(phone):
+            print(f"[DB] ❌ add_client rechazado: formato de phone inválido: {phone!r}")
+            return False
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()

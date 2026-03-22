@@ -72,29 +72,31 @@ def webhook():
     Returns:
     - TwiML response with bot's reply
     """
-    # Extract message data from Twilio request
+    # Extraer datos del request de Twilio
     incoming_msg = request.values.get('Body', '').strip()
-    sender = request.values.get('From', '')  # Format: whatsapp:+1234567890
-    sender_clean = sender.replace('whatsapp:', '')  # Remove prefix for storage
+    sender = request.values.get('From', '')       # Formato Twilio: 'whatsapp:+54...'
+    num_media = int(request.values.get('NumMedia', 0))
 
+    # ── Validación de formato E.164 ──────────────────────────────────────────
+    # Limpia el prefijo 'whatsapp:' y valida que sea un número real.
+    # Si es inválido, ignorar — no procesar ni responder.
+    from src.core.validators import normalize_whatsapp_phone
+    sender_clean = normalize_whatsapp_phone(sender)
 
-    # ── Rate limiting — bloqueo silencioso si supera el límite ──────────────
+    if sender_clean is None:
+        print(f"[WEBHOOK] ⚠️ Mensaje ignorado: número inválido '{sender}'")
+        return '', 400
+    # ── Fin validación E.164 ─────────────────────────────────────────────────
+
+    # ── Rate limiting ────────────────────────────────────────────────────────
     if rate_limiter.is_blocked(sender_clean):
-        # Respuesta vacía — no revelar el bloqueo al atacante
         return '', 200
 
     if not rate_limiter.record(sender_clean):
-        # record() activó el bloqueo en este mismo mensaje
         return '', 200
     # ── Fin rate limiting ────────────────────────────────────────────────────
 
-    # Log received message (for debugging)
-    print(f"\n{'='*50}")
-
-    # Check if message contains media (images, PDFs, etc.)
-    num_media = int(request.values.get('NumMedia', 0))
-
-    # Log received message (for debugging)
+    # Log del mensaje recibido
     print(f"\n{'='*50}")
     print(f"📩 MESSAGE RECEIVED")
     print(f"{'='*50}")
@@ -103,31 +105,22 @@ def webhook():
     print(f"Media files: {num_media}")
     print(f"{'='*50}\n")
 
-    # ✅ CAMBIO: Ya no procesamos certificados
-    # Determine response based on message type
+    # Determinar tipo de respuesta
     if num_media > 0:
-        # ❌ ANTES: Handle media upload (certificate)
-        # reply = handle_media_upload(sender_clean, num_media)
-
-        # ✅ AHORA: Informar que no se procesan archivos (o guardarlos para otro uso futuro)
-        reply = handle_media_upload(
-            sender_clean, num_media)  # Mantener por si acaso
+        reply = handle_media_upload(sender_clean, num_media)
     else:
-        # Handle text message
         reply = handle_text_message(sender_clean, incoming_msg)
 
-    # Create TwiML response
+    # Crear respuesta TwiML
     response = MessagingResponse()
     response.message(reply)
 
-    # Log outgoing response
     twiml_response = str(response)
     print(f"📤 TwiML XML:")
     print(twiml_response)
     print(f"📊 TwiML Length: {len(twiml_response)}\n")
 
     return twiml_response
-
 
 def handle_text_message(sender, message):
     """

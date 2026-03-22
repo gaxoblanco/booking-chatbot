@@ -7,6 +7,7 @@ Ensures data consistency before storing in database.
 
 from datetime import datetime, date, time
 import re
+from typing import Optional
 
 
 def validate_date(date_string: str) -> bool:
@@ -539,3 +540,51 @@ def format_time_for_display(time_obj: time) -> str:
         "14:30"
     """
     return time_obj.strftime("%H:%M")
+
+
+def validate_phone_e164(phone: str) -> bool:
+    """
+    Valida que un número de teléfono esté en formato E.164.
+
+    E.164: + seguido de 8 a 15 dígitos, sin espacios ni caracteres especiales.
+    Ejemplos válidos:   +5491112345678, +1234567890
+    Ejemplos inválidos: None, '', '123', 'whatsapp:+54...', '+0123'
+
+    Args:
+        phone: Número de teléfono a validar
+
+    Returns:
+        True si el formato es válido, False en cualquier otro caso
+    """
+    if not phone or not isinstance(phone, str):
+        return False
+    pattern = r'^\+[1-9]\d{7,14}$'
+    return bool(re.match(pattern, phone.strip()))
+
+
+def normalize_whatsapp_phone(raw: str) -> Optional[str]:
+    """
+    Extrae y valida el número de teléfono del formato Twilio WhatsApp.
+
+    Twilio envía el número como 'whatsapp:+54XXXXXXXXXX'.
+    Esta función limpia el prefijo y valida el resultado con E.164.
+
+    Args:
+        raw: Valor crudo del campo 'From' de Twilio
+             Ejemplos: 'whatsapp:+5491112345678', '+5491112345678'
+
+    Returns:
+        Número limpio en formato E.164 si es válido (ej: '+5491112345678')
+        None si el formato es inválido o el número no pasa la validación
+    """
+    if not raw or not isinstance(raw, str):
+        print(f"[VALIDATOR] ❌ normalize_whatsapp_phone: valor nulo o no-string: {raw!r}")
+        return None
+
+    cleaned = raw.strip().replace('whatsapp:', '').strip()
+
+    if validate_phone_e164(cleaned):
+        return cleaned
+
+    print(f"[VALIDATOR] ❌ Número inválido después de limpiar: {cleaned!r} (raw: {raw!r})")
+    return None
