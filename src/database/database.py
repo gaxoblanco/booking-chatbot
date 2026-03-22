@@ -406,6 +406,41 @@ class Database:
             """)
 
             # ==========================================
+            # TABLE: calendar_watches
+            # ==========================================
+            # Watch channels de Google Calendar push notifications.
+            # Cada profesional activo tiene un canal que Google usa
+            # para notificar cambios en su agenda en tiempo real.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS calendar_watches (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    professional_phone TEXT NOT NULL,
+                    calendar_id        TEXT NOT NULL,
+                    channel_id         TEXT NOT NULL UNIQUE,
+                    resource_id        TEXT NOT NULL,
+                    channel_token      TEXT NOT NULL,
+                    expires_at         TIMESTAMP NOT NULL,
+                    status             TEXT CHECK(status IN ('active','stopped','expired'))
+                                    DEFAULT 'active',
+                    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    stopped_at         TIMESTAMP,
+                    FOREIGN KEY (professional_phone) REFERENCES professionals(phone)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_watches_professional
+                ON calendar_watches(professional_phone, status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_watches_channel
+                ON calendar_watches(channel_id)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_watches_expires
+                ON calendar_watches(expires_at, status)
+            """)
+
+            # ==========================================
             # TABLE: slot_offers
             # Ofertas de turno adelantado (sistema waitlist)
             # ==========================================
