@@ -1937,7 +1937,37 @@ class Database:
         except Exception as e:
             print(f"[DB] Error expiring offers: {e}")
             return 0
-        
+
+    def get_expired_pending_offers(self) -> list:
+        """
+        Retorna todas las ofertas con status='pending' cuyo expires_at ya pasó.
+
+        Usado por process_expired_offers() en waitlist_service para
+        limpiar ofertas sin respuesta y reintentar la cascada.
+
+        Returns:
+            Lista de dicts con los datos completos de cada oferta expirada
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT *
+                    FROM slot_offers
+                    WHERE status = 'pending'
+                    AND expires_at <= CURRENT_TIMESTAMP
+                    ORDER BY expires_at ASC
+                """)
+                columns = [desc[0] for desc in cursor.description]
+                results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+                print(f"[DB] 📊 Ofertas expiradas sin procesar: {len(results)}")
+                return results
+
+        except Exception as e:
+            print(f"[DB] ❌ Error obteniendo ofertas expiradas: {e}")
+            return []
+                
     # ==========================================
     # REMINDER OPERATIONS
     # ==========================================

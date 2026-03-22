@@ -616,6 +616,100 @@ Tu turno anterior fue cancelado automáticamente."""
         except Exception as e:
             logger.error(f"Error marcando oferta expirada: {e}")
 
+    def process_expired_offers(self) -> dict:
+        """
+        Procesa todas las ofertas de waitlist que expiraron sin respuesta.
+
+        Una oferta expira cuando el cliente no responde antes de expires_at.
+        Sin este método, el slot queda en limbo: la oferta sigue 'pending'
+        aunque ya no sea válida, y la cascada no continúa.
+
+        Flujo por cada oferta expirada:
+            1. Marcar la oferta como 'expired'
+            2. Buscar el siguiente candidato para ese mismo slot
+            (reutiliza _find_candidates con los mismos filtros anti-spam)
+            3. Si hay candidato → enviar nueva oferta (_send_offer)
+            4. Si no hay más candidatos → slot queda libre, fin de cascada
+
+        Returns:
+            Dict con estadísticas:
+            {
+                'processed': int,   # total de ofertas expiradas encontradas
+                'reoffered': int,   # ofertas que generaron nueva oferta
+                'freed': int,       # slots que quedaron libres (sin más candidatos)
+                'errors': int       # errores durante el procesamiento
+            }
+        """
+        stats = {'processed': 0, 'reoffered': 0, 'freed': 0, 'errors': 0}
+
+        try:
+            expired_offers = self.db.get_expired_pending_offers()
+            stats['processed'] = len(expired_offers)
+
+            if not expired_offers:
+                logger.info("[WAITLIST] ✅ Sin ofertas expiradas para procesar")
+                return stats
+
+            logger.info(f"[WAITLIST] 🔄 Procesando {len(expired_offers)} ofertas expiradas")
+
+            for offer in expired_offers:
+                offer_id     = offer['id']
+                freed_apt_id = offer['freed_appointment_id']
+                client       = offer['offered_to_client_phone']
+
+                try:
+                    # Paso 1: Marcar como expirada (ya existe _mark_offer_expired)
+                    self._mark_offer_expired(offer_id)
+                    logger.info(f"[WAITLIST] ⏰ Oferta #{offer_id} marcada como expired "
+                                f"(cliente {client} no respondió)")
+
+                    # Paso 2: Obtener datos del slot liberado
+                    freed_apt = self.db.get_appointment(freed_apt_id)
+                    if not freed_apt:
+                        logger.warning(f"[WAITLIST] ⚠️ Cita #{freed_apt_id} no encontrada, "
+                                    f"no se puede continuar cascada")
+                        stats['freed'] += 1
+                        continue
+
+                    # Paso 3: Buscar siguiente candidato
+                    # _find_candidates excluye: clientes con oferta pending,
+                    # anti-spam (3+ rechazos en 30 días), y quien expiró esta oferta
+                    candidates = self._find_candidates(
+                        professional_phone=freed_apt['professional_phone'],
+                        freed_date=freed_apt['appointment_date'],
+                        freed_time=freed_apt['start'],
+                        exclude_phone=client,
+                        freed_apt_id=freed_apt_id
+                    )
+
+                    # Paso 4: Ofrecer al siguiente o liberar el slot
+                    if candidates:
+                        next_candidate = candidates[0]
+                        self._send_offer(
+                            freed_appointment_id=freed_apt_id,
+                            candidate=next_candidate,
+                            freed_apt=freed_apt
+                        )
+                        logger.info(f"[WAITLIST] ✅ Nueva oferta enviada a "
+                                    f"{next_candidate['client_phone']} "
+                                    f"(slot #{freed_apt_id})")
+                        stats['reoffered'] += 1
+                    else:
+                        logger.info(f"[WAITLIST] 🔓 Slot #{freed_apt_id} queda libre "
+                                    f"— sin más candidatos")
+                        stats['freed'] += 1
+
+                except Exception as e:
+                    logger.error(f"[WAITLIST] ❌ Error procesando oferta #{offer_id}: {e}")
+                    stats['errors'] += 1
+
+        except Exception as e:
+            logger.error(f"[WAITLIST] ❌ Error crítico en process_expired_offers: {e}")
+            stats['errors'] += 1
+
+        logger.info(f"[WAITLIST] 📊 Ofertas expiradas procesadas: {stats}")
+        return stats
+
 
 # Instancia global
 waitlist_service = WaitlistService()
