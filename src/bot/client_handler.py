@@ -17,6 +17,7 @@ Este archivo contiene ~800 líneas de lógica específica del cliente.
 
 from datetime import date
 from typing import Dict
+from venv import logger
 from requests import session
 from src.integrations.appointment_calendar_service import AppointmentCalendarService
 from src.services.user_service import user_service
@@ -2561,6 +2562,22 @@ O escribe '0' para volver al menú."""
         # Validate confirmation
         if message != '1':
             return "⚠️ Por favor, ingresa:\n\n1️⃣ Para confirmar\n0️⃣ Para cancelar"
+        
+        # ── Anti-spam en booking ──────────────────────────────────────────────
+        from src.core.booking_limiter import booking_limiter
+        if not booking_limiter.record_attempt(session.phone_number):
+            logger.warning(
+                f"[BOOKING] 🚨 Anti-spam activado para {session.phone_number}"
+            )
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            from src.config.domain_config import DomainConfig
+            return (
+                f"⚠️ Realizaste demasiados intentos de reserva en poco tiempo.\n\n"
+                f"Por favor esperá {DomainConfig.BOOKING_ATTEMPT_BLOCK_MINUTES} minutos "
+                f"e intentá de nuevo."
+            )
+        # ── Fin anti-spam ─────────────────────────────────────────────────────
 
         # Get booking data
         professional = session.get_temp('selected_professional')
