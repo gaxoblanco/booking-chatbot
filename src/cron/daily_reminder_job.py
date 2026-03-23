@@ -207,6 +207,15 @@ def main():
     total_errors = 0
 
     try:
+        # ── 0. Cola de reintentos ────────────────────────────────────────────
+        logger.info("─" * 70)
+        logger.info("0️⃣  Cola de reintentos de mensajes")
+        logger.info("─" * 70)
+        from src.core.message_sender import message_sender
+        retry_stats = message_sender.process_retry_queue()
+        logger.info(f"📊 Reintentos: {retry_stats}")
+        total_errors += retry_stats.get('errors', 0)
+        
         # ── 1. Recordatorios diarios ─────────────────────────────────────────
         logger.info("─" * 70)
         logger.info("1️⃣  Recordatorios diarios")

@@ -172,68 +172,43 @@ class ReminderService:
             return []
     
     def _send_reminder(self, apt: Dict) -> bool:
-        """
-        Envía recordatorio de WhatsApp a un cliente usando plantilla aprobada.
-        """
-        try:
-            logger.info(f"📤 Enviando recordatorio a {apt['client_phone']} (Cita #{apt['id']})")
-            
-            from twilio.rest import Client
-            import os
-            import json
-            
-            client = Client(
-                os.getenv('TWILIO_ACCOUNT_SID'),
-                os.getenv('TWILIO_AUTH_TOKEN')
-            )
-            
-            # Formatear datos para la plantilla
-            date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
-            dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            dia_nombre = dias[date_obj.weekday()]
-            fecha_formatted = date_obj.strftime("%d/%m/%Y")
-            
-            prof_name = apt.get('professional_name', 'tu profesional')
-            
-            # Usar Content Template
-            content_sid = os.getenv('TWILIO_REMINDER_TEMPLATE_SID')
-            
-            if not content_sid:
-                logger.error("TWILIO_REMINDER_TEMPLATE_SID no configurado")
-                return False
-            
-            # Normalizar número de teléfono (quitar whatsapp: si existe)
-            client_phone = apt['client_phone'].replace('whatsapp:', '').strip()
-            
-            # Variables para la plantilla
-            variables_json = json.dumps({
-                "1": prof_name,
-                "2": f"{dia_nombre} {fecha_formatted}",
-                "3": f"{apt['start']} hs"
-            })
-            
-            logger.info(f"Enviando con Content SID: {content_sid}")
-            logger.info(f"Variables: {variables_json}")
-            logger.info(f"To: whatsapp:{client_phone}")  # Log del número normalizado
-            
-            result = client.messages.create(
-                from_=os.getenv('TWILIO_WHATSAPP_NUMBER'),
-                to=f"whatsapp:{client_phone}",  # Agregar prefijo explícitamente
-                content_sid=content_sid,
-                content_variables=variables_json
-            )
-            
-            if result.sid:
-                self._mark_reminder_sent(apt['id'])
-                logger.info(f"✅ Recordatorio enviado exitosamente (SID: {result.sid})")
-                return True
-            else:
-                logger.warning(f"⚠️ No se pudo enviar recordatorio")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error enviando recordatorio: {e}")
+        """Envía recordatorio usando MessageSender centralizado."""
+        import json
+        from src.core.message_sender import message_sender
+
+        content_sid = os.getenv('TWILIO_REMINDER_TEMPLATE_SID')
+        if not content_sid:
+            logger.error("TWILIO_REMINDER_TEMPLATE_SID no configurado")
             return False
+
+        date_obj        = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
+        dias            = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+        dia_nombre      = dias[date_obj.weekday()]
+        fecha_formatted = date_obj.strftime("%d/%m/%Y")
+        prof_name       = apt.get('professional_name', 'tu profesional')
+
+        variables_json = json.dumps({
+            "1": prof_name,
+            "2": f"{dia_nombre} {fecha_formatted}",
+            "3": f"{apt['start']} hs"
+        })
+
+        logger.info(f"📤 Enviando recordatorio a {apt['client_phone']} (Cita #{apt['id']})")
+
+        sent = message_sender.send_with_retry(
+            to_phone           = apt['client_phone'],
+            message            = "",
+            professional_phone = apt.get('professional_phone'),
+            patient_name       = apt.get('client_name'),
+            appointment_id     = apt['id'],
+            content_sid        = content_sid,
+            content_variables  = variables_json,
+        )
+
+        if sent:
+            self._mark_reminder_sent(apt['id'])   # ← mantener siempre
+            logger.info(f"✅ Recordatorio enviado exitosamente")
+        return sent
     
     def _format_reminder_message(self, apt: Dict) -> str:
         """

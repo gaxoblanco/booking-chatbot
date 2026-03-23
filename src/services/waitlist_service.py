@@ -275,33 +275,21 @@ class WaitlistService:
             if not offer_id:
                 return False
             
-            # Enviar vía Twilio (usando template)
-            from twilio.rest import Client
-            import os
-            
-            client = Client(
-                os.getenv('TWILIO_ACCOUNT_SID'),
-                os.getenv('TWILIO_AUTH_TOKEN')
+            # Enviar vía MessageSender centralizado
+            from src.core.message_sender import message_sender
+
+            sent = message_sender.send_with_retry(
+                to_phone           = candidate['client_phone'],
+                message            = message,
+                professional_phone = freed_apt['professional_phone'],
+                patient_name       = candidate.get('client_name'),
+                appointment_id     = candidate.get('id'),
             )
-            
-            # Formatear fecha para mensaje
-            date_obj = datetime.strptime(freed_apt['appointment_date'], "%Y-%m-%d")
-            dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            dia_nombre = dias[date_obj.weekday()]
-            fecha_formatted = f"{dia_nombre} {date_obj.strftime('%d/%m/%Y')}"
-            
-            # Usar template si está aprobado, sino mensaje directo
-            result = client.messages.create(
-                from_=f"{os.getenv('TWILIO_WHATSAPP_NUMBER')}",
-                to=f"{candidate['client_phone']}",
-                body=message  # TODO: Usar template cuando esté aprobado
-            )
-            
-            if result.sid:
-                logger.info(f"✅ Oferta enviada (SID: {result.sid})")
+
+            if sent:
+                logger.info(f"✅ Oferta enviada (offer_id: {offer_id})")
                 return True
-            else:
-                return False
+            return False
                 
         except Exception as e:
             logger.error(f"Error enviando oferta: {e}")

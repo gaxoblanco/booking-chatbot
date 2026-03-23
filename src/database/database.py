@@ -490,6 +490,31 @@ class Database:
             """)
 
             # ==========================================
+            # TABLE: message_retry_queue
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS message_retry_queue (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    to_phone           TEXT NOT NULL,
+                    message            TEXT NOT NULL,
+                    professional_phone TEXT,
+                    patient_name       TEXT,
+                    appointment_id     INTEGER,
+                    content_sid        TEXT,
+                    content_variables  TEXT,
+                    attempts           INTEGER DEFAULT 0,
+                    next_retry_at      TIMESTAMP,
+                    status             TEXT DEFAULT 'pending',
+                    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_retry_queue_status
+                ON message_retry_queue(status, next_retry_at)
+            """)
+
+            # ==========================================
             # MIGRACIONES DEFENSIVAS
             # Columnas agregadas en versiones posteriores.
             # ALTER TABLE falla silenciosamente si ya existen.

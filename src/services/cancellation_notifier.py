@@ -302,56 +302,12 @@ class CancellationNotifier:
     # =========================================================================
 
     def _send_whatsapp(self, to_phone: str, message: str) -> bool:
-        """
-        Envía un mensaje de WhatsApp via Twilio.
-
-        Mismo patrón que reminder_service._send_reminder() y
-        waitlist_service._send_offer().
-
-        Args:
-            to_phone: Número del destinatario en formato E.164
-            message:  Texto del mensaje
-
-        Returns:
-            True si Twilio aceptó el mensaje (tiene SID), False si falló.
-        """
-        try:
-            from twilio.rest import Client
-
-            account_sid     = os.getenv('TWILIO_ACCOUNT_SID')
-            auth_token      = os.getenv('TWILIO_AUTH_TOKEN')
-            whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER')
-
-            if not all([account_sid, auth_token, whatsapp_number]):
-                logger.error(
-                    "[NOTIFIER] ❌ Faltan variables de entorno de Twilio "
-                    "(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER)"
-                )
-                return False
-
-            # Normalizar número — quitar prefijo si ya lo tiene
-            clean_phone = to_phone.replace('whatsapp:', '').strip()
-
-            client = Client(account_sid, auth_token)
-            result = client.messages.create(
-                from_ = whatsapp_number,
-                to    = f"whatsapp:{clean_phone}",
-                body  = message,
-            )
-
-            if result.sid:
-                logger.info(
-                    f"[NOTIFIER] ✅ WhatsApp enviado a {clean_phone} "
-                    f"(SID: {result.sid})"
-                )
-                return True
-
-            logger.warning(f"[NOTIFIER] ⚠️ Twilio no retornó SID para {clean_phone}")
-            return False
-
-        except Exception as e:
-            logger.error(f"[NOTIFIER] ❌ Error enviando WhatsApp a {to_phone}: {e}")
-            return False
+        """Envía WhatsApp vía MessageSender centralizado."""
+        from src.core.message_sender import message_sender
+        return message_sender.send_with_retry(
+            to_phone = to_phone,
+            message  = message,
+        )
 
     # =========================================================================
     # PERSISTENCIA
