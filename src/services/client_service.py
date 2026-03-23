@@ -733,110 +733,78 @@ class ClientService:
             return []
 
 
-    def cancel_appointment(self, appointment_id: int, phone_number: str, reason: str = None) -> bool:
-        """
-        Cancela un turno agendado.
-        
-        AJUSTADO al schema:
-        - Actualiza status a 'cancelada_cliente'
-        - Guarda cancellation_reason
-        - Actualiza cancelled_at
-        - Elimina de Google Calendar usando google_event_id
-        
-        Realiza 2 acciones:
-        1. Elimina evento de Google Calendar
-        2. Actualiza estado en BD a 'cancelada_cliente'
-        
-        Args:
-            appointment_id: ID del turno en BD
-            phone_number: Teléfono del usuario (validación)
-            reason: Razón de cancelación (opcional)
-            
-        Returns:
-            True si se canceló exitosamente, False si hubo error
-        """
+    def cancel_appointment(
+        self,
+        appointment_id: int,
+        phone_number:   str,
+        reason:         str  = None,
+        bypass_policy:  bool = False
+    ) -> dict:
         try:
             print(f"[CLIENT] 🗑️ Cancelando turno {appointment_id} para {phone_number}")
-            
+
             # 1. Obtener info del turno
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                
                 cursor.execute("""
-                    SELECT 
-                        id,
-                        client_phone,
-                        patient_phone,
-                        professional_phone,
-                        google_event_id,
-                        appointment_date,
-                        start as time,
-                        status
-                    FROM appointments
-                    WHERE id = ?
+                    SELECT id, client_phone, patient_phone, professional_phone,
+                           google_event_id, appointment_date, start as time, status
+                    FROM appointments WHERE id = ?
                 """, (appointment_id,))
-                
                 row = cursor.fetchone()
-                
                 if not row:
-                    print(f"[CLIENT] ❌ Turno {appointment_id} no encontrado")
-                    return False
-                
+                    return {'success': False, 'reason': 'not_found'}
                 appointment = dict(row)
-            
-            # Validar que quien cancela es el dueño (client_phone)
-            # O el paciente registrado (patient_phone) — Issue 8
+
+            # 2. Validar ownership
             is_owner   = appointment['client_phone'] == phone_number
             is_patient = (
                 appointment.get('patient_phone')
                 and appointment['patient_phone'] == phone_number
             )
-
             if not is_owner and not is_patient:
-                print(
-                    f"[CLIENT] ❌ Cancelación no autorizada: {phone_number} "
-                    f"no es dueño ni paciente del turno #{appointment_id}. "
-                    f"owner={appointment['client_phone']}, "
-                    f"patient={appointment.get('patient_phone')}"
-                )
-                return False
+                print(f"[CLIENT] ❌ Cancelación no autorizada: {phone_number}")
+                return {'success': False, 'reason': 'not_authorized'}
 
-            if is_patient and not is_owner:
-                print(
-                    f"[CLIENT] ✅ Cancelación autorizada: {phone_number} "
-                    f"es el paciente del turno #{appointment_id}"
-                )
-            
-            # Validar que no esté ya cancelado
+            # 3. Validar ya cancelado
             if 'cancelada' in appointment['status']:
-                print(f"[CLIENT] ⚠️ Turno ya está cancelado")
-                return False
-            
-            # 2. Eliminar de Google Calendar
+                return {'success': False, 'reason': 'already_cancelled'}
+
+            # 4. Validar política
+            if not bypass_policy:
+                from src.config.domain_config import DomainConfig
+                limit       = getattr(DomainConfig, 'CANCELLATION_HOURS_LIMIT', 22)
+                apt_dt      = datetime.strptime(
+                    f"{appointment['appointment_date']} {appointment['time']}",
+                    "%Y-%m-%d %H:%M"
+                )
+                hours_until = (apt_dt - datetime.now()).total_seconds() / 3600
+                if hours_until < limit:
+                    print(f"[CLIENT] ⚠️ Muy tarde: {hours_until:.1f}hs < {limit}hs")
+                    return {
+                        'success':            False,
+                        'reason':             'too_late',
+                        'hours_until':        round(hours_until, 1),
+                        'professional_phone': appointment['professional_phone'],
+                    }
+
+            # 5. Eliminar de Google Calendar (código existente que ya tenías)
             if appointment.get('google_event_id') and appointment.get('professional_phone'):
                 from src.services.professional_service import professional_service
-                
                 try:
-                    # Obtener calendar_id del profesional
                     prof = self.db.get_professional_by_phone(appointment['professional_phone'])
                     calendar_id = prof.get('calendar_id')
-                    
                     if calendar_id and appointment['google_event_id']:
                         professional_service.delete_calendar_event(
                             professional_phone=appointment['professional_phone'],
                             event_id=appointment['google_event_id']
                         )
-                        print(f"[CLIENT] ✅ Evento eliminado de Google Calendar")
-                    else:
-                        print(f"[CLIENT] ⚠️ Sin calendar_id o event_id, saltando eliminación de Calendar")
-                        
                 except Exception as e:
                     print(f"[CLIENT] ⚠️ Error eliminando de Calendar (continuando): {e}")
-            
-            # 3. Actualizar estado en BD
+
+            # 6. Actualizar estado en BD (código existente que ya tenías)
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
-                
                 cursor.execute("""
                     UPDATE appointments
                     SET status = 'cancelada_cliente',
@@ -845,32 +813,17 @@ class ClientService:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (reason or 'Cancelado por el cliente', appointment_id))
-                
                 conn.commit()
-            
+
             print(f"[CLIENT] ✅ Turno {appointment_id} cancelado exitosamente")
-            
-            # 4. Analytics (opcional)
-            from src.services.analytics_service import analytics_service
-            try:
-                analytics_service.log_appointment_cancellation(
-                    appointment_id=appointment_id,
-                    client_phone=phone_number,
-                    professional_phone=appointment['professional_phone'],
-                    reason=reason or 'Cancelado por el cliente'
-                )
-            except:
-                pass  # Analytics no debe bloquear
-            
-            return True
-            
+            return {'success': True}                        # ← antes era return True
+
         except Exception as e:
             print(f"[CLIENT] ❌ Error cancelando turno: {e}")
             import traceback
             traceback.print_exc()
-            return False
-
-
+            return {'success': False, 'reason': 'error', 'detail': str(e)}  # ← antes era return False
+        
     # ========================================
     # MÉTODO PARA AGREGAR A database.py
     # ========================================

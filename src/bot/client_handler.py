@@ -1748,8 +1748,9 @@ class ClientHandler:
         now = datetime.now()
         hours_until = (apt_datetime - now).total_seconds() / 3600
 
-        # Validar tiempo mínimo (24 horas por defecto)
-        CANCELLATION_HOURS_LIMIT = 24
+        # lee de DomainConfig:
+        from src.config.domain_config import DomainConfig
+        CANCELLATION_HOURS_LIMIT = getattr(DomainConfig, 'CANCELLATION_HOURS_LIMIT', 22)
 
         if hours_until < CANCELLATION_HOURS_LIMIT:
             # Muy tarde para cancelar
@@ -2279,7 +2280,8 @@ class ClientHandler:
             success = client_service.cancel_appointment(
                 appointment_id=appointment['id'],
                 phone_number=session.phone_number,
-                reason='Cancelado por el cliente vía WhatsApp'
+                reason='Cancelado por el cliente vía WhatsApp',
+                bypass_policy  = True,
             )
             
             if success:
