@@ -364,44 +364,38 @@ def handle_text_message(sender, message):
 
 def handle_media_upload(sender, num_media):
     """
-    Handle incoming media files (images, PDFs).
-
-    Args:
-        sender (str): Phone number without 'whatsapp:' prefix
-        num_media (int): Number of media files attached
-
-    Returns:
-        str: Confirmation message
+    Procesa archivos recibidos por WhatsApp.
+    Si el remitente es un profesional y el archivo es CSV/Excel,
+    lo procesa como carga de agenda.
     """
-    saved_files = []
+    from src.services.user_service import user_service
+    from src.services.agenda_import_service import agenda_import_service
 
     for i in range(num_media):
         try:
-            media_url  = request.values.get(f'MediaUrl{i}', '')
-            media_type = request.values.get(f'MediaContentType{i}', '')
+            media_url    = request.values.get(f'MediaUrl{i}', '')
+            content_type = request.values.get(f'MediaContentType{i}', '')
 
-            print(f"📎 Processing media {i+1}/{num_media}")
-            print(f"   URL: {media_url}")
-            print(f"   Type: {media_type}")
+            print(f"📎 Media recibido: {content_type} — {media_url[:60]}...")
 
-            file_path = download_media(sender, media_url, media_type)
+            # ¿Es un profesional enviando CSV/Excel?
+            user_info = user_service.identify_user(sender)
+            if (user_info.get('user_type') == 'professional'
+                    and agenda_import_service.is_spreadsheet(content_type)):
 
-            if file_path:
-                saved_files.append(file_path)
-                print(f"   ✅ Saved: {file_path}")
-            else:
-                print(f"   ❌ Failed to save")
+                print(f"[MEDIA] 📋 Profesional {sender} envió agenda ({content_type})")
+                return agenda_import_service.process_uploaded_file(
+                    professional_phone = sender,
+                    file_url           = media_url,
+                    content_type       = content_type,
+                )
 
         except Exception as e:
-            print(f"   ❌ Error: {str(e)}")
-            continue
+            print(f"[MEDIA] ❌ Error procesando media {i}: {e}")
 
-    if saved_files:
-        reply = handle_certificate_upload_success(sender)
-    else:
-        reply = "❌ Failed to save media files. Please try again."
+    # Fallback para otros tipos de archivo
+    return "📎 Archivo recibido. Por el momento solo procesamos archivos CSV y Excel para carga de agenda."
 
-    return reply
 
 
 def handle_certificate_upload_success(sender):
