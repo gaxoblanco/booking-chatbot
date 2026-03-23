@@ -204,6 +204,11 @@ class DomainConfig:
     # Minutos de bloqueo cuando se supera el límite
     RATE_LIMIT_BLOCK_MINUTES = 5
 
+    # Anti-spam en booking
+    MAX_BOOKING_ATTEMPTS_PER_WINDOW = 5   # intentos permitidos
+    BOOKING_ATTEMPT_WINDOW_MINUTES  = 60  # ventana en minutos
+    BOOKING_ATTEMPT_BLOCK_MINUTES   = 30  # bloqueo si supera el límite
+
     # Agendamiento para terceros
     ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?
     REQUIRE_PATIENT_DATA = True  # Si es para terceros, ¿pedir datos del paciente?
