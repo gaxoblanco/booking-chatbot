@@ -2277,14 +2277,14 @@ class ClientHandler:
                 return "⚠️ Hubo un error. Por favor intenta de nuevo."
             
             # Cancelar turno
-            success = client_service.cancel_appointment(
+            result = client_service.cancel_appointment(
                 appointment_id=appointment['id'],
                 phone_number=session.phone_number,
                 reason='Cancelado por el cliente vía WhatsApp',
                 bypass_policy  = True,
             )
             
-            if success:
+            if result.get('success'):
                 session.clear_temp()
                 session.transition_to(ConversationState.CLIENT_MAIN_MENU)
                 
