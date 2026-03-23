@@ -213,59 +213,131 @@ class SessionData:
 # SESSION MANAGER
 # ==========================================
 
+import os
+import logging
+ 
+logger = logging.getLogger(__name__)
+ 
+ 
 class SessionManager:
     """
-    Gestor global de sesiones de usuario.
-    
-    Mantiene un diccionario en memoria con las sesiones activas.
-    En producción, esto debería usar Redis o similar para persistencia.
+    Gestor global de sesiones con backend intercambiable.
+ 
+    Al inicializar detecta si Redis está disponible:
+    - Si REDIS_URL está configurada y Redis responde → RedisSessionBackend
+    - Si no → MemorySessionBackend (fallback silencioso)
+ 
+    La interfaz pública es idéntica a la versión anterior.
+    Todo el código que usa session_manager funciona sin cambios.
     """
-
-    SESSION_TIMEOUT_MINUTES = 30  # Sesión expira tras 30 minutos de inactividad
-
+ 
     def __init__(self):
-        """Inicializar gestor de sesiones."""
-        self.sessions = {}
-
-    def get_session(self, phone_number: str) -> SessionData:
         """
-        Obtener o crear sesión para un usuario.
-        
-        Si la sesión existe pero lleva más de SESSION_TIMEOUT_MINUTES
-        sin actividad, se resetea automáticamente (como si fuera nueva).
-        
+        Inicializa el backend elegido según disponibilidad de Redis.
+        """
+        self._backend = self._init_backend()
+ 
+    def _init_backend(self):
+        """
+        Detecta Redis y elige el backend apropiado.
+ 
+        Orden de prioridad:
+        1. REDIS_URL en variables de entorno → intentar Redis
+        2. Si falla o no está configurado → MemorySessionBackend
+        """
+        from src.core.session_backends import (
+            RedisSessionBackend,
+            MemorySessionBackend,
+        )
+ 
+        redis_url = os.getenv('REDIS_URL', '').strip()
+ 
+        if not redis_url:
+            logger.info(
+                "[SESSION] REDIS_URL no configurada → usando memoria"
+            )
+            return MemorySessionBackend()
+ 
+        try:
+            backend = RedisSessionBackend(redis_url)
+            logger.info("[SESSION] ✅ Backend: Redis")
+            return backend
+        except ImportError:
+            logger.warning(
+                "[SESSION] ⚠️  redis-py no instalado → usando memoria. "
+                "Instalar con: pip install redis"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[SESSION] ⚠️  Redis no disponible ({e}) → usando memoria"
+            )
+ 
+        return MemorySessionBackend()
+ 
+    # =========================================================================
+    # INTERFAZ PÚBLICA — igual que antes
+    # =========================================================================
+ 
+    def get_session(self, phone_number: str) -> 'SessionData':
+        """
+        Obtiene la sesión del usuario. La crea si no existe.
+        Si está en Redis, renueva el TTL automáticamente.
+ 
         Args:
             phone_number: Número de teléfono del usuario
-            
+ 
         Returns:
             SessionData del usuario
         """
-        if phone_number not in self.sessions:
+        session = self._backend.get(phone_number)
+ 
+        if session is None:
+            # Nueva sesión — importar aquí para evitar circular import
+            from src.core.states import SessionData
+            session = SessionData(phone_number)
+            self._backend.save(session)
             print(f"[SESSION] Nueva sesión creada para: {phone_number}")
-            self.sessions[phone_number] = SessionData(phone_number)
-        else:
-            session = self.sessions[phone_number]
-            elapsed = datetime.now() - session.last_activity
-            if elapsed > timedelta(minutes=self.SESSION_TIMEOUT_MINUTES):
-                print(f"[SESSION] ⏰ Sesión expirada para {phone_number} "
-                      f"(inactiva {int(elapsed.total_seconds() / 60)} min) → Reset")
-                session.reset()
-
-        # Actualizar timestamp en cada acceso
-        self.sessions[phone_number].touch()
-        return self.sessions[phone_number]
-
+ 
+        return session
+ 
+    def save_session(self, session: 'SessionData'):
+        """
+        Persiste el estado actual de la sesión.
+ 
+        Debe llamarse después de cualquier cambio en la sesión
+        cuando el backend es Redis (en memoria se guarda por referencia).
+ 
+        En la práctica se llama en bot_controller.py al final de
+        process_message() para garantizar consistencia.
+        """
+        self._backend.save(session)
+ 
     def clear_session(self, phone_number: str):
         """
-        Limpiar sesión de un usuario.
-        
+        Elimina la sesión del usuario.
+ 
         Args:
             phone_number: Número de teléfono del usuario
         """
-        if phone_number in self.sessions:
-            del self.sessions[phone_number]
-            print(f"[SESSION] Sesión eliminada: {phone_number}")
-
+        self._backend.delete(phone_number)
+        print(f"[SESSION] Sesión eliminada: {phone_number}")
+ 
+    def get_stats(self) -> dict:
+        """
+        Retorna estadísticas del session manager.
+        Útil para monitoreo.
+        """
+        from src.core.session_backends import (
+            RedisSessionBackend, MemorySessionBackend
+        )
+        backend_type = (
+            'redis'  if isinstance(self._backend, RedisSessionBackend)
+            else 'memory'
+        )
+        return {
+            'backend':          backend_type,
+            'active_sessions':  self._backend.count(),
+        }
 
 # ==========================================
 # INSTANCIA GLOBAL
