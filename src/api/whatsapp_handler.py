@@ -365,38 +365,70 @@ def handle_text_message(sender, message):
 def handle_media_upload(sender, num_media):
     """
     Procesa archivos recibidos por WhatsApp.
-    Si el remitente es un profesional y el archivo es CSV/Excel,
-    lo procesa como carga de agenda.
+    Si el remitente es un profesional activo con Calendar configurado
+    y el archivo es CSV/Excel, analiza la agenda y presenta el menú
+    de confirmación.
     """
     from src.services.user_service import user_service
-    from src.services.agenda_import_service import agenda_import_service
+    from src.services.calendar_import_service import calendar_import_service  # ← src.
+    from src.core.states import ConversationState, session_manager
 
     for i in range(num_media):
         try:
             media_url    = request.values.get(f'MediaUrl{i}', '')
             content_type = request.values.get(f'MediaContentType{i}', '')
 
-            print(f"📎 Media recibido: {content_type} — {media_url[:60]}...")
+            print(f"[MEDIA] 📎 {content_type} — {media_url[:60]}...")
 
-            # ¿Es un profesional enviando CSV/Excel?
+            # ── Verificar identidad ANTES de descargar nada ───────────────
             user_info = user_service.identify_user(sender)
-            if (user_info.get('user_type') == 'professional'
-                    and agenda_import_service.is_spreadsheet(content_type)):
+            profile   = user_info.get('profile', {}) or {}
 
-                print(f"[MEDIA] 📋 Profesional {sender} envió agenda ({content_type})")
-                return agenda_import_service.process_uploaded_file(
-                    professional_phone = sender,
-                    file_url           = media_url,
-                    content_type       = content_type,
+            if not calendar_import_service.is_spreadsheet(content_type):
+                continue  # No es CSV/Excel — ignorar este archivo
+
+            if user_info.get('user_type') != 'professional':
+                return "📎 Archivo recibido, pero no tenés permisos para cargar agendas."
+
+            if not profile.get('is_active'):
+                return "❌ Tu cuenta no está activa. Contactá al administrador."
+
+            if not profile.get('calendar_id'):
+                return (
+                    "⚠️ Tu Google Calendar no está conectado todavía.\n\n"
+                    "Una vez que lo configures podrás cargar tu agenda desde aquí."
                 )
+
+            # ── Todas las validaciones pasaron — procesar ─────────────────
+            print(f"[MEDIA] 📋 Profesional activo {sender} envió agenda")
+
+            rows, error = calendar_import_service.download_and_parse(
+                file_url     = media_url,
+                content_type = content_type,
+            )
+            if error:
+                return error
+
+            analysis = calendar_import_service.analyze(
+                rows               = rows,
+                professional_phone = sender,
+            )
+
+            session = session_manager.get_session(sender)
+            session.set_temp('agenda_analysis', analysis)
+            session.transition_to(ConversationState.PROF_AGENDA_IMPORT_REVIEW)
+
+            return calendar_import_service.format_review_menu(analysis)
 
         except Exception as e:
             print(f"[MEDIA] ❌ Error procesando media {i}: {e}")
+            import traceback
+            traceback.print_exc()
 
-    # Fallback para otros tipos de archivo
-    return "📎 Archivo recibido. Por el momento solo procesamos archivos CSV y Excel para carga de agenda."
-
-
+    return (
+        "📎 Archivo recibido. Solo proceso archivos CSV y Excel "
+        "para carga de agenda."
+    )
 
 def handle_certificate_upload_success(sender):
     """

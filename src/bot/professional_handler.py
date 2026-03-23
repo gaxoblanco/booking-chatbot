@@ -199,6 +199,7 @@ class ProfessionalHandler:
         2. Actualizar Mi Información
         3. Carga Rápida de Información
         4. Mis Citas
+        5. Cargar agenda (CSV/Excel)
         0. Volver al inicio
 
         Nota: La gestión de horarios libres y carga de agenda semanal
@@ -244,6 +245,21 @@ class ProfessionalHandler:
         elif message == '4':
             session.transition_to(ConversationState.PROF_VIEW_APPOINTMENTS)
             return self.handle_prof_view_appointments(session, message)
+        
+        elif message == '5':
+            session.transition_to(ConversationState.PROF_AGENDA_IMPORT_REVIEW)
+            return (
+                "📋 *Cargar agenda desde archivo*\n\n"
+                "Enviame tu agenda como archivo *CSV* o *Excel* (.xlsx).\n\n"
+                "Columnas requeridas:\n"
+                "• *phone* — teléfono del paciente (+549...)\n"
+                "• *name* — nombre completo\n"
+                "• *weekday* — día (lunes, martes...)\n"
+                "• *start_time* — hora de inicio (09:00)\n"
+                "• *duration_minutes* — duración en minutos\n\n"
+                "Columnas opcionales: email, modality, notes\n\n"
+                "_Simplemente enviá el archivo y lo proceso automáticamente._"
+            )
 
         elif message == '0':
             session.reset()
@@ -1011,3 +1027,107 @@ class ProfessionalHandler:
         except Exception as e:
             print(f"[CLIENT] ⚠️ Error formatting next available days: {e}")
             return "   Consultar disponibilidad directamente\n"
+        
+    def handle_prof_agenda_import_review(
+        self, session: SessionData, message: str
+    ) -> str:
+        """
+        Estado PROF_AGENDA_IMPORT_REVIEW.
+        El profesional ve el resumen del análisis y elige qué hacer.
+        Acepta opciones numéricas (1-5, 0) e intenciones del modelo NLP.
+        """
+        from src.services.calendar_import_service import calendar_import_service
+        from src.database.database import db
+
+        analysis = session.get_temp('agenda_analysis')
+
+        # Si no hay análisis en sesión, pedir que envíe el archivo
+        if not analysis:
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return (
+                "⚠️ No hay un archivo pendiente de confirmar.\n\n"
+                + professional_messages.PROF_MAIN_MENU
+            )
+
+        msg_lower = message.lower().strip()
+
+        # ── Confirmar carga ───────────────────────────────────────────────────
+        if message == '1' or msg_lower in (
+            'sí', 'si', 'cargar', 'confirmar', 'confirmo', 'adelante', 'ok'
+        ):
+            if not analysis.get('ready'):
+                return (
+                    "⚠️ No hay pacientes listos para cargar.\n\n"
+                    + calendar_import_service.format_review_menu(analysis)
+                )
+
+            prof        = db.get_professional(session.phone_number)
+            calendar_id = prof.get('calendar_id') if prof else None
+
+            if not calendar_id:
+                session.clear_temp()
+                session.transition_to(ConversationState.PROF_MAIN_MENU)
+                return (
+                    "❌ Tu Google Calendar no está configurado.\n\n"
+                    + professional_messages.PROF_MAIN_MENU
+                )
+
+            stats = calendar_import_service.execute(
+                analysis           = analysis,
+                professional_phone = session.phone_number,
+                calendar_id        = calendar_id,
+            )
+
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return (
+                calendar_import_service.format_execute_result(stats)
+                + "\n\n"
+                + professional_messages.PROF_MAIN_MENU
+            )
+
+        # ── Ver subconjuntos ──────────────────────────────────────────────────
+        subset_map = {
+            '2': 'ready',     'ver listos': 'ready',
+            '3': 'overlap',   'ver solapamientos': 'overlap',
+                            'solapamientos': 'overlap',
+            '4': 'duplicate', 'ver existentes': 'duplicate',
+                            'existentes': 'duplicate',
+            '5': 'error',     'ver errores': 'error',
+                            'errores': 'error',
+        }
+
+        subset = subset_map.get(message) or subset_map.get(msg_lower)
+        if subset:
+            session.set_temp('agenda_detail_subset', subset)
+            session.transition_to(ConversationState.PROF_AGENDA_IMPORT_DETAIL)
+            return calendar_import_service.format_detail(analysis, subset)
+
+        # ── Cancelar ─────────────────────────────────────────────────────────
+        if message == '0' or msg_lower in ('cancelar', 'no', 'salir'):
+            session.clear_temp()
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return "❌ Carga cancelada.\n\n" + professional_messages.PROF_MAIN_MENU
+
+        # ── Opción inválida — re-mostrar el menú ─────────────────────────────
+        return calendar_import_service.format_review_menu(analysis)
+
+
+    def handle_prof_agenda_import_detail(
+        self, session: SessionData, message: str
+    ) -> str:
+        """
+        Estado PROF_AGENDA_IMPORT_DETAIL.
+        El profesional está viendo el detalle de un subconjunto.
+        Cualquier mensaje vuelve al menú de revisión.
+        """
+        from src.services.calendar_import_service import calendar_import_service
+
+        analysis = session.get_temp('agenda_analysis')
+        if not analysis:
+            session.transition_to(ConversationState.PROF_MAIN_MENU)
+            return professional_messages.PROF_MAIN_MENU
+
+        # Volver al menú de revisión
+        session.transition_to(ConversationState.PROF_AGENDA_IMPORT_REVIEW)
+        return calendar_import_service.format_review_menu(analysis)

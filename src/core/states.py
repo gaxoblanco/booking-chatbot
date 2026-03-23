@@ -43,6 +43,10 @@ class ConversationState(Enum):
     # Ver citas agendadas (lectura desde Google Calendar)
     PROF_VIEW_APPOINTMENTS = "prof_view_appointments"
 
+    # Importación de agenda desde CSV/Excel
+    PROF_AGENDA_IMPORT_REVIEW = "prof_agenda_import_review"  # menú de confirmación
+    PROF_AGENDA_IMPORT_DETAIL = "prof_agenda_import_detail"  # viendo un subconjunto
+
     # Edición de información profesional (opcional)
     PROF_INFO_MENU = "prof_info_menu"
     PROF_INFO_NAME = "prof_info_name"

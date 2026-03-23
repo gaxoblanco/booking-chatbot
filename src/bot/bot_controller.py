@@ -164,7 +164,8 @@ class BotController:
             ConversationState.CLIENT_FILTER_INPUT,
             ConversationState.CLIENT_VIEW_APPOINTMENTS,
             ConversationState.CLIENT_APPOINTMENT_DETAIL,
-            ConversationState.PROF_MAIN_MENU,          
+            ConversationState.PROF_MAIN_MENU,
+            ConversationState.PROF_AGENDA_IMPORT_REVIEW,    
         ]
         
         if session.state in nlu_enabled_states:
@@ -740,6 +741,8 @@ class BotController:
             ConversationState.PROF_INFO_QUICK: self.professional_handler.handle_prof_info_quick,
             ConversationState.PROF_INFO_BIO: self.professional_handler.handle_prof_info_bio,
             ConversationState.PROF_INFO_FEE_RANGE: self.professional_handler.handle_prof_info_fee_range,
+            ConversationState.PROF_AGENDA_IMPORT_REVIEW: self.professional_handler.handle_prof_agenda_import_review,
+            ConversationState.PROF_AGENDA_IMPORT_DETAIL: self.professional_handler.handle_prof_agenda_import_detail,
             ConversationState.CLIENT_MAIN_MENU: self.client_handler.handle_client_main_menu,
             ConversationState.CLIENT_NEW_USER_MENU: self.client_handler.handle_client_main_menu,
             ConversationState.CLIENT_MULTIFILTER_MENU: self.client_handler.handle_client_multifilter_menu,

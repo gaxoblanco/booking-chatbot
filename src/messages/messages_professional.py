@@ -144,6 +144,8 @@ _Escribe *0* para volver_"""
 
 4️⃣ Mis {DomainConfig.APPOINTMENT_NAME_PLURAL.title()}
 
+5️⃣ Cargar agenda (CSV/Excel)
+
 0️⃣ Volver al inicio
 
 Responde con el número de opción."""
