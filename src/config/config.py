@@ -44,32 +44,20 @@ class Config:
     CERTIFICATES_DIR = os.getenv('CERTIFICATES_DIR', './certificates')
 
     # ==========================================
-    # SISTEMA DE CLAVES DE ACCESO
+    # ACCESO ADMINISTRATIVO
     # ==========================================
 
-    # Claves válidas para profesionales
-    # Formato: { "clave": {"used": False, "created_by": "admin", "expires": "2025-12-31"} }
-    PROFESSIONAL_ACCESS_KEYS = {
-        "PSICO2025": {
-            "used": False,
-            "created_by": "admin",
-            "expires": None,
-            "used_by": None,
-            "used_at": None
-        },
-        "DEMO12345": {
-            "used": False,
-            "created_by": "admin",
-            "expires": "2025-12-31",
-            "used_by": None,
-            "used_at": None
-        },
-    }
+    # Clave maestra para operaciones de administración (testing, debug).
+    # Los profesionales se cargan via CSV por el administrador — no hay
+    # auto-registro desde WhatsApp. Esta clave NO es para profesionales.
+    # En producción debe estar configurada o el sistema no arranca.
+    MASTER_ACCESS_KEY = os.getenv('MASTER_ACCESS_KEY')
+    if not MASTER_ACCESS_KEY and os.getenv('ENVIRONMENT') == 'production':
+        raise ValueError(
+            "[CONFIG] MASTER_ACCESS_KEY no configurada en producción. "
+            "Generá una con: python -c \"import secrets; print(secrets.token_urlsafe(16))\""
+        )
 
-    # Alternativamente, usar una clave maestra que siempre funciona (para testing)
-    MASTER_ACCESS_KEY = os.getenv('MASTER_ACCESS_KEY', 'ADMIN2025')
-
-    # Permitir múltiples usos de la misma clave (False = una clave solo se usa una vez)
     ALLOW_KEY_REUSE = os.getenv('ALLOW_KEY_REUSE', 'false').lower() == 'true'
 
     # ==========================================
