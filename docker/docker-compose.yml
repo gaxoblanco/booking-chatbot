@@ -101,13 +101,17 @@ services:
       - redis
 
   redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
-    restart: unless-stopped
-    networks:
-      - whatsapp-demo-network
+      image: redis:7-alpine
+      expose:
+        - "6379"
+      command: >
+        redis-server
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --requirepass ${REDIS_PASSWORD}
+      restart: unless-stopped
+      networks:
+        - whatsapp-demo-network
 
 # ==================================================
 # NETWORKS
