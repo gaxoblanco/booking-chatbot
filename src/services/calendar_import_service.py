@@ -17,6 +17,8 @@ import os
 import logging
 from datetime import date, timedelta, datetime
 from typing import Dict, List, Optional
+import requests
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -443,28 +445,104 @@ class CalendarImportService:
     # =========================================================================
     # DESCARGA (privado)
     # =========================================================================
-
+    
+    
     def _download(self, file_url: str) -> Optional[bytes]:
-        """Descarga el archivo desde Twilio con autenticación básica."""
+        """
+        Descarga el archivo desde Twilio con validaciones de seguridad.
+    
+        Validaciones aplicadas (en orden):
+            1. URL pertenece al dominio de Twilio (api.twilio.com)
+            2. Tamaño según Content-Length no supera 5 MB
+            3. Descarga en streaming — corta si supera 5 MB durante la bajada
+            4. Timeout de 30 segundos
+    
+        Args:
+            file_url: URL del archivo en Twilio (MediaUrl0 del request)
+    
+        Returns:
+            bytes con el contenido del archivo, o None si falló
+        """
+        # Constantes de seguridad
+        MAX_FILE_SIZE_BYTES  = 5 * 1024 * 1024   # 5 MB
+        ALLOWED_MEDIA_DOMAIN = 'api.twilio.com'  # único dominio aceptado
+        
+        # ── 1. Validar dominio ───────────────────────────────────────────────────
         try:
-            import requests
+            parsed = urlparse(file_url)
+        except Exception:
+            logger.error(f"[SECURITY] ❌ URL malformada: {file_url[:80]}")
+            return None
+    
+        if parsed.netloc != ALLOWED_MEDIA_DOMAIN:
+            logger.error(
+                f"[SECURITY] 🚨 URL de descarga rechazada: dominio '{parsed.netloc}' "
+                f"no es '{ALLOWED_MEDIA_DOMAIN}'"
+            )
+            return None
+    
+        if parsed.scheme != 'https':
+            logger.error(
+                f"[SECURITY] 🚨 URL sin HTTPS rechazada: {file_url[:80]}"
+            )
+            return None
+    
+        # ── 2. Descargar con límite de tamaño ────────────────────────────────────
+        try:
             resp = requests.get(
                 file_url,
-                auth    = (os.getenv('TWILIO_ACCOUNT_SID'),
-                           os.getenv('TWILIO_AUTH_TOKEN')),
+                auth    = (
+                    os.getenv('TWILIO_ACCOUNT_SID'),
+                    os.getenv('TWILIO_AUTH_TOKEN'),
+                ),
                 timeout = 30,
+                stream  = True,   # no cargar todo en RAM antes de verificar
             )
-            if resp.status_code == 200:
-                logger.info(
-                    f"[AGENDA-IMPORT] ✅ Descargado ({len(resp.content):,} bytes)"
+    
+            if resp.status_code != 200:
+                logger.error(
+                    f"[AGENDA-IMPORT] ❌ HTTP {resp.status_code} "
+                    f"descargando archivo"
                 )
-                return resp.content
-            logger.error(f"[AGENDA-IMPORT] ❌ HTTP {resp.status_code}")
+                return None
+    
+            # Verificar Content-Length si el servidor lo provee
+            content_length = int(resp.headers.get('Content-Length', 0))
+            if content_length > MAX_FILE_SIZE_BYTES:
+                logger.warning(
+                    f"[SECURITY] ⚠️ Archivo rechazado por Content-Length: "
+                    f"{content_length / 1024 / 1024:.1f} MB "
+                    f"(límite: {MAX_FILE_SIZE_BYTES / 1024 / 1024:.0f} MB)"
+                )
+                return None
+    
+            # Descargar en chunks — cortar si supera el límite
+            content = b''
+            for chunk in resp.iter_content(chunk_size=8192):
+                content += chunk
+                if len(content) > MAX_FILE_SIZE_BYTES:
+                    logger.warning(
+                        f"[SECURITY] ⚠️ Descarga cortada: archivo superó "
+                        f"{MAX_FILE_SIZE_BYTES / 1024 / 1024:.0f} MB "
+                        f"— abortando"
+                    )
+                    return None
+    
+            size_kb = len(content) / 1024
+            logger.info(
+                f"[AGENDA-IMPORT] ✅ Archivo descargado: {size_kb:.1f} KB"
+            )
+            return content
+    
+        except requests.exceptions.Timeout:
+            logger.error(
+                f"[AGENDA-IMPORT] ❌ Timeout descargando archivo "
+                f"(límite: 30s)"
+            )
             return None
+    
         except Exception as e:
             logger.error(f"[AGENDA-IMPORT] ❌ Error descargando: {e}")
             return None
-
-
 # Instancia global
 calendar_import_service = CalendarImportService()

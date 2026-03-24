@@ -15,7 +15,34 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from src.config.config import Config
 from src.config.domain_config import DomainConfig, load_preset
-from src.core.rate_limiter import rate_limiter
+from src.core.rate_limiter import rate_limiter, RateLimiter
+
+# S2 — Rate limiter específico para /google-calendar/webhook
+# Más permisivo que el de WhatsApp — Google puede enviar ráfagas legítimas
+# Usa una subclase para tener límites propios sin tocar RateLimiter
+class _CalendarRateLimiter(RateLimiter):
+    """Rate limiter con parámetros fijos para el webhook de Google Calendar."""
+    MAX_MESSAGES   = 30   # máx 30 notificaciones por minuto
+    WINDOW_SECONDS = 60
+    BLOCK_MINUTES  = 5
+
+    def record(self, phone: str) -> bool:
+        import time
+        with self._lock:
+            now = time.time()
+            self._timestamps[phone] = [
+                t for t in self._timestamps.get(phone, [])
+                if now - t < self.WINDOW_SECONDS
+            ]
+            count = len(self._timestamps[phone])
+            if count >= self.MAX_MESSAGES:
+                block_until = now + (self.BLOCK_MINUTES * 60)
+                self._blocked[phone] = block_until
+                return False
+            self._timestamps[phone].append(now)
+            return True
+
+_calendar_rate_limiter = _CalendarRateLimiter()
 
 # ==========================================
 # LOAD DOMAIN PRESET BEFORE IMPORTING BOT
@@ -88,7 +115,7 @@ def home():
 # ==========================================
 # WHATSAPP WEBHOOK
 # ==========================================
-
+from src.security.twilio_validator import validate_twilio_signature
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """
@@ -102,6 +129,9 @@ def webhook():
     Returns:
     - TwiML response with bot's reply
     """
+    if os.getenv('ENVIRONMENT') == 'production':
+        if not validate_twilio_signature(request):
+            return '', 403
     # Extraer datos del request de Twilio
     incoming_msg = request.values.get('Body', '').strip()
     sender       = request.values.get('From', '')
@@ -172,6 +202,14 @@ def google_calendar_webhook():
         X-Goog-Resource-State: 'sync' (al crear watch) | 'exists' (hay cambios)
         X-Goog-Message-Number: Número secuencial del mensaje
     """
+    # ── S2: Rate limiting ────────────────────────────────────────────────────
+    client_ip = request.remote_addr or 'unknown'
+    if _calendar_rate_limiter.is_blocked(client_ip):
+        print(f"[SECURITY] 🚨 Rate limit Calendar webhook: {client_ip}")
+        return '', 429
+    _calendar_rate_limiter.record(client_ip)
+    # ── Fin S2 ───────────────────────────────────────────────────────────────
+
     # ── 1. Extraer headers ───────────────────────────────────────────────────
     channel_id     = request.headers.get('X-Goog-Channel-ID', '')
     channel_token  = request.headers.get('X-Goog-Channel-Token', '')
