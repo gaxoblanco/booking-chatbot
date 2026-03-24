@@ -2649,6 +2649,16 @@ O escribe '0' para volver al menú."""
             )
             appointment_id = google_event_id
 
+            # ── Slot concurrente — otro usuario tomó este horario ──────────
+            if appointment_id == -1:
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                return (
+                    "⚠️ Ese horario acaba de ser tomado por otro paciente "
+                    "mientras confirmabas.\n\n"
+                    "Escribí *buscar* para ver los horarios disponibles actualizados."
+                )
+
             print(f"[CLIENT] ✅ Cita creada en Google Calendar:")
             print(f"         Event ID: {google_event_id}")
             print(f"         Cliente: {session.phone_number} ({client_name})")

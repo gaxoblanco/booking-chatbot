@@ -1133,6 +1133,13 @@ class Database:
             print(f"[DB] ✅ Appointment created: #{appointment_id} (Google ID: {google_event_id})")
             return appointment_id
         except Exception as e:
+            # Detectar UNIQUE constraint — slot ya tomado por otro usuario
+            if 'UNIQUE constraint' in str(e):
+                print(
+                    f"[DB] ⚠️ Slot ya tomado: "
+                    f"{professional_phone} {appointment_date} {start}"
+                )
+                return -1   # Código especial: slot concurrente
             print(f"[DB] ❌ Error creating appointment: {e}")
             import traceback
             traceback.print_exc()
