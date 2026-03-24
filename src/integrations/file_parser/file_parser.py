@@ -236,11 +236,13 @@ class FileParser:
         rows = []
         for raw_row in reader:
             # Normalizar keys y values
-            row = {
-                normalized_headers[k]: v.strip()
-                for k, v in raw_row.items()
-                if k in normalized_headers
-            }
+            row = {}
+            for k, v in raw_row.items():
+                if k not in normalized_headers:
+                    continue
+                col   = normalized_headers[k]
+                value = self._sanitize_cell(v.strip(), column=col)
+                row[col] = value
 
             # Descartar filas vacías
             if not any(v for v in row.values()):
@@ -257,3 +259,21 @@ class FileParser:
     def _normalize_mime(self, content_type: str) -> str:
         """Extrae el tipo base del MIME type (descarta parámetros como charset)."""
         return content_type.lower().split(';')[0].strip()
+    
+
+    # Prefijos que Excel interpreta como fórmulas
+    _FORMULA_PREFIXES = ('=', '+', '-', '@')
+
+    def _sanitize_cell(self, value: str, column: str = '') -> str:
+        """
+        Neutraliza fórmulas CSV/Excel injection.
+        Prefixea con apóstrofe celdas que empiezan con =, +, -, @
+        excepto la columna 'phone' donde + es parte del formato E.164.
+        """
+        if not value:
+            return value
+        if column == 'phone':
+            return value
+        if value[0] in self._FORMULA_PREFIXES:
+            return "'" + value
+        return value
