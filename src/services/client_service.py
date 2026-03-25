@@ -247,19 +247,6 @@ class ClientService:
                 # This is safe because Google Calendar API supports concurrent requests
                 max_workers = min(5, len(professionals))
                 
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    # Submit all tasks
-                    future_to_prof = {
-                        executor.submit(check_professional_availability, (idx, prof)): prof
-                        for idx, prof in enumerate(professionals, 1)
-                    }
-                    
-                    # Collect results as they complete
-                    for future in as_completed(future_to_prof):
-                        result = future.result()
-                        if result:
-                            available_professionals.append(result)
-                
                 professionals = available_professionals
 
                 # Deduplicar por teléfono
@@ -293,6 +280,7 @@ class ClientService:
             import traceback
             traceback.print_exc()
             return []
+
     # =========================================================================
     # FORMATTING - Display results for WhatsApp
     # =========================================================================
