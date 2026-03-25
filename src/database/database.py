@@ -735,8 +735,27 @@ class Database:
                     params.append(online_sessions)
                 
                 if specialty:
+                    # Mapeo NLU → categorías en BD
+                    # El extractor devuelve la especialidad como sustantivo
+                    # (psicología, nutrición) pero la BD guarda el título
+                    # profesional (Psicólogo, Nutricionista)
+                    SPECIALTY_MAP = {
+                        'psicología':     'Psicólogo',
+                        'nutrición':      'Nutricionista',
+                        'kinesiología':   'Kinesiólogo',
+                        'fonoaudiología': 'Fonoaudiólogo',
+                        'pediatría':      'Pediatra',
+                        'odontología':    'Odontólogo',
+                        'cardiología':    'Cardiólogo',
+                        'dermatología':   'Dermatólogo',
+                        'oftalmología':   'Oftalmólogo',
+                        'ginecología':    'Ginecólogo',
+                    }
+                    db_specialty = SPECIALTY_MAP.get(
+                        specialty.lower(), specialty
+                    )
                     query += " AND category LIKE ?"
-                    params.append(f"%{specialty}%")
+                    params.append(f"%{db_specialty}%")
 
                 # Only verified professionals (with certificate)
 
