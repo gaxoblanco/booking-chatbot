@@ -231,23 +231,32 @@ class BotController:
                 print(f"[NLU] Entidades detectadas: {intent_result['entities']}")
                 
                 # Si estamos en flujo de búsqueda (o tiene entidades de búsqueda), acumular
-                tiene_entidades_busqueda = any(k in intent_result['entities'] for k in 
-                                            ['fecha', 'especialidad', 'horario', 'zona', 'genero', 'prepaga', 'professional_name'])
-                
-                if tiene_entidades_busqueda or session.state == ConversationState.CLIENT_MULTIFILTER_MENU:
-                    # Acumular entidades nuevas
-                    conv_context.update_entities(intent_result['entities'], merge=True)
-                    accumulated = conv_context.get_entities()
-                    print(f"[CONTEXT] Entidades totales acumuladas: {accumulated}")
-                    
-                    # Decidir si ejecutar búsqueda o pedir más info
-                    if self._can_execute_search(accumulated):
-                        print(f"[CONTEXT] ✅ Suficiente información, ejecutando búsqueda")
-                        return self._execute_smart_search(session, accumulated)
+                if intent_result['entities']:
+                    # No acumular entidades para intents que no son búsqueda
+                    NON_SEARCH_INTENTS = {
+                        Intent.INFO_CENTER,
+                        Intent.VIEW_MY_APPOINTMENTS,
+                        Intent.CANCEL_APPOINTMENT,
+                        Intent.GREETING,
+                    }
+                    if intent_result['intent'] in NON_SEARCH_INTENTS:
+                        pass  # ignorar entidades, dejar que el shortcut maneje el intent
                     else:
-                        print(f"[CONTEXT] ⚠️ Falta información crítica")
-                        missing = self._get_missing_required_entities(accumulated)
-                        return self._ask_for_missing_entity(session, accumulated, missing)
+                        tiene_entidades_busqueda = any(k in intent_result['entities'] for k in 
+                                                    ['fecha', 'especialidad', 'horario', 'zona', 'genero', 'prepaga', 'professional_name'])
+                        
+                        if tiene_entidades_busqueda or session.state == ConversationState.CLIENT_MULTIFILTER_MENU:
+                            conv_context.update_entities(intent_result['entities'], merge=True)
+                            accumulated = conv_context.get_entities()
+                            print(f"[CONTEXT] Entidades totales acumuladas: {accumulated}")
+                            
+                            if self._can_execute_search(accumulated):
+                                print(f"[CONTEXT] ✅ Suficiente información, ejecutando búsqueda")
+                                return self._execute_smart_search(session, accumulated)
+                            else:
+                                print(f"[CONTEXT] ⚠️ Falta información crítica")
+                                missing = self._get_missing_required_entities(accumulated)
+                                return self._ask_for_missing_entity(session, accumulated, missing)
 
             # Conversión de input natural (solo en CLIENT_FILTER_INPUT)
             if session.state == ConversationState.CLIENT_FILTER_INPUT:
