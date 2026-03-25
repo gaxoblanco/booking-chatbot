@@ -224,13 +224,52 @@ scratch.md
 !LICENSE
 
 # ==================================================
-# MACHINE LEARNING
+# MACHINE LEARNING — scripts/ml (modelo local legacy)
 # ==================================================
-# Excluye modelos entrenados (pesados ~50MB)
+# Modelos entrenados pesados (~50MB) — NO commitear
 scripts/ml/models/intent_classifier/
 scripts/ml/models/intent_classifier/*
 scripts/ml/models/intent_classifier_best/
 scripts/ml/models/intent_classifier_best/*
 
-# Excluye datos generados
+# Datos generados por entrenamiento
 scripts/ml/intent_classifier/training_report.json
+
+# ==================================================
+# MACHINE LEARNING — ml-intent-service (servicio en raíz)
+# ==================================================
+# Modelo spaCy entrenado — pesado, NO va en git
+ml-intent-service/models/
+ml-intent-service/models/**
+
+# Archivos binarios de spaCy
+ml-intent-service/**/*.spacy
+
+# Caché de Python dentro del servicio
+ml-intent-service/__pycache__/
+ml-intent-service/**/__pycache__/
+
+# Entorno virtual propio del servicio (si lo tiene)
+ml-intent-service/venv/
+ml-intent-service/.venv/
+ml-intent-service/env/
+
+# Variables de entorno propias del servicio
+ml-intent-service/.env
+ml-intent-service/.env.local
+
+# Logs propios del servicio
+ml-intent-service/logs/
+ml-intent-service/*.log
+
+# Archivos temporales de entrenamiento
+ml-intent-service/training_report.json
+ml-intent-service/**/training_report.json
+
+# MANTENER estructura de carpetas vacías
+!ml-intent-service/models/.gitkeep
+
+ml-intent-service/models/
+ml-intent-service/models/**
+ml-intent-service/scripts/ml/models/
+ml-intent-service/scripts/ml/models/**

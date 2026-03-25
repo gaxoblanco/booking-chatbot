@@ -1,0 +1,110 @@
+version: "3.8"
+
+# ============================================
+# DOCKER COMPOSE - PRODUCCIÓN
+# ============================================
+# Usar con: docker-compose -f docker-compose.prod.yml up -d
+# ============================================
+
+services:
+  ml-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml-intent-service-prod
+
+    # ==========================================
+    # NETWORKING - SOLO RED INTERNA
+    # ==========================================
+    # NO exponer puerto externamente en producción
+    # Solo accesible desde otros contenedores en la misma red
+    expose:
+      - "8000" # Puerto interno, NO mapeado al host
+
+    # Red interna personalizada
+    networks:
+      - ml-network
+
+    # ==========================================
+    # CONFIGURACIÓN
+    # ==========================================
+    env_file:
+      - .env.production
+
+    environment:
+      - MODEL_PATH=models/intent_classifier
+      - LOG_LEVEL=WARNING # Menos logs en producción
+      - API_KEY_ENABLED=true # ⭐ Requiere API Key
+      - WORKERS=4
+      - TZ=America/Argentina/Buenos_Aires
+
+    # ==========================================
+    # RECURSOS - LÍMITES DE SEGURIDAD
+    # ==========================================
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+      # Restart policy
+      restart_policy:
+        condition: unless-stopped
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+    # ==========================================
+    # HEALTH CHECK
+    # ==========================================
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # ==========================================
+    # VOLUMES - READ ONLY
+    # ==========================================
+    volumes:
+      # Modelo en read-only para seguridad == :ro
+      - ./models:/app/models:ro
+
+    # ==========================================
+    # SECURITY OPTIONS
+    # ==========================================
+    security_opt:
+      - no-new-privileges:true # Prevenir escalación de privilegios
+
+    # Usuario no-root (definido en Dockerfile)
+    user: mluser
+
+    # Read-only filesystem (excepto /tmp)
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    # ==========================================
+    # LOGGING - ROTACIÓN AUTOMÁTICA
+    # ==========================================
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "service=ml-intent"
+
+# ==========================================
+# REDES
+# ==========================================
+networks:
+  ml-network:
+    driver: bridge
+    internal: true # ⭐ Red interna sin acceso a internet
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

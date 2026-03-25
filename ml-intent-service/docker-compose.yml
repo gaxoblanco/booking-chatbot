@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  ml-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml-intent-service
+    ports:
+      - "8000:8000"
+    environment:
+      # Configuración del modelo
+      - MODEL_PATH=models/intent_classifier
+
+      # Logging
+      - LOG_LEVEL=INFO # DEBUG, INFO, WARNING, ERROR
+
+      # Workers (ajustar según CPU disponible) 3 turneros = 2 workers
+      - WORKERS=1
+
+      # Timezone
+      - TZ=America/Argentina/Buenos_Aires
+
+    # Recursos (ajustar según hardware disponible)
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0" # era 0.5 → duplicamos, tenés 2 vCPU
+          memory: 2G # era 1G → ML tiene margen para picos
+        reservations:
+          cpus: "0.5" # era 0.25
+          memory: 768M # era 512M → reserva más realista
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Volumes (opcional, para desarrollo)
+    volumes:
+      - ./models:/app/models # modelo — writable para entrenar
+      - ./scripts/ml:/app/scripts/ml # scripts de entrenamiento
+      - ./ml:/app/ml:ro # código ML del servicio
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Network (si necesitas conectar con otros servicios)
+    # networks:
+    #   - ml-network
+# Descomentar si usas networks personalizadas
+# networks:
+#   ml-network:
+#     driver: bridge
