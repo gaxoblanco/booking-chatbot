@@ -48,10 +48,19 @@ class Intent(Enum):
     SEARCH_PROFESSIONAL = "search_professional"
     VIEW_TOMORROW = "view_tomorrow"
     VIEW_MY_APPOINTMENTS = "view_my_appointments"
-    CANCEL_APPOINTMENT = "cancel_appointment"  # ⭐ NUEVO
+    CANCEL_APPOINTMENT = "cancel_appointment"
     INFO_CENTER = "info_center"
     GREETING = "greeting"
     UNKNOWN = "unknown"
+    # Grupo A — importación de agenda (solo en PROF_AGENDA_IMPORT_REVIEW)
+    AGENDA_VIEW_READY     = "agenda_view_ready"
+    AGENDA_VIEW_OVERLAPS  = "agenda_view_overlaps"
+    AGENDA_VIEW_EXISTING  = "agenda_view_existing"
+    AGENDA_VIEW_ERRORS    = "agenda_view_errors"
+    AGENDA_CONFIRM_UPLOAD = "agenda_confirm_upload"
+    AGENDA_CANCEL_UPLOAD  = "agenda_cancel_upload"
+    # Grupo B — agendar para terceros
+    BOOK_FOR_THIRD_PARTY  = "book_for_third_party"
 
 
 class IntentDetector:

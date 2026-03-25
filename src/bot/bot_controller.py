@@ -169,15 +169,22 @@ class BotController:
         ]
         
         if session.state in nlu_enabled_states:
-            # ⭐ NUEVO: Detectar con sistema híbrido (ML + Reglas)
-            intent_result = hybrid_intent_detector.detect(message, context={
+            # Prefixear mensaje con estado para intenciones contextuales
+            PREFIXED_STATES = {ConversationState.PROF_AGENDA_IMPORT_REVIEW}
+            text_for_model = (
+                f"[{session.state.value.upper()}] {message}"
+                if session.state in PREFIXED_STATES
+                else message
+            )
+
+            intent_result = hybrid_intent_detector.detect(text_for_model, context={
                 'role': session.role,
                 'state': session.state,
                 'user_info': user_info,
                 'conversation_history': conv_context.get_history_text()
             })
             
-            # ⭐ NUEVO: Logging mejorado con información del sistema híbrido
+            # Logging mejorado con información del sistema híbrido
             print(f"[NLU] Intent: {intent_result['intent'].value} (conf: {intent_result['confidence']:.2f})")
             print(f"[NLU] Source: {intent_result['source']} (ML: {intent_result['ml_confidence']:.2f}, Rules: {intent_result['rules_confidence']:.2f})")
             if intent_result['entities']:
@@ -251,6 +258,20 @@ class BotController:
                     print(f"[NLU] Input convertido: '{message}' → '{converted_message}'")
                     message = converted_message
                     message_lower = message.lower()
+            # ── Intenciones de importación de agenda ──────────────────────
+            INTENT_TO_MESSAGE = {
+                Intent.AGENDA_VIEW_READY:      '2',
+                Intent.AGENDA_VIEW_OVERLAPS:   '3',
+                Intent.AGENDA_VIEW_EXISTING:   '4',
+                Intent.AGENDA_VIEW_ERRORS:     '5',
+                Intent.AGENDA_CONFIRM_UPLOAD:  '1',
+                Intent.AGENDA_CANCEL_UPLOAD:   '0',
+            }
+            if (session.state == ConversationState.PROF_AGENDA_IMPORT_REVIEW
+                    and intent_result['intent'] in INTENT_TO_MESSAGE
+                    and intent_result['confidence'] >= 0.7):
+                message = INTENT_TO_MESSAGE[intent_result['intent']]
+                message_lower = message
 
             # Para otros intents (no búsqueda), intentar shortcut
             if intent_result['intent'].value not in ['search_professional', 'unknown'] and intent_result['confidence'] >= 0.7:
@@ -403,13 +424,33 @@ class BotController:
             return self.client_handler.handle_client_view_appointments(session, "")
         
         # ==========================================
-        # INTENT: CANCELAR TURNO ⭐ NUEVO
+        # INTENT: CANCELAR TURNO
         # ==========================================
+        # DESPUÉS:
         elif intent == Intent.CANCEL_APPOINTMENT:
             print("[NLU] → Cancelar turno")
             session.set_role(UserRole.CLIENT)
             return self._handle_cancel_appointment(session, user_info)
-        
+
+        # ==========================================
+        # INTENT: AGENDAR PARA TERCEROS
+        # ==========================================
+        elif intent == Intent.BOOK_FOR_THIRD_PARTY:
+            print("[NLU] → Agendar para tercero")
+            session.set_role(UserRole.CLIENT)
+            session.set_temp('booking_for', 'other')
+            if intent_result['entities'].get('third_party_relation'):
+                session.set_temp(
+                    'third_party_relation',
+                    intent_result['entities']['third_party_relation']
+                )
+            # Reutilizar flujo de búsqueda con intent simulado
+            return self._try_intent_shortcut(
+                session,
+                {**intent_result, 'intent': Intent.SEARCH_PROFESSIONAL},
+                user_info
+            )
+
         # ==========================================
         # INTENT: VER DISPONIBLES MAÑANA
         # ==========================================
