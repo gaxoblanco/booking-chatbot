@@ -68,6 +68,13 @@ class MLIntentDetector:
             'info_center': Intent.INFO_CENTER,
             'greeting': Intent.GREETING,
             'unknown': Intent.UNKNOWN,
+            'book_for_third_party': Intent.BOOK_FOR_THIRD_PARTY,
+            'agenda_view_ready':    Intent.AGENDA_VIEW_READY,
+            'agenda_view_overlaps': Intent.AGENDA_VIEW_OVERLAPS,
+            'agenda_view_existing': Intent.AGENDA_VIEW_EXISTING,
+            'agenda_view_errors':   Intent.AGENDA_VIEW_ERRORS,
+            'agenda_confirm_upload': Intent.AGENDA_CONFIRM_UPLOAD,
+            'agenda_cancel_upload': Intent.AGENDA_CANCEL_UPLOAD,
         }
         
         # Advertencia si model_path fue especificado
@@ -195,6 +202,11 @@ class MLIntentDetector:
                 intent = self.intent_map.get(predicted_label, Intent.UNKNOWN)
                 confidence = data['confidence']
                 ml_scores = data.get('ml_scores', {})
+                
+                print(f"[ML_RAW] Label recibido del servicio: '{predicted_label}'")
+                print(f"[ML_RAW] Intent map tiene esa key: {predicted_label in self.intent_map}")
+                print(f"[ML_RAW] Intent map keys: {list(self.intent_map.keys())}")
+                print(f"[ML_RAW] Intent resuelto: {intent}")
                 
                 # Retornar en formato compatible
                 return {

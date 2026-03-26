@@ -10,7 +10,7 @@ Versión 2.0 - Agregados 15 nuevos ejemplos para:
 
 DATASET_BASE = [
     # ==========================================
-    # INTENT: SEARCH_PROFESSIONAL (35 ejemplos)
+    # INTENT: SEARCH_PROFESSIONAL (38 ejemplos)
     # ==========================================
 
     # --- CASOS ORIGINALES (20) ---
@@ -144,7 +144,7 @@ DATASET_BASE = [
         "entities": {"professional_name": "juan pérez"}
     },
 
-    # --- ⭐ NUEVOS: DÍAS DE SEMANA (5 ejemplos) ---
+    # --- DÍAS DE SEMANA (5 ejemplos) ---
 
     {
         "message": "quiero turno para el martes",
@@ -172,7 +172,7 @@ DATASET_BASE = [
         "entities": {"fecha": "sábado"}
     },
 
-    # --- ⭐ NUEVOS: NOMBRES CON TÍTULOS VARIADOS (5 ejemplos) ---
+    # --- NOMBRES CON TÍTULOS VARIADOS (5 ejemplos) ---
 
     {
         "message": "turno con el dr García",
@@ -200,7 +200,7 @@ DATASET_BASE = [
         "entities": {"professional_name": "martínez"}
     },
 
-    # --- ⭐ NUEVOS: SOLO APELLIDOS (5 ejemplos) ---
+    # --- SOLO APELLIDOS (5 ejemplos) ---
 
     {
         "message": "turno con Blanco",
@@ -227,9 +227,13 @@ DATASET_BASE = [
         "intent": "search_professional",
         "entities": {"professional_name": "pérez"}
     },
+    # --- Solo con intencion (3 ejemplos) ---
+    {"message": "quiero turno", "intent": "search_professional", "entities": {}},
+    {"message": "necesito cita", "intent": "search_professional", "entities": {}},
+    {"message": "busco algo virtual para esta semana", "intent": "search_professional", "entities": {"modalidad": "virtual", "fecha": "esta_semana"}},
 
     # ==========================================
-    # INTENT: VIEW_TOMORROW (5 ejemplos)
+    # INTENT: VIEW_TOMORROW (8 ejemplos)
     # ==========================================
 
     {
@@ -257,6 +261,9 @@ DATASET_BASE = [
         "intent": "view_tomorrow",
         "entities": {"horario": "mañana"}
     },
+    {"message": "qué hay disponible para mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "tenés algo mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "para el día de mañana qué tienen", "intent": "view_tomorrow", "entities": {}},
 
     # ==========================================
     # INTENT: VIEW_MY_APPOINTMENTS (8 ejemplos)
@@ -304,7 +311,7 @@ DATASET_BASE = [
     },
 
     # ==========================================
-    # INTENT: CANCEL_APPOINTMENT (5 ejemplos)
+    # INTENT: CANCEL_APPOINTMENT (10 ejemplos)
     # ==========================================
 
     {
@@ -332,9 +339,14 @@ DATASET_BASE = [
         "intent": "cancel_appointment",
         "entities": {}
     },
+    {"message": "quiero cancelar mi turno de mañana", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no voy a poder ir", "intent": "cancel_appointment", "entities": {}},
+    {"message": "cancelo el turno con martínez", "intent": "cancel_appointment", "entities": {}},
+    {"message": "me arrepentí del turno", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero dar de baja mi cita", "intent": "cancel_appointment", "entities": {}},
 
     # ==========================================
-    # INTENT: INFO_CENTER (4 ejemplos)
+    # INTENT: INFO_CENTER (8 ejemplos)
     # ==========================================
 
     {
@@ -357,6 +369,10 @@ DATASET_BASE = [
         "intent": "info_center",
         "entities": {}
     },
+    {"message": "cómo los contacto", "intent": "info_center", "entities": {}},
+    {"message": "tienen página web", "intent": "info_center", "entities": {}},
+    {"message": "quiero saber más del centro", "intent": "info_center", "entities": {}},
+    {"message": "me podés dar info del lugar", "intent": "info_center", "entities": {}},
 
     # ==========================================
     # INTENT: GREETING (6 ejemplos)
@@ -408,8 +424,12 @@ DATASET_BASE = [
     {"message": "cómo llego al consultorio", "intent": "unknown", "entities": {}},
     {"message": "trabajan los sábados", "intent": "unknown", "entities": {}},
     {"message": "puedo pagar con tarjeta", "intent": "unknown", "entities": {}},
-    {"message": "necesito un certificado médico",
-        "intent": "unknown", "entities": {}},
+    {"message": "cuánto cuesta una sesión", "intent": "unknown", "entities": {}},
+    {"message": "tienen psicólogos infantiles", "intent": "unknown", "entities": {}},
+    {"message": "aceptan efectivo", "intent": "unknown", "entities": {}},
+    {"message": "cuánto dura la consulta", "intent": "unknown", "entities": {}},
+    {"message": "con qué obras sociales trabajan", "intent": "unknown", "entities": {}},
+    # ==========================================
     {
         "message": "nesesito turno pa mañana",
         "intent": "search_professional",
@@ -1011,89 +1031,52 @@ DATASET_BASE = [
         "intent": "agenda_cancel_upload",
         "entities": {}
     },
-
     # ==========================================================================
     # INTENT: BOOK_FOR_THIRD_PARTY
-    # Contexto: cliente quiere agendar un turno para otra persona.
     # Sin prefijo — aplica en los mismos estados que search_professional.
-    # 15 ejemplos cubriendo relaciones familiares rioplatenses.
+    # 25 ejemplos cubriendo relaciones familiares rioplatenses.
+    # Casos: relación sola, + especialidad, + nombre con/sin título, + fecha,
+    # jerga rioplatense, sin posesivo.
     # ==========================================================================
 
-    {
-        "message": "quiero turno para mi hijo",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hijo"}
-    },
-    {
-        "message": "necesito sesión para mi mamá",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "mamá"}
-    },
-    {
-        "message": "busco psicóloga para mi hija",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hija"}
-    },
-    {
-        "message": "turno para mi papá",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "papá"}
-    },
-    {
-        "message": "es para mi nena de 10 años",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hija"}
-    },
-    {
-        "message": "quiero llevar a mi vieja al psicólogo",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "mamá"}
-    },
-    {
-        "message": "turno para otra persona",
-        "intent": "book_for_third_party",
-        "entities": {}
-    },
-    {
-        "message": "no es para mí es para mi marido",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "marido"}
-    },
-    {
-        "message": "mi hijo necesita sesión",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hijo"}
-    },
-    {
-        "message": "quiero agendar para un familiar",
-        "intent": "book_for_third_party",
-        "entities": {}
-    },
-    {
-        "message": "turno para mi nene",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hijo"}
-    },
-    {
-        "message": "es para mi abuelo",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "abuelo"}
-    },
-    {
-        "message": "quiero turno con la Dra López para mi hijo",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hijo", "professional_name": "lópez"}
-    },
-    {
-        "message": "mi mamá mayor necesita sesión",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "mamá"}
-    },
-    {
-        "message": "turno para mi hermana",
-        "intent": "book_for_third_party",
-        "entities": {"third_party_relation": "hermana"}
-    },
+    # --- Relación sola ---
+    {"message": "quiero turno para mi hijo", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "necesito sesión para mi mamá", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+    {"message": "turno para mi papá", "intent": "book_for_third_party", "entities": {"third_party_relation": "papá"}},
+    {"message": "no es para mí es para mi marido", "intent": "book_for_third_party", "entities": {"third_party_relation": "marido"}},
+    {"message": "mi hijo necesita sesión", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "turno para mi hermana", "intent": "book_for_third_party", "entities": {"third_party_relation": "hermana"}},
+    {"message": "es para mi abuelo", "intent": "book_for_third_party", "entities": {"third_party_relation": "abuelo"}},
+    {"message": "quiero agendar para un familiar", "intent": "book_for_third_party", "entities": {}},
+    {"message": "turno para otra persona", "intent": "book_for_third_party", "entities": {}},
+    {"message": "es para mi tía", "intent": "book_for_third_party", "entities": {"third_party_relation": "tía"}},
+    {"message": "necesito turno para mi pareja", "intent": "book_for_third_party", "entities": {"third_party_relation": "pareja"}},
+    {"message": "turno para mi sobrino", "intent": "book_for_third_party", "entities": {"third_party_relation": "sobrino"}},
+
+    # --- Jerga rioplatense ---
+    {"message": "es para mi nena de 10 años", "intent": "book_for_third_party", "entities": {"third_party_relation": "hija"}},
+    {"message": "turno para mi nene", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "quiero llevar a mi vieja al psicólogo", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+    {"message": "mi mamá mayor necesita sesión", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+    {"message": "es para mi pibe", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "mi viejo necesita turno", "intent": "book_for_third_party", "entities": {"third_party_relation": "papá"}},
+
+    # --- Relación + especialidad ---
+    {"message": "busco psicóloga para mi hija", "intent": "book_for_third_party", "entities": {"third_party_relation": "hija"}},
+    {"message": "necesito nutricionista para mi mamá", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+
+    # --- Relación + nombre con título ---
+    {"message": "quiero turno con la Dra López para mi hijo", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "professional_name": "lópez"}},
+    {"message": "para mi viejo con el dr blanco", "intent": "book_for_third_party", "entities": {"third_party_relation": "papá"}},
+
+    # --- Relación + nombre sin título (el bug actual) ---
+    {"message": "quiero un turno para mi hijo con gaston", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "turno para mi mamá con martinez", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+    {"message": "mi nene con rodriguez para la semana que viene", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+
+    # --- Relación + fecha ---
+    {"message": "turno para mi hijo para mañana", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "fecha": "mañana"}},
+    {"message": "necesito para mi hermana el jueves", "intent": "book_for_third_party", "entities": {"third_party_relation": "hermana", "fecha": "jueves"}},
 ]
 
 
