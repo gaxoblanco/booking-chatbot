@@ -9,6 +9,7 @@ Usage:
     python test_bot_http.py                    # Interactive mode
     python test_bot_http.py --scenario filters # Test filters
     python test_bot_http.py --url http://localhost:5001/webhook
+    docker exec -it whatsapp-demo python tests/test_bot_interactive.py --url http://localhost:5000/webhook
 """
 
 import argparse
