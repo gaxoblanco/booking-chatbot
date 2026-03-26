@@ -63,14 +63,19 @@ Escribe "menu" para volver al menú principal.
 Por favor elige una de las opciones del menú.
 """
 
-    # ❌ DEPRECATED en v3.0
-    # INVALID_ROLE = """
-    # ❌ Opción no válida.
-    # 
-    # Por favor responde con:
-    # 1️⃣ Cliente
-    # 2️⃣ Profesional
-    # """
+    # ==========================================
+    # RESPUESTA A CONSULTAS FUERA DE ALCANCE
+    # ==========================================
+
+    UNKNOWN_QUERY = (
+        "No puedo ayudarte con eso por el momento.\n\n"
+        "Puedo ayudarte a:\n"
+        "• Buscar un profesional y sacar turno\n"
+        "• Ver tus citas programadas\n"
+        "• Consultar información del centro\n\n"
+        "• Hola para el menu de navegacion\n\n"
+        "¿Qué querés hacer?"
+    )
 
     # ==========================================
     # MENSAJES DE VALIDACIÓN

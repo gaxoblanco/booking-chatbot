@@ -190,6 +190,42 @@ class BotController:
             if intent_result['entities']:
                 print(f"[NLU] Entidades: {intent_result['entities']}")
 
+            # ==========================================
+            # 4.1 INTERCEPCIÓN DE CONSULTAS FUERA DE ALCANCE
+            # Si el ML detecta unknown con alta confianza, es una pregunta
+            # legítima que el sistema no puede responder (precio, dirección, etc).
+            # Respondemos amigablemente en lugar de llegar al handler y
+            # devolver "opción inválida".
+            #
+            # Umbral 0.7: mismo que usan los shortcuts de otros intents.
+            # Solo aplica en estados de menú (no en flujos de ingreso de datos
+            # donde el usuario podría estar escribiendo texto libre válido).
+            # ==========================================
+            UNKNOWN_INTERCEPT_STATES = {
+                ConversationState.START,
+                ConversationState.CLIENT_MAIN_MENU,
+                ConversationState.CLIENT_NEW_USER_MENU,
+                ConversationState.CLIENT_SHOW_RESULTS,
+                ConversationState.PROF_MAIN_MENU,
+            }
+
+            if (
+                intent_result['intent'] == Intent.UNKNOWN
+                and intent_result['confidence'] >= 0.7
+                and session.state in UNKNOWN_INTERCEPT_STATES
+            ):
+                print(f"[NLU] ⚠️ Consulta fuera de alcance interceptada (conf: {intent_result['confidence']:.2f})")
+                welcome = user_service.generate_welcome_message({
+                    'user_type': user_info.get('user_type', 'new'),
+                    'name': user_info.get('name'),
+                    'is_registered': user_info.get('is_registered', False),
+                    'has_pending_appointments': False,
+                    'pending_appointments': [],
+                    'profile': None,
+                    'phone_number': phone_number
+                })
+                return common_messages.UNKNOWN_QUERY
+
             # Logging automático para dataset de ML
             conversation_logger.log_message(
                 phone=phone_number,
@@ -230,9 +266,7 @@ class BotController:
             if intent_result['entities']:
                 print(f"[NLU] Entidades detectadas: {intent_result['entities']}")
                 
-                # Si estamos en flujo de búsqueda (o tiene entidades de búsqueda), acumular
-                if intent_result['entities']:
-                    # No acumular entidades para intents que no son búsqueda
+                # No acumular entidades para intents que no son búsqueda
                     NON_SEARCH_INTENTS = {
                         Intent.INFO_CENTER,
                         Intent.VIEW_MY_APPOINTMENTS,
@@ -445,6 +479,15 @@ class BotController:
         # INTENT: AGENDAR PARA TERCEROS
         # ==========================================
         elif intent == Intent.BOOK_FOR_THIRD_PARTY:
+            # Feature flag — desactivar con FeatureFlags.THIRD_PARTY_BOOKING = False
+            if not FeatureFlags.THIRD_PARTY_BOOKING:
+                print("[NLU] → THIRD_PARTY_BOOKING desactivado, redirigiendo a búsqueda normal")
+                return self._try_intent_shortcut(
+                    session,
+                    {**intent_result, 'intent': Intent.SEARCH_PROFESSIONAL},
+                    user_info
+                )
+
             print("[NLU] → Agendar para tercero")
             session.set_role(UserRole.CLIENT)
             session.set_temp('booking_for', 'other')
@@ -738,8 +781,13 @@ class BotController:
         # Transicionar a flujo de multi-filtro
         session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
         
-        # Preparar mensaje personalizado
-        mensaje = "Perfecto! "
+        # Preparar mensaje personalizado — con contexto de tercero si aplica
+        booking_for = session.get_temp('booking_for') if FeatureFlags.THIRD_PARTY_BOOKING else None
+        relation    = session.get_temp('third_party_relation') if FeatureFlags.THIRD_PARTY_BOOKING else None
+        if booking_for == 'other' and relation:
+            mensaje = f"Para el turno de tu {relation}, "
+        else:
+            mensaje = "Perfecto! "
         
         # Confirmar lo que entendió
         confirmaciones = []
@@ -972,8 +1020,16 @@ class BotController:
             context_parts.append(gender_text)
         if 'prepaga' in entities:
             context_parts.append('que acepte obra social')
-        
-        context = "Perfecto! " + ", ".join(context_parts) + ".\n\n" if context_parts else ""
+
+        # GAP 1 — Personalizar prefijo si es para un tercero
+        booking_for = session.get_temp('booking_for') if FeatureFlags.THIRD_PARTY_BOOKING else None
+        relation    = session.get_temp('third_party_relation') if FeatureFlags.THIRD_PARTY_BOOKING else None
+        if booking_for == 'other' and relation:
+            context = f"Para el turno de tu {relation}, "
+            if context_parts:
+                context += ", ".join(context_parts) + ".\n\n"
+        else:
+            context = "Perfecto! " + ", ".join(context_parts) + ".\n\n" if context_parts else ""
         
         # Mensaje según la entidad faltante
         if next_missing == 'fecha':
