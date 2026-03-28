@@ -82,6 +82,14 @@ class ConversationState(Enum):
 
     CLIENT_VIEW_DETAIL_WITH_BOOKING = "client_view_detail_with_booking"
     CLIENT_CONFIRM_BOOKING = "client_confirm_booking"
+    CLIENT_COLLECT_OWN_NAME = "client_collect_own_name"
+
+    # GAP 2 — Recolección de datos del tercero (booking_for == 'other')
+    CLIENT_THIRD_PARTY_CHOICE = "client_third_party_choice"   # ¿Tus datos o los del paciente?
+    CLIENT_THIRD_PARTY_NAME   = "client_third_party_name"     # Nombre del tercero (obligatorio)
+    CLIENT_THIRD_PARTY_PHONE  = "client_third_party_phone"    # Teléfono del tercero (opcional)
+    CLIENT_THIRD_PARTY_AGE    = "client_third_party_age"      # Edad del tercero (siempre)
+
     CLIENT_BOOKING_CONFIRMED = "client_booking_confirmed"
 
     # ==========================================
