@@ -220,7 +220,8 @@ class AppointmentCalendarService:
         start_time: str,
         end_time: str,
         appointment_type: str,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        patient_phone: Optional[str] = None    # GAP 4 — teléfono del paciente real
     ) -> int:
         """
         Crea una cita en Google Calendar y en la BD local.
@@ -234,6 +235,7 @@ class AppointmentCalendarService:
             end_time: Hora fin en 'HH:MM'
             appointment_type: Tipo de consulta
             notes: Notas adicionales (opcional)
+            patient_phone: Teléfono del paciente real si se agendó para un tercero (opcional)
         
         Returns:
             int: ID de la cita en BD local
@@ -289,10 +291,11 @@ class AppointmentCalendarService:
                 start=start_time,
                 end=end_time,
                 duration_minutes=duration,
-                session_type=session_type,  # ✅ Mapped value
+                session_type=session_type,
                 modality='presencial',
-                google_event_id=google_event_id,  # ⭐ IMPORTANTE
-                notes=notes
+                google_event_id=google_event_id,
+                notes=notes,
+                patient_phone=patient_phone    # GAP 4
             )
             
             logger.info(
