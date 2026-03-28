@@ -120,6 +120,11 @@ DATASET BASE v3.0 — 158 ejemplos, 14 intenciones
 ```powershell
 docker exec -it ml-intent-service python /app/scripts/ml/generate_training_dataset.py
 ```
+# Paso 2.1 — Verificar que creció
+docker exec -it ml-intent-service python -c "
+import json; lines = open('/app/scripts/ml/dataset_training.jsonl').readlines()
+print(f'Total ejemplos: {len(lines)}')
+"
 
 Genera `scripts/ml/dataset_training.jsonl` (~3.948 ejemplos con augmentation x20).
 
@@ -138,8 +143,8 @@ for intent, count in intents.most_common():
 "
 ```
 
-Debe mostrar **14 intenciones** y ~3.948 ejemplos.
-Si muestra 7 intenciones, el `dataset_base.py` no tiene las intenciones nuevas.
+Debe mostrar **14 intenciones** y ~7.119 ejemplos.
+Si muestra 14 intenciones, el `dataset_base.py` no tiene las intenciones nuevas.
 
 ### Paso 3 — Entrenar el modelo
 
