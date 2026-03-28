@@ -153,6 +153,18 @@ class BotController:
         # 4. DETECCIÓN DE INTENCIÓN (NLU) ⭐ NUEVO
         # ==========================================
         
+        # En CLIENT_MAIN_MENU, '0' no tiene pantalla anterior — skip NLU, repetir menú
+        if session.state == ConversationState.CLIENT_MAIN_MENU and message.strip() == '0':
+            return user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
+
         # Intentar NLU en estados donde tiene sentido
         # Expandido para incluir más estados donde el usuario puede dar comandos naturales
         nlu_enabled_states = [
@@ -266,12 +278,13 @@ class BotController:
             if intent_result['entities']:
                 print(f"[NLU] Entidades detectadas: {intent_result['entities']}")
                 
-                # No acumular entidades para intents que no son búsqueda
+                # No acumular entidades para intents que no son búsqueda directa
                 NON_SEARCH_INTENTS = {
                     Intent.INFO_CENTER,
                     Intent.VIEW_MY_APPOINTMENTS,
                     Intent.CANCEL_APPOINTMENT,
                     Intent.GREETING,
+                    Intent.BOOK_FOR_THIRD_PARTY,  # ← el shortcut setea booking_for y resetea contexto
                 }
                 if intent_result['intent'] in NON_SEARCH_INTENTS:
                     pass  # ignorar entidades, dejar que el shortcut maneje el intent
@@ -496,6 +509,12 @@ class BotController:
                     'third_party_relation',
                     intent_result['entities']['third_party_relation']
                 )
+
+            # Limpiar contexto acumulado de búsquedas anteriores
+            # para no arrastrar professional_name u otras entidades viejas
+            conv_context = context_manager.get_context(session.phone_number)
+            conv_context.reset()
+            print("[NLU] → Contexto de búsqueda reseteado para flujo de tercero")
             # Reutilizar flujo de búsqueda con intent simulado
             return self._try_intent_shortcut(
                 session,
@@ -751,9 +770,16 @@ class BotController:
                 header += f" en {entities['especialidad']}"
         
         header += f" para {date_formatted}"
-        
+
         if 'horario' in entities:
-            header += f" ({entities['horario']})"
+            # Solo mostrar la franja horaria si la fecha no es relativa
+            # para evitar "para 30/03/2026 (mañana)" que confunde fecha con franja
+            fecha_entity = entities.get('fecha', '')
+            fecha_es_relativa = fecha_entity in ('hoy', 'mañana', 'pasado_mañana')
+            if not fecha_es_relativa:
+                franja = entities['horario']
+                franja_label = {'mañana': 'por la mañana', 'tarde': 'por la tarde', 'noche': 'por la noche'}.get(franja, franja)
+                header += f" ({franja_label})"
         if 'zona' in entities and not professional_name_filter:
             header += f" en {entities['zona']}"
         header += ":\n\n"
@@ -850,6 +876,11 @@ class BotController:
             ConversationState.CLIENT_VIEW_DETAIL: self.client_handler.handle_client_view_detail,
             ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING: self.client_handler.handle_client_view_detail_with_booking,
             ConversationState.CLIENT_CONFIRM_BOOKING: self.client_handler.handle_client_confirm_booking,
+            ConversationState.CLIENT_COLLECT_OWN_NAME: self.client_handler.handle_client_collect_own_name,
+            ConversationState.CLIENT_THIRD_PARTY_CHOICE: self.client_handler.handle_client_third_party_choice,
+            ConversationState.CLIENT_THIRD_PARTY_NAME:   self.client_handler.handle_client_third_party_name,
+            ConversationState.CLIENT_THIRD_PARTY_PHONE:  self.client_handler.handle_client_third_party_phone,
+            ConversationState.CLIENT_THIRD_PARTY_AGE:    self.client_handler.handle_client_third_party_age,
             ConversationState.CLIENT_BOOKING_CONFIRMED: self.client_handler.handle_client_booking_confirmed,
             ConversationState.CLIENT_VIEW_APPOINTMENTS: self.client_handler.handle_client_view_appointments,
             ConversationState.CLIENT_APPOINTMENT_DETAIL: self.client_handler.handle_client_appointment_detail,
