@@ -77,6 +77,18 @@ class ClientHandler:
         # Validar comandos especiales
         message_lower = message.lower().strip()
 
+        # '0' en el menú principal no tiene sentido — repetir el menú
+        if message_lower == '0':
+            return user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
+
         if message_lower in ['hola', 'hello', 'hi', 'hey', 'buenos días', 'buenas tardes', 'buenas noches']:
             session.reset()
             session.set_role(UserRole.CLIENT)
@@ -345,11 +357,21 @@ class ClientHandler:
 
     def handle_client_filter_zona(self, session: SessionData, message: str) -> str:
         """Maneja filtro de zona."""
-        # Check for back command
-        if message == '0':
+        # Check for back — 0, volver, menu
+        VOLVER_AL_MENU = {'0', 'volver', 'atrás', 'atras', 'menu', 'menú', 'inicio'}
+        if message.strip().lower() in VOLVER_AL_MENU:
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
+            from src.services.user_service import user_service
+            return user_service.generate_welcome_message({
+                'user_type': 'client',
+                'name': None,
+                'is_registered': True,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
 
         if message == '1':
             zona = 'norte'
@@ -1187,11 +1209,21 @@ class ClientHandler:
         - Seleccionar un número para ver detalle del profesional
         - Volver al menú principal con '0'
         """
-        # Check for back command
-        if message == '0':
+        # Check for back command — 0, volver, menu
+        VOLVER_MENU = {'0', 'volver', 'atrás', 'atras', 'menu', 'menú', 'inicio'}
+        if message.strip().lower() in VOLVER_MENU:
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
+            from src.services.user_service import user_service
+            return user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
 
         # Get results from session
         results = session.get_temp('search_results', [])
@@ -1241,7 +1273,34 @@ class ClientHandler:
                 # Opción inválida cuando no hay resultados
                 return client_messages.CLIENT_NO_RESULTS
 
-        # FLUJO NORMAL: Hay resultados, validar selección numérica
+        # FLUJO NORMAL: Hay resultados, validar selección numérica o por nombre
+        msg_lower = message.strip().lower()
+
+        # Si hay un solo resultado y el usuario confirma con lenguaje natural → seleccionar ese
+        CONFIRMAR_UNO = {'dale', 'si', 'sí', 'ok', 'ese', 'esa', 'bueno', 'perfecto', 'va'}
+        if len(results) == 1 and msg_lower in CONFIRMAR_UNO:
+            message = '1'
+
+        # Intentar matching por nombre si no es número
+        elif not message.strip().isdigit():
+            import re, unicodedata
+
+            def _norm(s):
+                """Quita tildes y pasa a minúsculas."""
+                nfd = unicodedata.normalize('NFD', s)
+                return ''.join(c for c in nfd if unicodedata.category(c) != 'Mn').lower()
+
+            msg_norm = _norm(msg_lower)
+            for i, prof in enumerate(results, 1):
+                prof_name = prof.get('name', '')
+                prof_clean = re.sub(r'^(dr\.?|dra\.?|lic\.?)\s+', '', prof_name, flags=re.IGNORECASE).strip()
+                words = [_norm(w) for w in prof_clean.split()]
+                # Match si el mensaje contiene alguna palabra del nombre (>= 3 letras)
+                if any(w in msg_norm for w in words if len(w) >= 3):
+                    message = str(i)
+                    print(f"[CLIENT] 🎯 Nombre '{msg_norm}' → profesional #{i}: {prof.get('name')}")
+                    break
+
         try:
             selection = int(message)
         except ValueError:
@@ -1505,24 +1564,83 @@ class ClientHandler:
         session.set_temp('appointment_list', active_appointments)
 
         # ==========================================
-        # 6. SI SELECCIONÓ UN NÚMERO, IR A DETALLE
+        # 6. SI SELECCIONÓ UN NÚMERO, NOMBRE, FECHA O CONFIRMACIÓN → IR A DETALLE
         # ==========================================
-        if message and message.isdigit() and int(message) > 0:
-            idx = int(message) - 1
-            
-            # Validar que el índice esté en rango
-            if 0 <= idx < len(active_appointments):
-                # Guardar índice seleccionado
-                session.set_temp('selected_appointment_index', idx)
-                
-                # Transicionar a detalle
+        if message and message.strip():
+            msg_lower = message.strip().lower()
+            matched_idx = None
+
+            # A) Número directo
+            if message.strip().isdigit() and int(message.strip()) > 0:
+                idx = int(message.strip()) - 1
+                if 0 <= idx < len(active_appointments):
+                    matched_idx = idx
+                else:
+                    return f"⚠️ Número inválido. Elegí entre 1 y {len(active_appointments)} o *0* para volver."
+
+            # B) dale/si/ese/esa → si hay una sola cita, seleccionarla
+            elif msg_lower in {'dale', 'si', 'sí', 'ok', 'ese', 'esa', 'esa cita', 'esa misma'}:
+                if len(active_appointments) == 1:
+                    matched_idx = 0
+
+            # C) Matching por nombre de profesional
+            elif not message.strip().isdigit():
+                import re as _re
+                for i, apt in enumerate(active_appointments):
+                    prof = apt.get('professional_name', '').lower()
+                    prof_clean = _re.sub(r'^(dr\.?|dra\.?|lic\.?)\s+', '', prof).strip()
+                    words = prof_clean.split()
+                    if any(w in msg_lower for w in words if len(w) > 3):
+                        matched_idx = i
+                        print(f"[CLIENT] 🎯 Cita por nombre '{msg_lower}' → #{i+1}: {apt.get('professional_name')}")
+                        break
+
+            # D) Matching por fecha — "el jueves", "22/04", "del lunes", "del 22/04"
+            if matched_idx is None and message.strip():
+                from src.utils.date_utils import parse_date
+                from datetime import date as _date
+                import re as _re2
+
+                date_obj = None
+
+                # Intentar parseo directo (ej: "22/04", "2026-04-22")
+                date_obj = parse_date(message)
+
+                # Si no, buscar día de semana en el mensaje
+                if not date_obj:
+                    DIAS = {
+                        'lunes': 0, 'martes': 1, 'miercoles': 2, 'miércoles': 2,
+                        'jueves': 3, 'viernes': 4, 'sabado': 5, 'sábado': 5, 'domingo': 6
+                    }
+                    msg_norm = message.lower()
+                    for dia, weekday in DIAS.items():
+                        if dia in msg_norm:
+                            today_wd = _date.today().weekday()
+                            days_ahead = (weekday - today_wd) % 7
+                            if days_ahead == 0:
+                                days_ahead = 7
+                            from datetime import timedelta
+                            date_obj = _date.today() + timedelta(days=days_ahead)
+                            break
+
+                # Si tampoco, buscar fecha DD/MM en el mensaje
+                if not date_obj:
+                    m = _re2.search(r'(\d{1,2})[/\-](\d{1,2})', message)
+                    if m:
+                        date_obj = parse_date(m.group(0))
+
+                if date_obj:
+                    date_target = date_obj.strftime("%Y-%m-%d")
+                    for i, apt in enumerate(active_appointments):
+                        if apt['appointment_date'] == date_target:
+                            matched_idx = i
+                            print(f"[CLIENT] 🎯 Cita por fecha '{date_target}' → #{i+1}")
+                            break
+
+            if matched_idx is not None:
+                session.set_temp('selected_appointment_index', matched_idx)
                 session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
-                
-                # Llamar al handler de detalle
-                return self.handle_client_appointment_detail(session, message)
-            else:
-                # Número fuera de rango
-                return f"⚠️ Número inválido. Elige entre 1 y {len(active_appointments)} o *0* para volver."
+                return self.handle_client_appointment_detail(session, str(matched_idx + 1))
 
         # ==========================================
         # 7. MOSTRAR LISTA DE CITAS
@@ -2443,7 +2561,11 @@ class ClientHandler:
         """
         from src.services.professional_service import professional_service
         
-        # Check for back
+        # Check for back — acepta número o lenguaje natural
+        VOLVER = {'0', 'volver', 'atrás', 'atras', 'back', 'salir', 'cancelar', 'no'}
+        if message.strip().lower() in VOLVER:
+            message = '0'
+
         if message == '0':
             results = session.get_temp('search_results', [])
             if results:
@@ -2522,11 +2644,27 @@ O escribe '0' para volver al menú."""
         
         prof_name = professional.get('name', 'Profesional')
         prof_phone = professional.get('phone', '')
-        
+
+        # GAP 6 — Línea de paciente
+        from src.config.filter_config import FeatureFlags
+        from src.database.database import db as _db
+        booking_for_info = ""
+        if FeatureFlags.THIRD_PARTY_BOOKING and session.get_temp('booking_for') == 'other':
+            relation = session.get_temp('third_party_relation') or 'familiar'
+            tp_name  = session.get_temp('third_party_name')
+            name_str = f" — {tp_name}" if tp_name else ""
+            booking_for_info = f"👤 Paciente: tu {relation}{name_str}\n"
+        else:
+            # Flujo normal — mostrar nombre del cliente si está registrado
+            client = _db.get_client(session.phone_number)
+            client_name = client.get('name') if client else None
+            if client_name:
+                booking_for_info = f"👤 Paciente: {client_name}\n"
+
         return f"""✅ CONFIRMAR AGENDAMIENTO
 {'=' * 40}
 
-👨‍⚕️ Profesional: {prof_name}
+{booking_for_info}👨‍⚕️ Profesional: {prof_name}
 📅 Fecha: {day_name} {date_formatted}
 ⏰ Horario: {selected_slot['start']} - {selected_slot['end']}
 📱 Contacto: {prof_phone}
@@ -2547,6 +2685,17 @@ O escribe '0' para volver al menú."""
         from src.config.domain_config import DomainConfig
 
         # Check for cancellation
+        # Acepta número o lenguaje natural
+        CONFIRMAR = {'1', 'si', 'sí', 'dale', 'ok', 'confirmo', 'confirmar',
+                     'bueno', 'perfecto', 'quiero', 'acepto', 'va', 'listo'}
+        CANCELAR  = {'0', 'no', 'cancelar', 'volver', 'atrás', 'atras',
+                     'nope', 'no quiero', 'salir'}
+        msg_lower = message.strip().lower()
+        if msg_lower in CONFIRMAR:
+            message = '1'
+        elif msg_lower in CANCELAR:
+            message = '0'
+
         if message == '0':
             professional = session.get_temp('selected_professional')
             search_date = session.get_temp('search_date')
@@ -2594,7 +2743,31 @@ O escribe '0' para volver al menú."""
 
         # Obtener nombre del cliente
         client = db.get_client(session.phone_number)
-        client_name = client.get('name', 'Cliente') if client else 'Cliente'
+        client_name = client.get('name') if client else None
+
+        # GAP 0 — Pedir nombre SOLO si el turno es para sí mismo y no tiene nombre
+        # Si es para un tercero, el nombre del paciente se captura en el GAP 2
+        from src.config.filter_config import FeatureFlags
+        booking_for_other = (FeatureFlags.THIRD_PARTY_BOOKING
+                             and session.get_temp('booking_for') == 'other')
+        if not client_name and not booking_for_other:
+            session.set_temp('pending_action', 'confirm_booking')
+            session.transition_to(ConversationState.CLIENT_COLLECT_OWN_NAME)
+            return appointment_messages.CLIENT_BOOKING_COLLECT_NAME
+
+        client_name = client_name or 'Cliente'
+
+        # GAP 2 — Si es para un tercero y aún no recolectamos sus datos, hacerlo ahora
+        if (booking_for_other and not session.get_temp('third_party_data_collected')):
+            relation = session.get_temp('third_party_relation') or 'familiar'
+            session.transition_to(ConversationState.CLIENT_THIRD_PARTY_NAME)
+            return (
+                f"El turno es para tu {relation}.\n\n"
+                f"👤 *Nombre del paciente*\n\n"
+                f"¿Cuál es el nombre completo de tu {relation}?\n\n"
+                f"Ejemplo: Juan Pérez\n\n"
+                f"_Escribe *0* para cancelar_"
+            )
 
         professional_phone = professional['phone']
 
@@ -2637,6 +2810,23 @@ O escribe '0' para volver al menú."""
         # ── Fin validación por profesional ───────────────────────────────────────
 
         try:
+            # GAP 3 — Construir notes estructurado con datos del tercero
+            notes = None
+            patient_phone = None
+            if session.get_temp('booking_for') == 'other':
+                from src.config.filter_config import FeatureFlags
+                if FeatureFlags.THIRD_PARTY_BOOKING:
+                    relation  = session.get_temp('third_party_relation') or 'tercero'
+                    tp_name   = session.get_temp('third_party_name')
+                    tp_age    = session.get_temp('third_party_age')
+                    parts     = [f"Turno para: {relation}"]
+                    if tp_name: parts.append(f"Nombre: {tp_name}")
+                    if tp_age:  parts.append(f"Edad: {tp_age}")
+                    notes = " | ".join(parts)
+                    # GAP 4 — patient_phone para notificación dual y cancelación
+                    patient_phone = session.get_temp('third_party_phone')
+                    print(f"[CLIENT] 📋 Tercero: {notes} | patient_phone: {patient_phone}")
+
             # Crear en Google Calendar
             google_event_id = appointment_service.create_appointment(
                 client_phone=session.phone_number,
@@ -2645,7 +2835,9 @@ O escribe '0' para volver al menú."""
                 date=booking_date,
                 start_time=booking_start_time,
                 end_time=booking_end_time,
-                appointment_type="Consulta"
+                appointment_type="Consulta",
+                notes=notes,
+                patient_phone=patient_phone
             )
             appointment_id = google_event_id
 
@@ -2691,12 +2883,21 @@ O escribe '0' para volver al menú."""
         prof_name = professional.get('name', 'Profesional')
         prof_phone = professional.get('phone', '')
 
+        # GAP 6 — Línea de paciente en el mensaje de éxito
+        from src.config.filter_config import FeatureFlags
+        booking_for_info = ""
+        if FeatureFlags.THIRD_PARTY_BOOKING and session.get_temp('booking_for') == 'other':
+            relation = session.get_temp('third_party_relation') or 'familiar'
+            tp_name  = session.get_temp('third_party_name')
+            name_str = f" — {tp_name}" if tp_name else ""
+            booking_for_info = f"\n    👤 Paciente: tu {relation}{name_str}"
+
         return f"""✅ ¡CITA AGENDADA CON ÉXITO!
     {'=' * 40}
 
     Tu cita ha sido registrada en el calendario del profesional.
 
-    📋 RESUMEN DE LA CITA:
+    📋 RESUMEN DE LA CITA:{booking_for_info}
 
     👨‍⚕️ Profesional: {prof_name}
     📅 Fecha: {day_name} {date_formatted}
@@ -2712,7 +2913,226 @@ O escribe '0' para volver al menú."""
     1️⃣ Ver mis citas
     2️⃣ Nueva búsqueda
     0️⃣ Menú principal"""
-    
+    def _handle_third_party_escape(self, session: SessionData, message: str):
+        """
+        Helper compartido — detecta si el usuario quiere escapar del flujo de tercero.
+
+        Retorna:
+            str  → respuesta a enviar (escape activado)
+            None → no es escape, continuar el handler normal
+
+        Reglas:
+            0 / volver / atrás  → volver UN paso (el handler decide a dónde)
+            cancelar / menu / menú / salir / ir al menu → menú principal
+        """
+        msg = message.strip().lower()
+        IR_AL_MENU = {'cancelar', 'menu', 'menú', 'salir', 'ir al menu', 'ir al menú', 'inicio'}
+        if msg in IR_AL_MENU:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return client_messages.CLIENT_MAIN_MENU
+        return None  # no es escape global
+
+    def handle_client_third_party_choice(self, session: SessionData, message: str) -> str:
+        """
+        GAP 2 — Paso 1: recolectar datos del paciente real.
+
+        Siempre pedimos al menos el nombre del paciente.
+        El teléfono es opcional pero habilita el recordatorio dual.
+        """
+        # Escape global
+        escape = self._handle_third_party_escape(session, message)
+        if escape: return escape
+
+        relation = session.get_temp('third_party_relation') or 'familiar'
+        msg = message.strip().lower()
+
+        if msg in {'0', 'volver', 'atrás', 'atras'}:
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+            professional = session.get_temp('selected_professional')
+            search_date  = session.get_temp('search_date')
+            time_pref    = session.get_temp('time_preference')
+            return client_service.format_professional_detail_with_slots(
+                professional=professional,
+                date_str=search_date,
+                time_preference=time_pref
+            )
+
+        # Cualquier otra entrada avanza al nombre
+        if len(msg) > 0:
+            session.transition_to(ConversationState.CLIENT_THIRD_PARTY_NAME)
+            return (
+                f"👤 *Nombre del paciente*\n\n"
+                f"¿Cuál es el nombre completo de tu {relation}?\n\n"
+                f"Ejemplo: Juan Pérez\n\n"
+                f"_Escribe *0* para volver · *cancelar* para salir_"
+            )
+
+    def handle_client_third_party_name(self, session: SessionData, message: str) -> str:
+        """
+        GAP 2 — Paso 2: nombre completo del tercero (obligatorio).
+        """
+        # Escape global
+        escape = self._handle_third_party_escape(session, message)
+        if escape: return escape
+
+        if message.strip().lower() in {'0', 'volver', 'atrás', 'atras'}:
+            # Volver un paso — a los horarios del profesional
+            session.set_temp('third_party_data_collected', None)
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+            professional = session.get_temp('selected_professional')
+            search_date  = session.get_temp('search_date')
+            time_preference = session.get_temp('time_preference')
+            return client_service.format_professional_detail_with_slots(
+                professional=professional,
+                date_str=search_date,
+                time_preference=time_preference
+            )
+
+        name = message.strip()
+        if not name or len(name) < 2:
+            return (
+                "⚠️ Por favor ingresá el nombre completo del paciente.\n\n"
+                "Ejemplo: Juan Pérez\n\n"
+                "_Escribe *0* para volver · *cancelar* para salir_"
+            )
+
+        session.set_temp('third_party_name', name)
+        session.transition_to(ConversationState.CLIENT_THIRD_PARTY_PHONE)
+        return (
+            f"📞 *Teléfono de {name}* (opcional)\n\n"
+            f"Si tenés el número de WhatsApp de tu {session.get_temp('third_party_relation') or 'familiar'}, "
+            f"le enviaremos un recordatorio del turno directamente.\n\n"
+            f"Formato: +5491112345678\n\n"
+            f"• Escribí el teléfono\n"
+            f"• O enviá *saltar* para omitir\n\n"
+            f"_Escribe *0* para volver · *cancelar* para salir_"
+        )
+
+    def handle_client_third_party_phone(self, session: SessionData, message: str) -> str:
+        """
+        GAP 2 — Paso 3: teléfono del tercero (opcional).
+        """
+        # Escape global
+        escape = self._handle_third_party_escape(session, message)
+        if escape: return escape
+
+        name = session.get_temp('third_party_name', 'el paciente')
+
+        if message.strip().lower() in {'0', 'volver', 'atrás', 'atras'}:
+            # Volver al nombre
+            session.transition_to(ConversationState.CLIENT_THIRD_PARTY_NAME)
+            relation = session.get_temp('third_party_relation') or 'familiar'
+            return (
+                f"👤 *Nombre del paciente*\n\n"
+                f"¿Cuál es el nombre completo de tu {relation}?\n\n"
+                f"_Escribe *0* para volver · *cancelar* para salir_"
+            )
+
+        if message.lower() == 'saltar':
+            session.set_temp('third_party_phone', None)
+        else:
+            session.set_temp('third_party_phone', message.strip())
+
+        session.transition_to(ConversationState.CLIENT_THIRD_PARTY_AGE)
+        return (
+            f"🎂 *Edad de {name}* (opcional)\n\n"
+            f"¿Cuántos años tiene?\n\n"
+            f"Ejemplo: 12\n\n"
+            f"• Escribí la edad\n"
+            f"• O enviá *saltar* para omitir\n\n"
+            f"_Escribe *0* para volver · *cancelar* para salir_"
+        )
+
+    def handle_client_third_party_age(self, session: SessionData, message: str) -> str:
+        """
+        GAP 2 — Paso 4: edad del tercero (opcional).
+        Último paso — retoma confirmación del turno.
+        """
+        # Escape global
+        escape = self._handle_third_party_escape(session, message)
+        if escape: return escape
+
+        name = session.get_temp('third_party_name', 'el paciente')
+
+        if message.strip().lower() in {'0', 'volver', 'atrás', 'atras'}:
+            # Volver al teléfono
+            session.transition_to(ConversationState.CLIENT_THIRD_PARTY_PHONE)
+            return (
+                f"📞 *Teléfono de {name}* (opcional)\n\n"
+                f"• Escribí el teléfono\n"
+                f"• O enviá *saltar* para omitir\n\n"
+                f"_Escribe *0* para volver · *cancelar* para salir_"
+            )
+
+        if message.lower() == 'saltar':
+            session.set_temp('third_party_age', None)
+        else:
+            age = message.strip()
+            if age.isdigit() and 0 <= int(age) <= 120:
+                session.set_temp('third_party_age', int(age))
+            else:
+                return (
+                    "⚠️ Ingresá una edad válida (ej: 12) o escribí *saltar*.\n\n"
+                    "_Escribe *0* para volver · *cancelar* para salir_"
+                )
+
+        # Todos los datos recolectados — marcar y retomar confirmación
+        session.set_temp('third_party_data_collected', True)
+        print(
+            f"[CLIENT] ✅ Datos tercero: "
+            f"nombre={session.get_temp('third_party_name')} | "
+            f"phone={session.get_temp('third_party_phone')} | "
+            f"age={session.get_temp('third_party_age')}"
+        )
+        session.transition_to(ConversationState.CLIENT_CONFIRM_BOOKING)
+        return self.handle_client_confirm_booking(session, '1')
+
+
+    def handle_client_collect_own_name(self, session: SessionData, message: str) -> str:
+        """
+        GAP 0 — Captura el nombre del cliente antes de confirmar el turno.
+
+        Se activa cuando el cliente llega a CLIENT_CONFIRM_BOOKING sin nombre
+        registrado en BD. Después de guardar el nombre, retoma la confirmación.
+
+        Flujo:
+            CLIENT_CONFIRM_BOOKING (sin nombre)
+                → CLIENT_COLLECT_OWN_NAME  ← acá
+                → CLIENT_CONFIRM_BOOKING   (retoma con '1')
+                → CLIENT_BOOKING_CONFIRMED
+        """
+        from src.database.database import db
+
+        # Cancelar — volver al detalle del profesional
+        if message == '0':
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+            professional = session.get_temp('selected_professional')
+            search_date = session.get_temp('search_date')
+            time_preference = session.get_temp('time_preference')
+            return client_service.format_professional_detail_with_slots(
+                professional=professional,
+                date_str=search_date,
+                time_preference=time_preference
+            )
+
+        # Validar nombre
+        name = message.strip()
+        if not name or len(name) < 2:
+            return (
+                "⚠️ Por favor ingresá tu nombre completo.\n\n"
+                "Ejemplo: María González\n\n"
+                "_Escribe *0* para cancelar_"
+            )
+
+        # Guardar en BD — add_client usa ON CONFLICT DO UPDATE, seguro si ya existe
+        db.add_client(phone=session.phone_number, name=name)
+        print(f"[CLIENT] ✅ Nombre guardado: {session.phone_number} → {name}")
+
+        # Retomar confirmación del turno — simular que el usuario presionó '1'
+        session.transition_to(ConversationState.CLIENT_CONFIRM_BOOKING)
+        return self.handle_client_confirm_booking(session, '1')
+
     def handle_client_booking_confirmed(self, session: SessionData, message: str) -> str:
         """
         Handle post-booking options.
