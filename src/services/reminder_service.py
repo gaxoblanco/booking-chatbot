@@ -208,6 +208,30 @@ class ReminderService:
         if sent:
             self._mark_reminder_sent(apt['id'])   # ← mantener siempre
             logger.info(f"✅ Recordatorio enviado exitosamente")
+
+            # Recordatorio informativo al paciente real si tiene número distinto
+            patient_phone = apt.get('patient_phone')
+            if patient_phone and patient_phone != apt['client_phone']:
+                logger.info(
+                    f"📤 Enviando recordatorio informativo a paciente "
+                    f"{patient_phone} (Cita #{apt['id']})"
+                )
+                mensaje_paciente = (
+                    f"🔔 *Recordatorio de turno*\n\n"
+                    f"Hola, te recordamos que tenés un turno agendado:\n\n"
+                    f"👨‍⚕️ *Profesional:* {prof_name}\n"
+                    f"📅 *Fecha:* {dia_nombre} {fecha_formatted}\n"
+                    f"⏰ *Horario:* {apt['start']} hs\n\n"
+                    f"_Para cancelar o reprogramar, contactá a quien agendó el turno._"
+                )
+                message_sender.send_with_retry(
+                    to_phone           = patient_phone,
+                    message            = mensaje_paciente,
+                    professional_phone = apt.get('professional_phone'),
+                    patient_name       = apt.get('patient_name'),
+                    appointment_id     = apt['id'],
+                )
+
         return sent
     
     def _format_reminder_message(self, apt: Dict) -> str:
