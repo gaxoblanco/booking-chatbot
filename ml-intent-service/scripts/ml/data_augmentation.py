@@ -248,7 +248,7 @@ class MessageAugmenter:
                 name='elderly',
                 techniques=['typo_heavy', 'typo_adjacent', 'double_letter',
                            'missing_letter', 'case_variation'],
-                intensity=0.8,
+                intensity=0.4,
                 description='Adulto mayor con dificultad visual (múltiples errores)'
             ),
             
@@ -269,14 +269,14 @@ class MessageAugmenter:
             'abbreviator': AugmentationProfile(
                 name='abbreviator',
                 techniques=['abbreviate', 'remove_accents', 'remove_vowels'],
-                intensity=0.6,
+                intensity=0.4,
                 description='Usuario que abrevia todo (ej: "ncsito psi mañ")'
             ),
             
             'fast_typer': AugmentationProfile(
                 name='fast_typer',
                 techniques=['keyboard_typos', 'typo_light', 'remove_vowels', 'abbreviate'],
-                intensity=0.7,
+                intensity=0.4,
                 description='Usuario que escribe rápido y comete errores de teclado'
             ),
         }

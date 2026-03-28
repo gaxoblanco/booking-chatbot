@@ -264,7 +264,14 @@ DATASET_BASE = [
     {"message": "qué hay disponible para mañana", "intent": "view_tomorrow", "entities": {}},
     {"message": "tenés algo mañana", "intent": "view_tomorrow", "entities": {}},
     {"message": "para el día de mañana qué tienen", "intent": "view_tomorrow", "entities": {}},
-
+    # --- Ejemplos adicionales view_tomorrow ---
+    {"message": "qué profesionales tienen horarios mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana quién atiende", "intent": "view_tomorrow", "entities": {}},
+    {"message": "hay turnos libres mañana por la mañana", "intent": "view_tomorrow", "entities": {"horario": "mañana"}},
+    {"message": "disponibilidad para mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana a la tarde hay algo", "intent": "view_tomorrow", "entities": {"horario": "tarde"}},
+    {"message": "ver lo de mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "quiénes atienden mañana", "intent": "view_tomorrow", "entities": {}},
     # ==========================================
     # INTENT: VIEW_MY_APPOINTMENTS (8 ejemplos)
     # ==========================================
@@ -309,6 +316,14 @@ DATASET_BASE = [
         "intent": "view_my_appointments",
         "entities": {}
     },
+    # --- Ejemplos adicionales view_my_appointments ---
+    {"message": "qué turnos tengo", "intent": "view_my_appointments", "entities": {}},
+    {"message": "cuáles son mis citas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mostrame mis turnos", "intent": "view_my_appointments", "entities": {}},
+    {"message": "quiero ver mis citas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "tengo turno esta semana", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver qué tengo programado", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mis consultas pendientes", "intent": "view_my_appointments", "entities": {}},
 
     # ==========================================
     # INTENT: CANCEL_APPOINTMENT (10 ejemplos)
@@ -373,6 +388,14 @@ DATASET_BASE = [
     {"message": "tienen página web", "intent": "info_center", "entities": {}},
     {"message": "quiero saber más del centro", "intent": "info_center", "entities": {}},
     {"message": "me podés dar info del lugar", "intent": "info_center", "entities": {}},
+    # --- Ejemplos adicionales info_center ---
+    {"message": "info del consultorio", "intent": "info_center", "entities": {}},
+    {"message": "dirección del centro", "intent": "info_center", "entities": {}},
+    {"message": "tienen whatsapp de contacto", "intent": "info_center", "entities": {}},
+    {"message": "número de teléfono del centro", "intent": "info_center", "entities": {}},
+    {"message": "cómo llego al consultorio", "intent": "info_center", "entities": {}},
+    {"message": "están en Buenos Aires", "intent": "info_center", "entities": {}},
+    {"message": "me das los datos del centro", "intent": "info_center", "entities": {}},
 
     # ==========================================
     # INTENT: GREETING (6 ejemplos)
@@ -408,6 +431,16 @@ DATASET_BASE = [
         "intent": "greeting",
         "entities": {}
     },
+    # --- Ejemplos adicionales greeting ---
+    {"message": "hola cómo están", "intent": "greeting", "entities": {}},
+    {"message": "buen día", "intent": "greeting", "entities": {}},
+    {"message": "buenas noches", "intent": "greeting", "entities": {}},
+    {"message": "qué tal", "intent": "greeting", "entities": {}},
+    {"message": "holis", "intent": "greeting", "entities": {}},
+    {"message": "ola", "intent": "greeting", "entities": {}},
+    {"message": "buen dia como estan", "intent": "greeting", "entities": {}},
+    {"message": "holaa", "intent": "greeting", "entities": {}},
+    {"message": "buenas tardes cómo les va", "intent": "greeting", "entities": {}},
 
     # ==========================================
     # INTENT: UNKNOWN (10 ejemplos)
@@ -1077,6 +1110,154 @@ DATASET_BASE = [
     # --- Relación + fecha ---
     {"message": "turno para mi hijo para mañana", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "fecha": "mañana"}},
     {"message": "necesito para mi hermana el jueves", "intent": "book_for_third_party", "entities": {"third_party_relation": "hermana", "fecha": "jueves"}},
+    
+    # En book_for_third_party — con tilde en "mí" (pronombre personal)
+    {"message": "quiero un turno para mí primo", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "hola quiero turno para mí primo puede ser el lunes", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "quiero un turno para mí abuela", "intent": "book_for_third_party", "entities": {"third_party_relation": "abuela"}},
+    {"message": "no es para mí es para mí mamá", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+    {"message": "el turno es para mí hijo", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    # ==========================================
+    # SEARCH_PROFESSIONAL — Patrones estructurales adicionales
+    # ==========================================
+
+    # Patrón: pregunta directa de disponibilidad
+    {"message": "tienen psicólogo disponible el martes", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "martes"}},
+    {"message": "hay lugar el lunes a la mañana", "intent": "search_professional", "entities": {"fecha": "lunes", "horario": "mañana"}},
+    {"message": "tienen algo para el viernes tarde", "intent": "search_professional", "entities": {"fecha": "viernes", "horario": "tarde"}},
+    {"message": "cuándo tienen lugar esta semana", "intent": "search_professional", "entities": {}},
+    {"message": "qué fechas tienen libres", "intent": "search_professional", "entities": {}},
+
+    # Patrón: saludo + fecha
+    {"message": "hola quiero turno para el lunes", "intent": "search_professional", "entities": {"fecha": "lunes"}},
+    {"message": "hola hay disponibilidad el jueves por la tarde", "intent": "search_professional", "entities": {"fecha": "jueves", "horario": "tarde"}},
+    {"message": "buen día busco algo para el próximo martes", "intent": "search_professional", "entities": {"fecha": "martes"}},
+
+    # Patrón: condicional / cortés
+    {"message": "podría ser el martes por la mañana", "intent": "search_professional", "entities": {"fecha": "martes", "horario": "mañana"}},
+    {"message": "pueden darme turno para el lunes", "intent": "search_professional", "entities": {"fecha": "lunes"}},
+    {"message": "me podrían dar algo para el jueves", "intent": "search_professional", "entities": {"fecha": "jueves"}},
+
+    # Patrón: solo disponibilidad sin verbo
+    {"message": "algo para el lunes", "intent": "search_professional", "entities": {"fecha": "lunes"}},
+    {"message": "disponibilidad el viernes", "intent": "search_professional", "entities": {"fecha": "viernes"}},
+    {"message": "tienen para esta semana", "intent": "search_professional", "entities": {}},
+
+    # ==========================================
+    # BOOK_FOR_THIRD_PARTY — Patrones estructurales adicionales
+    # ==========================================
+
+    # Patrón: saludo + oración larga con coma
+    {"message": "hola quiero turno para mi primo puede ser el lunes", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "hola quiero un turno para mi primo puedes ser el lunes", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "buen día necesito sacar turno para mi mamá el martes", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá", "fecha": "martes"}},
+    {"message": "hola quiero turno para mi abuela tienen para el jueves", "intent": "book_for_third_party", "entities": {"third_party_relation": "abuela", "fecha": "jueves"}},
+
+    # Patrón: pregunta / tono consultivo
+    {"message": "puedo sacar turno para mi primo", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "se puede pedir turno para otra persona", "intent": "book_for_third_party", "entities": {}},
+    {"message": "tienen disponibilidad para mi mamá el jueves", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá", "fecha": "jueves"}},
+    {"message": "podría ser el lunes para mi primo", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}},
+
+    # Patrón: negación explícita (no es para mí)
+    {"message": "el turno no es para mí sino para mi primo", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "no voy yo va mi hermana", "intent": "book_for_third_party", "entities": {"third_party_relation": "hermana"}},
+    {"message": "no soy yo es para mi pareja", "intent": "book_for_third_party", "entities": {"third_party_relation": "pareja"}},
+    {"message": "no es para mí es para mi hijo", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+
+    # Patrón: fecha primero
+    {"message": "el lunes hay lugar para mi primo", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}},
+    {"message": "para el martes podría ser para mi mamá", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá", "fecha": "martes"}},
+
+    # Patrón: relación + fecha en frase extendida
+    {"message": "quiero turno para mi primo el lunes que viene", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}},
+    {"message": "necesito para mi mamá el martes a la mañana", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá", "fecha": "martes", "horario": "mañana"}},
+    {"message": "mi hijo tiene libre el viernes lo podemos poner ese día", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "fecha": "viernes"}},
+
+    # Patrón: relaciones que faltaban
+    {"message": "quiero turno para mi primo", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo"}},
+    {"message": "mi prima necesita turno urgente", "intent": "book_for_third_party", "entities": {"third_party_relation": "prima"}},
+    {"message": "busco psicólogo para mi tío", "intent": "book_for_third_party", "entities": {"third_party_relation": "tío"}},
+    {"message": "quiero sacar turno para mi sobrino", "intent": "book_for_third_party", "entities": {"third_party_relation": "sobrino"}},
+    {"message": "mi novia necesita turno con un psicólogo", "intent": "book_for_third_party", "entities": {"third_party_relation": "novia"}},
+    {"message": "turno para mi cuñada el miércoles", "intent": "book_for_third_party", "entities": {"third_party_relation": "cuñada", "fecha": "miércoles"}},
+
+    # ==========================================
+    # SEARCH_PROFESSIONAL — Dislexia y baja alfabetización
+    # ==========================================
+
+    # Dislexia — inversión y confusión de letras
+    {"message": "nesesito turno kon el psicologo", "intent": "search_professional", "entities": {"especialidad": "psicología"}},
+    {"message": "queiro un turno para el miercolse", "intent": "search_professional", "entities": {"fecha": "miércoles"}},
+    {"message": "buscoa un profesional para el luns", "intent": "search_professional", "entities": {"fecha": "lunes"}},
+    {"message": "nececito ber al medico el biernes", "intent": "search_professional", "entities": {"fecha": "viernes"}},
+    {"message": "turno con el dotor para el marets", "intent": "search_professional", "entities": {"fecha": "martes"}},
+    {"message": "kiero turno para manana por la tarde", "intent": "search_professional", "entities": {"fecha": "mañana", "horario": "tarde"}},
+
+    # Dislexia — omisión de sílabas
+    {"message": "nesito turno mañana", "intent": "search_professional", "entities": {"fecha": "mañana"}},
+    {"message": "quero turno con nutrision", "intent": "search_professional", "entities": {"especialidad": "nutrición"}},
+    {"message": "busko profional pa el jue", "intent": "search_professional", "entities": {"fecha": "jueves"}},
+    {"message": "turno con psiclog el sabdo", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "sábado"}},
+
+    # Baja alfabetización — fonético puro
+    {"message": "kiero turno x mañana", "intent": "search_professional", "entities": {"fecha": "mañana"}},
+    {"message": "nesesito turno x el martes", "intent": "search_professional", "entities": {"fecha": "martes"}},
+    {"message": "ai algien disponible x el biernes", "intent": "search_professional", "entities": {"fecha": "viernes"}},
+    {"message": "turno x mi x el lunes", "intent": "search_professional", "entities": {"fecha": "lunes"}},
+
+    # Baja alfabetización — sin puntuación, todo junto
+    {"message": "holakieroturnoparaeliunes", "intent": "search_professional", "entities": {"fecha": "lunes"}, "no_augment": True},
+    {"message": "nesesitoturnoconelpsicologomanana", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "mañana"}, "no_augment": True},
+    {"message": "turnoparaelmartes", "intent": "search_professional", "entities": {"fecha": "martes"}, "no_augment": True},
+    {"message": "turnoparamisobrino", "intent": "book_for_third_party", "entities": {"third_party_relation": "sobrino"}, "no_augment": True},
+    {"message": "kieroturnoparmimama", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}, "no_augment": True},
+
+    # Baja alfabetización — separación incorrecta
+    {"message": "quiero tur no para el lu nes", "intent": "search_professional", "entities": {"fecha": "lunes"}, "no_augment": True},
+    {"message": "nece sito tur no ma ñana", "intent": "search_professional", "entities": {"fecha": "mañana"}, "no_augment": True},
+    {"message": "bus co psi co lo go pa ra ma ña na", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "mañana"}, "no_augment": True},
+
+    # Mayúsculas aleatorias (adultos mayores)
+    {"message": "QUIERO TURNO PARA EL LUNES", "intent": "search_professional", "entities": {"fecha": "lunes"}, "no_augment": True},
+    {"message": "NESESITO VER AL PSICOLOGO", "intent": "search_professional", "entities": {"especialidad": "psicología"}, "no_augment": True},
+    {"message": "KIERO TURNO X MI PRIMO EL LUNES", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}, "no_augment": True},
+    {"message": "MI MAMA NECESITA TURNO", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}, "no_augment": True},
+    {"message": "KIERO CANCELAR MI TURNO", "intent": "cancel_appointment", "entities": {}, "no_augment": True},
+    # ==========================================
+    # BOOK_FOR_THIRD_PARTY — Dislexia y baja alfabetización
+    # ==========================================
+
+    # Dislexia — inversión y confusión
+    {"message": "kiero turno x mi ijo", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "nesesito turno x mi mama", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+    {"message": "turno pa mi primo el luns", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}},
+    {"message": "mi ijo nesecita turno kon psicolog", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo"}},
+    {"message": "turno x mi primo el biernes", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "viernes"}},
+    {"message": "mi mama nesesita ber al medico", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}},
+
+    # Dislexia — omisión de sílabas
+    {"message": "turno mi jo mañana", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "fecha": "mañana"}},
+    {"message": "mi nena neta turno", "intent": "book_for_third_party", "entities": {"third_party_relation": "hija"}},
+    {"message": "pro mi hermno pa el jue", "intent": "book_for_third_party", "entities": {"third_party_relation": "hermano", "fecha": "jueves"}},
+
+    # Baja alfabetización — fonético
+    {"message": "kiero turno x mi primo kpuede ser el lunes", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}},
+    {"message": "x mi mama kiero turno el martes", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá", "fecha": "martes"}},
+    {"message": "mi ijo tiene k ir al dotor el biernes", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "fecha": "viernes"}},
+
+    # Mayúsculas aleatorias
+    {"message": "Turno Para Mi Hijo El Martes", "intent": "book_for_third_party", "entities": {"third_party_relation": "hijo", "fecha": "martes"}},
+
+    # ==========================================
+    # CANCEL_APPOINTMENT — Dislexia y baja alfabetización
+    # ==========================================
+
+    {"message": "kancelo mi turno", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no boi a poder ir al turno", "intent": "cancel_appointment", "entities": {}},
+    {"message": "kiero kanselar", "intent": "cancel_appointment", "entities": {}},
+    {"message": "KIERO CANCELAR MI TURNO", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no puedo ir kanselalo", "intent": "cancel_appointment", "entities": {}},
 ]
 
 

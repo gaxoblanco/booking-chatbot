@@ -13,6 +13,7 @@ Resultado:
     - Reporte de estadísticas
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -49,13 +50,37 @@ def main():
     print(f"\n🔄 Generando variaciones...")
 
     try:
-        generate_dataset_from_examples(
-            DATASET_BASE,
-            n_variations_per_example=N_VARIATIONS,
-            output_file=OUTPUT_FILE
-        )
+        augmenter = MessageAugmenter()
 
-        print(f"\n✅ Generación completada")
+        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            for example in DATASET_BASE:
+                
+                if example.get('no_augment'):
+                    # Escribir solo el original — sin variaciones
+                    entry = {
+                        'message': example['message'],
+                        'intent': example['intent'],
+                        'entities': example['entities'],
+                        'original': example['message'],
+                        'augmented': False
+                    }
+                    f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+                else:
+                    # Flujo normal con augmentation
+                    variations = augmenter.generate_variations(
+                        example['message'],
+                        n=N_VARIATIONS,
+                        include_original=True
+                    )
+                    for variation in variations:
+                        entry = {
+                            'message': variation,
+                            'intent': example['intent'],
+                            'entities': example['entities'],
+                            'original': example['message'],
+                            'augmented': variation != example['message']
+                        }
+                        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
     except Exception as e:
         print(f"\n❌ Error durante la generación: {e}")
@@ -70,7 +95,6 @@ def main():
     print(f"\n📊 Validando dataset generado...")
 
     try:
-        import json
         from collections import Counter
 
         # Leer dataset
