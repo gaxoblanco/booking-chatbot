@@ -26,7 +26,8 @@ class AppointmentService:
         start_time: str,
         end_time: str,
         appointment_type: str = "Consulta",
-        notes: str = None
+        notes: str = None,
+        patient_phone: str = None      # GAP 4 — teléfono del paciente real si es tercero
     ) -> str:
         """
         Create appointment in Google Calendar AND database.
@@ -40,9 +41,10 @@ class AppointmentService:
             end_time: End time in HH:MM format
             appointment_type: Type of appointment (default: "Consulta")
             notes: Optional notes
+            patient_phone: Phone of the actual patient if booked for a third party
         
         Returns:
-            str: Google event ID (for backward compatibility)
+            str: appointment ID
         """
         # Delegate to AppointmentCalendarService which handles both
         # Google Calendar creation AND database storage
@@ -54,7 +56,8 @@ class AppointmentService:
             start_time=start_time,
             end_time=end_time,
             appointment_type=appointment_type,
-            notes=notes
+            notes=notes,
+            patient_phone=patient_phone    # GAP 4
         )
         
         # Return appointment_id (database ID)
