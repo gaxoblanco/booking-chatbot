@@ -78,6 +78,23 @@ class BotController:
     def process_message(self, phone_number: str, message: str) -> str:
         """
         Procesa mensaje entrante y retorna respuesta.
+        Wrapper que garantiza que la sesión siempre se persiste en Redis.
+        """
+        try:
+            response = self._process_message(phone_number, message)
+            return response
+        finally:
+            # Guardar la sesión que realmente usó _process_message
+            try:
+                session = session_manager.get_session(phone_number)
+                session_manager.save_session(session)
+            except Exception as e:
+                print(f"[SESSION] ⚠️ Error guardando sesión: {e}")
+
+    def _process_message(self, phone_number: str, message: str) -> str:
+        """
+        Lógica interna de procesamiento de mensajes.
+        Llamado por process_message() que se encarga del save de sesión.
 
         FLUJO v3.1:
         1. Identificar usuario automáticamente
@@ -153,17 +170,184 @@ class BotController:
         # 4. DETECCIÓN DE INTENCIÓN (NLU) ⭐ NUEVO
         # ==========================================
         
-        # En CLIENT_MAIN_MENU, '0' no tiene pantalla anterior — skip NLU, repetir menú
-        if session.state == ConversationState.CLIENT_MAIN_MENU and message.strip() == '0':
-            return user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None,
-                'phone_number': session.phone_number
-            })
+        # Interceptar '0' antes del NLU en estados donde el ML lo confunde
+        # con info_center u otras intenciones
+        msg_stripped = message.strip()
+
+        if msg_stripped == '0':
+            # CLIENT_MAIN_MENU — repetir menú
+            if session.state == ConversationState.CLIENT_MAIN_MENU:
+                return user_service.generate_welcome_message({
+                    'user_type': 'new', 'name': None, 'is_registered': False,
+                    'has_pending_appointments': False, 'pending_appointments': [],
+                    'profile': None, 'phone_number': session.phone_number
+                })
+            # CLIENT_VIEW_APPOINTMENTS — volver al menú principal
+            elif session.state == ConversationState.CLIENT_VIEW_APPOINTMENTS:
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+                return user_service.generate_welcome_message({
+                    'user_type': 'new', 'name': None, 'is_registered': False,
+                    'has_pending_appointments': False, 'pending_appointments': [],
+                    'profile': None, 'phone_number': session.phone_number
+                })
+            # CLIENT_APPOINTMENT_DETAIL — volver a la lista de citas
+            elif session.state == ConversationState.CLIENT_APPOINTMENT_DETAIL:
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+                return self.client_handler.handle_client_view_appointments(session, '')
+
+        # Interceptar números en CLIENT_BOOKING_CONFIRMED antes del NLU
+        if (session.state == ConversationState.CLIENT_BOOKING_CONFIRMED
+                and msg_stripped in ('1', '2', '0')):
+            handler = self.get_handler_for_state(session.state)
+            return handler(session, msg_stripped)
+
+        # Interceptar confirmaciones y números en CLIENT_SHOW_RESULTS antes del NLU
+        # "si", "dale", "1", "2" → el NLU los confunde con unknown/agenda_confirm/greeting
+        if session.state == ConversationState.CLIENT_SHOW_RESULTS:
+            _CONFIRM_SHOW = {
+                'si', 'sí', 'dale', 'ok', 'bueno', 'va', 'perfecto',
+                'ese', 'esa', 'ese mismo', 'esa misma', 'ese profesional',
+            }
+            msg_lower_show = msg_stripped.lower()
+            results = session.get_temp('search_results', [])
+
+            # Sin resultados + texto libre → resetear y dejar pasar al NLU
+            # para que procese como nueva búsqueda
+            if not results and not msg_stripped.isdigit():
+                session.clear_temp()
+                session.transition_to(ConversationState.START)
+                # No retornamos — dejamos que el NLU procese el mensaje
+
+            else:
+                # Número directo → pasar al handler
+                if msg_stripped.isdigit():
+                    handler = self.get_handler_for_state(session.state)
+                    return handler(session, msg_stripped)
+                # Confirmación corta con un solo resultado → seleccionar automáticamente
+                if msg_lower_show in _CONFIRM_SHOW and len(results) == 1:
+                    handler = self.get_handler_for_state(session.state)
+                    return handler(session, '1')
+
+        # Pre-convertir input natural en CLIENT_FILTER_INPUT antes del NLU
+        # para evitar que intenciones como view_tomorrow o greeting hagan shortcut
+        # cuando el usuario está respondiendo a un filtro específico.
+        if session.state == ConversationState.CLIENT_FILTER_INPUT:
+            current_filter = session.get_temp('current_filter_type')
+            msg_lower_pre = msg_stripped.lower()
+
+            # ── Filtro de horario: acepta texto de franja ───────────────────
+            if current_filter == 'time':
+                _TIME_MAP = {
+                    'mañana': '1', 'manana': '1', 'por la mañana': '1',
+                    'a la mañana': '1', 'de mañana': '1',
+                    'tarde': '2', 'por la tarde': '2',
+                    'a la tarde': '2', 'de tarde': '2',
+                    'noche': '3', 'por la noche': '3',
+                    'a la noche': '3', 'de noche': '3',
+                }
+                for kw, num in _TIME_MAP.items():
+                    if kw in msg_lower_pre:
+                        print(f"[FILTER] ⏰ Horario natural '{msg_stripped}' → opción {num}")
+                        msg_stripped = num
+                        message = num
+                        break
+
+            # Helper de normalización compartido por todos los filtros de texto
+            import unicodedata as _ud
+            def _fnorm(s):
+                nfd = _ud.normalize('NFD', s)
+                return ''.join(c for c in nfd
+                               if _ud.category(c) != 'Mn').lower().strip()
+            msg_norm_f = _fnorm(msg_lower_pre)
+
+            # ── Filtro de especialidad: acepta texto fuzzy ──────────────────
+            if current_filter == 'specialty':
+                _SPECIALTY_MAP = {
+                    'medico general': '1', 'medico': '1', 'clinico': '1',
+                    'general': '1', 'medicina general': '1', 'clinica': '1',
+                    'dentista': '2', 'odontologo': '2', 'odontologia': '2',
+                    'dental': '2', 'dientes': '2', 'muela': '2',
+                    'psicologo': '3', 'psicologia': '3', 'psico': '3',
+                    'terapia': '3', 'terapeuta': '3', 'psiquiatra': '3',
+                    'kinesiologo': '4', 'kinesiologia': '4', 'kinesio': '4',
+                    'fisioterapeuta': '4', 'fisioterapia': '4', 'fisiatra': '4',
+                    'rehabilitacion': '4',
+                    'nutricionista': '5', 'nutricion': '5', 'nutri': '5',
+                    'dietista': '5', 'dietologo': '5', 'dieta': '5',
+                    'otro': '6', 'otros': '6', 'otra': '6', 'otras': '6',
+                    'no se': '6', 'no importa': '6', 'cualquiera': '6',
+                }
+                for kw, num in _SPECIALTY_MAP.items():
+                    if kw in msg_norm_f or msg_norm_f in kw:
+                        print(f"[FILTER] 🩺 Especialidad '{msg_stripped}' → opción {num}")
+                        msg_stripped = num
+                        message = num
+                        break
+
+            # ── Filtro de zona: acepta nombre de zona ───────────────────────
+            elif current_filter == 'zone':
+                _ZONE_MAP = {
+                    'norte': '1', 'zona norte': '1', 'del norte': '1',
+                    'sur': '2', 'zona sur': '2', 'del sur': '2',
+                    'este': '3', 'zona este': '3', 'del este': '3',
+                    'oeste': '4', 'zona oeste': '4', 'del oeste': '4',
+                    'cualquiera': '5', 'no importa': '5', 'indistinto': '5',
+                    'da igual': '5', 'no aplica': '5', 'sin zona': '5',
+                    'todas': '5', 'todo': '5',
+                }
+                for kw, num in _ZONE_MAP.items():
+                    if kw in msg_norm_f:
+                        print(f"[FILTER] 📍 Zona '{msg_stripped}' → opción {num}")
+                        msg_stripped = num
+                        message = num
+                        break
+
+            # ── Filtro de prepaga: confirmación / negación / indiferente ────
+            elif current_filter == 'prepaga':
+                _SI  = {'si', 'con prepaga', 'obra social', 'tengo prepaga',
+                        'si tengo', 'acepta prepaga', 'con cobertura', 'con os'}
+                _NO  = {'no', 'no tengo', 'sin prepaga', 'particular',
+                        'efectivo', 'de bolsillo', 'privado', 'sin cobertura',
+                        'no acepta prepaga', 'pago particular'}
+                _ANY = {'cualquiera', 'no importa', 'da igual', 'indiferente',
+                        'indistinto', 'no aplica', 'ambos', 'me da igual',
+                        'con o sin', 'lo que sea'}
+                if any(kw in msg_norm_f for kw in _SI):
+                    print(f"[FILTER] 💳 Prepaga '{msg_stripped}' → Sí (1)")
+                    msg_stripped = '1'
+                    message = '1'
+                elif any(kw in msg_norm_f for kw in _NO):
+                    print(f"[FILTER] 💳 Prepaga '{msg_stripped}' → No (2)")
+                    msg_stripped = '2'
+                    message = '2'
+                elif any(kw in msg_norm_f for kw in _ANY):
+                    print(f"[FILTER] 💳 Prepaga '{msg_stripped}' → No importa (3)")
+                    msg_stripped = '3'
+                    message = '3'
+
+            # ── Filtro de género: acepta texto natural ──────────────────────
+            elif current_filter == 'gender':
+                _MASC = {'masculino', 'hombre', 'varon', 'male', 'doctor',
+                         'prefiero hombre', 'quiero hombre'}
+                _FEM  = {'femenino', 'mujer', 'female', 'doctora', 'medica',
+                         'prefiero mujer', 'quiero mujer'}
+                _ANY  = {'cualquiera', 'no importa', 'da igual', 'indiferente',
+                         'indistinto', 'no aplica', 'ambos', 'me da igual',
+                         'sin preferencia', 'lo que sea'}
+                if any(kw in msg_norm_f for kw in _MASC):
+                    print(f"[FILTER] 👤 Género '{msg_stripped}' → Masculino (1)")
+                    msg_stripped = '1'
+                    message = '1'
+                elif any(kw in msg_norm_f for kw in _FEM):
+                    print(f"[FILTER] 👤 Género '{msg_stripped}' → Femenino (2)")
+                    msg_stripped = '2'
+                    message = '2'
+                elif any(kw in msg_norm_f for kw in _ANY):
+                    print(f"[FILTER] 👤 Género '{msg_stripped}' → Indiferente (3)")
+                    msg_stripped = '3'
+                    message = '3'
 
         # Intentar NLU en estados donde tiene sentido
         # Expandido para incluir más estados donde el usuario puede dar comandos naturales
@@ -171,11 +355,12 @@ class BotController:
             ConversationState.START,
             ConversationState.CLIENT_MAIN_MENU,
             ConversationState.CLIENT_NEW_USER_MENU,
-            ConversationState.CLIENT_MULTIFILTER_MENU,  
-            ConversationState.CLIENT_SHOW_RESULTS,      
+            ConversationState.CLIENT_MULTIFILTER_MENU,
+            # CLIENT_SHOW_RESULTS excluido: solo números o nombres — el NLU confunde '2','3' como intenciones
             ConversationState.CLIENT_FILTER_INPUT,
             ConversationState.CLIENT_VIEW_APPOINTMENTS,
             ConversationState.CLIENT_APPOINTMENT_DETAIL,
+            # CLIENT_BOOKING_CONFIRMED excluido: solo números 1/2/0 — NLU confunde con unknown
             ConversationState.PROF_MAIN_MENU,
             ConversationState.PROF_AGENDA_IMPORT_REVIEW,    
         ]
@@ -293,6 +478,14 @@ class BotController:
                                                 ['fecha', 'especialidad', 'horario', 'zona', 'genero', 'prepaga', 'professional_name'])
 
                     if tiene_entidades_busqueda or session.state == ConversationState.CLIENT_MULTIFILTER_MENU:
+                        # Si es una búsqueda nueva desde START o CLIENT_MAIN_MENU,
+                        # resetear el contexto para no arrastrar entidades de búsquedas anteriores
+                        # (ej: professional_name o horario de una búsqueda previa)
+                        if (intent_result['intent'] == Intent.SEARCH_PROFESSIONAL
+                                and session.state in (ConversationState.START, ConversationState.CLIENT_MAIN_MENU)):
+                            conv_context.reset()
+                            print("[CONTEXT] Contexto reseteado — nueva búsqueda desde menú")
+
                         conv_context.update_entities(intent_result['entities'], merge=True)
                         accumulated = conv_context.get_entities()
                         print(f"[CONTEXT] Entidades totales acumuladas: {accumulated}")
@@ -350,7 +543,12 @@ class BotController:
         # 5. COMANDOS GLOBALES
         # ==========================================
 
-        if message_lower in ['menu', 'menú', 'volver']:
+        # Comando global 'volver' — excluir estados donde el handler lo maneja distinto
+        _VOLVER_EXCLUIR = {
+            ConversationState.CLIENT_CONFIRM_BOOKING,      # volver → horarios
+            ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING,  # volver → resultados
+        }
+        if message_lower in ['menu', 'menú', 'volver'] and session.state not in _VOLVER_EXCLUIR:
             return self.handle_return_to_menu(session)
 
         if message_lower in ['cancelar', 'cancel', 'salir']:
@@ -377,11 +575,24 @@ class BotController:
 
         try:
             response = handler(session, message)
+            # Si el handler devuelve None, el estado fue reseteado a START
+            # Repasar el mensaje por el flujo normal (NLU + shortcut)
+            if response is None:
+                print(f"[CTRL] Handler devolvió None — repasando mensaje desde START")
+                handler2 = self.get_handler_for_state(session.state)
+                if handler2 != handler and session.state == ConversationState.START:
+                    # Solo reintentar si el estado cambió a START
+                    return self._process_message(session.phone_number, message)
+                session_manager.save_session(session)
+                return common_messages.UNKNOWN_QUERY
+            # Persistir estado en Redis antes de responder
+            session_manager.save_session(session)
             return response
         except Exception as e:
             print(f"❌ Error procesando mensaje: {str(e)}")
             import traceback
             traceback.print_exc()
+            session_manager.save_session(session)
             return common_messages.ERROR_GENERIC
 
     def _convert_natural_input(self, message: str, intent_result: Dict, session: SessionData) -> str:
@@ -504,6 +715,7 @@ class BotController:
             print("[NLU] → Agendar para tercero")
             session.set_role(UserRole.CLIENT)
             session.set_temp('booking_for', 'other')
+            session.set_temp('_third_party_active', True)  # proteger del limpiado
             if intent_result['entities'].get('third_party_relation'):
                 session.set_temp(
                     'third_party_relation',
@@ -603,7 +815,19 @@ class BotController:
         elif intent == Intent.SEARCH_PROFESSIONAL:
             print(f"[NLU] → Búsqueda de profesional (can_shortcut: {can_shortcut})")
             session.set_role(UserRole.CLIENT)
-            
+
+            # Limpiar contexto de tercero SOLO si el usuario busca directamente para sí mismo
+            # NO limpiar si venimos del shortcut de book_for_third_party (flag _third_party_active)
+            if (session.get_temp('booking_for') == 'other'
+                    and not session.get_temp('_third_party_active')):
+                session.set_temp('booking_for', None)
+                session.set_temp('third_party_relation', None)
+                session.set_temp('third_party_name', None)
+                session.set_temp('third_party_phone', None)
+                session.set_temp('third_party_age', None)
+                session.set_temp('third_party_data_collected', None)
+                print("[NLU] → Limpiado contexto de tercero para búsqueda normal")
+
             # Guardar entidades detectadas
             if 'especialidad' in entities:
                 session.set_temp('especialidad', entities['especialidad'])
@@ -619,7 +843,9 @@ class BotController:
             # Si puede hacer shortcut (tiene info suficiente)
             if can_shortcut:
                 print("[NLU] → Ejecutando búsqueda directa")
-                return self._execute_smart_search(session, entities)
+                result = self._execute_smart_search(session, entities)
+                session.set_temp('_third_party_active', None)  # limpiar flag
+                return result
             
             # Si no, iniciar flujo de filtros pidiendo lo que falta
             else:
@@ -744,9 +970,57 @@ class BotController:
         session.set_temp('search_date', date_str)
         session.set_temp('search_date_formatted', date_formatted)
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+        # Persistir inmediatamente — el siguiente mensaje debe leer este estado
+        session_manager.save_session(session)
         
-        # Sin resultados
+        # Sin resultados — intentar fallbacks inteligentes
         if not results:
+            time_pref = filters.get('time_preference')
+
+            # Fallback 1: turno opuesto del mismo día
+            if time_pref in ('mañana', 'tarde', 'noche'):
+                OPUESTO = {'mañana': 'tarde', 'tarde': 'mañana', 'noche': 'mañana'}
+                turno_alt = OPUESTO[time_pref]
+                filters_alt = {**filters, 'time_preference': turno_alt}
+                results_alt = client_service.search_professionals_by_filters(
+                    date_str=date_str, **filters_alt, limit=10
+                )
+                if results_alt:
+                    session.set_temp('search_results', results_alt)
+                    session.set_temp('time_preference', turno_alt)
+                    session_manager.save_session(session)
+                    formatted = client_service.format_search_results_with_slots(
+                        professionals=results_alt, date_str=date_str, show_max_slots=3
+                    )
+                    return (f"😔 No hay turnos de {time_pref} para {date_formatted}, "
+                            f"pero encontré disponibilidad de *{turno_alt}*:\n\n{formatted}")
+
+            # Fallback 2: día siguiente sin filtro de horario
+            from datetime import datetime, timedelta
+            try:
+                next_date = (datetime.strptime(date_str, '%Y-%m-%d') + timedelta(days=1)).date()
+                next_str = next_date.strftime('%Y-%m-%d')
+                next_formatted = next_date.strftime('%d/%m')
+                filters_next = {k: v for k, v in filters.items() if k != 'time_preference'}
+                results_next = client_service.search_professionals_by_filters(
+                    date_str=next_str, **filters_next, limit=10
+                )
+                if results_next:
+                    session.set_temp('search_results', results_next)
+                    session.set_temp('search_date', next_str)
+                    session.set_temp('search_date_formatted', next_formatted)
+                    session.set_temp('time_preference', None)
+                    session_manager.save_session(session)
+                    formatted = client_service.format_search_results_with_slots(
+                        professionals=results_next, date_str=next_str, show_max_slots=3
+                    )
+                    filter_text = self._format_applied_filters(entities)
+                    return (f"😔 No encontré para {date_formatted}{filter_text}, "
+                            f"pero hay disponibilidad el *{next_formatted}*:\n\n{formatted}")
+            except Exception:
+                pass
+
+            # Sin fallback — mensaje estándar
             filter_text = self._format_applied_filters(entities)
             return (f"😔 No encontré profesionales disponibles para {date_formatted}{filter_text}\n\n"
                     "Podés intentar:\n"
@@ -761,36 +1035,7 @@ class BotController:
             show_max_slots=3
         )
         
-        # Header con resumen de búsqueda
-        if professional_name_filter:
-            header = f"✅ {results[0]['name']}"
-        else:
-            header = f"✅ Encontré {len(results)} profesional(es)"
-            if 'especialidad' in entities:
-                header += f" en {entities['especialidad']}"
-        
-        header += f" para {date_formatted}"
-
-        if 'horario' in entities:
-            # Solo mostrar la franja horaria si la fecha no es relativa
-            # para evitar "para 30/03/2026 (mañana)" que confunde fecha con franja
-            fecha_entity = entities.get('fecha', '')
-            fecha_es_relativa = fecha_entity in ('hoy', 'mañana', 'pasado_mañana')
-            if not fecha_es_relativa:
-                franja = entities['horario']
-                franja_label = {'mañana': 'por la mañana', 'tarde': 'por la tarde', 'noche': 'por la noche'}.get(franja, franja)
-                header += f" ({franja_label})"
-        if 'zona' in entities and not professional_name_filter:
-            header += f" en {entities['zona']}"
-        header += ":\n\n"
-        
-        # Footer con opciones
-        footer = ("\n\n💡 Podés:\n"
-                "• Responder con el número para agendar\n"
-                "• Escribir 'filtros' para refinar búsqueda\n"
-                "• Escribir 'otra fecha' para cambiar fecha")
-        
-        return header + formatted + footer
+        return formatted
 
     def _start_filter_flow(self, session: SessionData, entities: Dict, missing: List[str]) -> str:
         """
