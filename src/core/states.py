@@ -143,6 +143,7 @@ class SessionData:
         self.temp_data = {}
         self.conversation_history = []
         self.last_activity = datetime.now()  # Para control de expiración
+        self._on_change = None  # Callback para persistencia automática en cada transición
 
     @property
     def state(self):
@@ -158,6 +159,11 @@ class SessionData:
         """
         print(f"[SESSION] {self.phone_number}: {self.current_state.value} -> {new_state.value}")
         self.current_state = new_state
+        if self._on_change:
+            try:
+                self._on_change(self)
+            except Exception as e:
+                print(f"[SESSION] ⚠️ Error en auto-save: {e}")
 
     def set_role(self, role: UserRole):
         """
@@ -305,7 +311,9 @@ class SessionManager:
             session = SessionData(phone_number)
             self._backend.save(session)
             print(f"[SESSION] Nueva sesión creada para: {phone_number}")
- 
+
+        # Registrar callback — transition_to() guardará en Redis automáticamente
+        session._on_change = self._backend.save
         return session
  
     def save_session(self, session: 'SessionData'):
