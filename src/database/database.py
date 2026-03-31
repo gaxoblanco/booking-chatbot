@@ -2220,4 +2220,5 @@ class Database:
 
     
 # Global database instance
-db = Database()
+import os as _os
+db = Database(_os.getenv('DATABASE_PATH', 'database.db'))
