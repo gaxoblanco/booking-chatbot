@@ -26,6 +26,7 @@ from src.core.states import ConversationState, SessionData, UserRole
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
 from src.messages.messages_appointments import appointment_messages
+from src.utils.validators import validate_name, validate_phone_ar, validate_age
 from src.core.validators import parse_date, validate_time
 from src.services.client_service import client_service
 from src.services.analytics_service import analytics_service
@@ -443,13 +444,7 @@ class ClientHandler:
         today = date.today()
 
         if date_obj < today:
-            return f"""❌ *Fecha inválida*
-
-    La fecha ingresada ({message}) ya pasó.
-
-    Por favor, ingresa una fecha de hoy en adelante.
-
-    {client_messages.CLIENT_ASK_FECHA}"""
+            return appointment_messages.DATE_ALREADY_PASSED + "\n\n" + client_messages.CLIENT_ASK_FECHA
 
         session.set_temp('fecha', date_obj)
         session.set_temp('fecha_str', message)
@@ -893,11 +888,9 @@ class ClientHandler:
         
         print(f"{'='*60}\n")
         
-        # Mostrar confirmación + menú actualizado
-        return client_messages.CLIENT_MULTIFILTER_ADDED.format(
-            filter_name=filter_name,
-            menu=self.format_multifilter_menu(session)
-        )
+        # Volver directo al menú de filtros con los filtros activos actualizados
+        # Sin mensaje intermedio — el menú ya muestra los filtros activos
+        return self.format_multifilter_menu(session)
 
     # ==========================================
     # BÚSQUEDA RÁPIDA (Todo en 1 mensaje)
@@ -1299,12 +1292,48 @@ class ClientHandler:
                 if any(w in msg_norm for w in words if len(w) >= 3):
                     message = str(i)
                     print(f"[CLIENT] 🎯 Nombre '{msg_norm}' → profesional #{i}: {prof.get('name')}")
+                    # Extraer time_preference del mensaje si menciona franja horaria
+                    if 'tarde' in msg_norm:
+                        session.set_temp('time_preference', 'tarde')
+                    elif 'mañana' in msg_norm or 'manana' in msg_norm:
+                        session.set_temp('time_preference', 'mañana')
+                    elif 'noche' in msg_norm:
+                        session.set_temp('time_preference', 'noche')
                     break
 
         try:
             selection = int(message)
         except ValueError:
-            return "⚠️ Por favor, ingresá un número válido.\n\nEscribe '0' para volver."
+            # Texto libre en pantalla de resultados
+            # Solo resetear si el mensaje tiene señales claras de nueva intención.
+            # Si es un comentario conversacional, mantener el estado y orientar.
+            BUSQUEDA_KEYWORDS = {
+                'turno', 'cita', 'sesion', 'busco', 'buscar', 'necesito',
+                'tarde', 'noche', 'lunes', 'martes', 'miercoles', 'jueves',
+                'viernes', 'sabado', 'domingo', 'hoy', 'semana', 'cancelar',
+                'ver mis', 'mis turnos', 'para mi', 'para el', 'para la',
+                'mi tio', 'mi mama', 'mi papa', 'mi primo', 'mi hijo',
+            }
+            msg_norm_kw = msg_lower.strip()
+            words = msg_norm_kw.split()
+            es_nueva_busqueda = (
+                len(words) >= 5 or
+                any(kw in msg_norm_kw for kw in BUSQUEDA_KEYWORDS)
+            )
+
+            if es_nueva_busqueda:
+                # Intención de nueva búsqueda — resetear y dejar al NLU
+                session.clear_temp()
+                session.transition_to(ConversationState.START)
+                return None
+            else:
+                # Comentario conversacional — mantener estado y orientar
+                n = len(results)
+                return (
+                    f"Respondé con el número del profesional (1 al {n}) "
+                    f"para ver sus horarios.\n\n"
+                    "_O escribí lo que necesitás para hacer una nueva búsqueda._"
+                )
 
         # Validate selection
         if selection < 1 or selection > len(results):
@@ -1597,7 +1626,7 @@ class ClientHandler:
 
             # D) Matching por fecha — "el jueves", "22/04", "del lunes", "del 22/04"
             if matched_idx is None and message.strip():
-                from src.utils.date_utils import parse_date
+                from src.core.validators import parse_date
                 from datetime import date as _date
                 import re as _re2
 
@@ -1645,19 +1674,30 @@ class ClientHandler:
         # ==========================================
         # 7. MOSTRAR LISTA DE CITAS
         # ==========================================
+        # Mapeo de días al español
+        _DIAS_ES = {
+            'Mon': 'Lun', 'Tue': 'Mar', 'Wed': 'Mié', 'Thu': 'Jue',
+            'Fri': 'Vie', 'Sat': 'Sáb', 'Sun': 'Dom'
+        }
+
         appointments_list = []
         for idx, apt in enumerate(active_appointments, 1):
-            # Formatear fecha
+            # Formatear fecha en español
             date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
-            date_str = date_obj.strftime("%a %d/%m/%Y")
+            day_en = date_obj.strftime("%a")
+            day_es = _DIAS_ES.get(day_en, day_en)
+            date_str = f"{day_es} {date_obj.strftime('%d/%m/%Y')}"
 
-            # Emoji según estado
+            # Emoji y texto según estado
             if apt['status'] == 'pendiente_confirmacion':
                 status_emoji = "⏳"
-                status_text = "Pendiente confirmación"
+                status_text = "Pendiente"
+            elif apt['status'] == 'confirmada':
+                status_emoji = "✅"
+                status_text = "Agendada"
             else:
                 status_emoji = "✅"
-                status_text = "Confirmada"
+                status_text = "Agendada"
 
             appointments_list.append(
                 f"{idx}️⃣ {status_emoji} {date_str} - {apt['start']}hs\n"
@@ -1713,30 +1753,39 @@ class ClientHandler:
         
         if appointment_id:
             # ✅ YA ESTAMOS EN DETALLE → message es una OPCIÓN
-            
+
             # OPCIÓN 1: REPROGRAMAR
             if message == '1':
                 print(f"[CLIENT] Iniciando reprogramación: {session.phone_number}")
-                
-                # Transicionar a reprogramación
                 session.transition_to(ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-                
-                # Llamar al handler de reprogramación
                 return self.handle_client_reschedule_appointment(session, '1')
-            
+
             # OPCIÓN 2: CANCELAR
             elif message == '2':
                 print(f"[CLIENT] Iniciando cancelación: {session.phone_number}")
-                
-                # Transicionar a cancelación
                 session.transition_to(ConversationState.CLIENT_CANCEL_APPOINTMENT)
-                
-                # Llamar al handler de cancelación
                 return self.handle_client_cancel_appointment(session, '1')
-            
+
+            elif message == '0':
+                # Volver a la lista
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+                return self.handle_client_view_appointments(session, '')
+
             else:
-                # Opción inválida desde el detalle
-                return "⚠️ Opción inválida.\n\n1️⃣ Reprogramar cita\n2️⃣ Cancelar cita\n0️⃣ Volver al menú"
+                # Texto libre — si es confirmación natural, volver a mostrar el detalle
+                # Si es otra intención, resetear al NLU
+                CONFIRM_WORDS = {'dale', 'si', 'sí', 'ok', 'bueno', 'ver', 'mostrar'}
+                if message.strip().lower() in CONFIRM_WORDS:
+                    # Mostrar el detalle de la cita actual
+                    from src.database.database import db
+                    apt = db.get_appointment(appointment_id)
+                    if apt:
+                        return self._format_appointment_detail(session, apt)
+                # Texto libre con otra intención — resetear y reprocesar
+                session.clear_temp()
+                session.transition_to(ConversationState.START)
+                return None
         
         # ==========================================
         # NO ESTAMOS EN DETALLE → SELECCIONAR CITA
@@ -1826,7 +1875,7 @@ class ClientHandler:
         if not apt:
             # Error al cargar - pero permitir volver con 0
             session.set_temp('cancel_error_shown', True)
-            return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
+            return appointment_messages.APPOINTMENT_LOAD_ERROR
         
         # ── Validación de ownership ─────────────────────────────────────────
         # Verificar que la cita pertenece al usuario de la sesión.
@@ -1852,7 +1901,7 @@ class ClientHandler:
         # Validar que no esté completada
         if apt['status'] == 'completada':
             session.set_temp('cancel_error_shown', True)
-            return "❌ No puedes cancelar una cita que ya finalizó.\n\n_Escribe *0* para volver_"
+            return appointment_messages.APPOINTMENT_FINISHED
 
         # ==========================================
         # VALIDAR TIEMPO LÍMITE (24 HORAS)
@@ -1907,8 +1956,10 @@ class ClientHandler:
                 policy_info=policy_info
             )
 
-        # Si llegó aquí sin ser '1', es inválido
-        return "⚠️ Opción inválida.\n\n_Escribe *1* para cancelar o *0* para volver_"
+        # Texto libre — resetear y reprocesar por NLU
+        session.clear_temp()
+        session.transition_to(ConversationState.START)
+        return None
 
     def handle_client_cancel_reason(self, session: SessionData, message: str) -> str:
         """
@@ -1968,7 +2019,7 @@ class ClientHandler:
             
             if not success:
                 print(f"[CANCEL_HANDLER] ❌ cancel_appointment retornó False")
-                return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+                return appointment_messages.CANCEL_ERROR_TECHNICAL
             
             print(f"[CANCEL_HANDLER] ✅ Cita cancelada exitosamente")
             
@@ -1987,7 +2038,7 @@ class ClientHandler:
             )
             
             if not success:
-                return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+                return appointment_messages.CANCEL_ERROR_TECHNICAL
         
         except Exception as e:
             print(f"[CANCEL_HANDLER] ❌ Error inesperado: {e}")
@@ -2005,7 +2056,7 @@ class ClientHandler:
             )
             
             if not success:
-                return "❌ Error al cancelar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+                return appointment_messages.CANCEL_ERROR_TECHNICAL
 
         print("[CANCEL_HANDLER] 🧹 Limpiando temp_data")
         # Limpiar temp_data
@@ -2026,13 +2077,7 @@ class ClientHandler:
         0 = Menú principal
         """
         if message == '1':
-            # Ver mis citas
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
-            return self.handle_client_view_appointments(session, '')
-
-        elif message == '2':
-            # Buscar nuevo profesional
+            # Buscar nuevo turno → menú principal de búsqueda
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return client_messages.CLIENT_MAIN_MENU
@@ -2044,8 +2089,10 @@ class ClientHandler:
             return client_messages.CLIENT_MAIN_MENU
 
         else:
-            # Opción inválida
-            return "⚠️ Opción inválida.\n\n" + appointment_messages.CLIENT_APPOINTMENT_CANCELLED
+            # Texto libre — resetear y reprocesar por NLU
+            session.clear_temp()
+            session.transition_to(ConversationState.START)
+            return None
 
     # ==========================================
     # REPROGRAMACIÓN DE CITAS
@@ -2077,11 +2124,11 @@ class ClientHandler:
         apt = db.get_appointment(appointment_id)
 
         if not apt:
-            return "❌ Error al cargar la cita.\n\n_Escribe *0* para volver_"
+            return appointment_messages.APPOINTMENT_LOAD_ERROR
 
         # Validar que no esté cancelada o completada
         if apt['status'] in ['cancelada_cliente', 'cancelada_profesional', 'completada']:
-            return f"❌ No puedes reprogramar una cita con estado: {apt['status']}\n\n_Escribe *0* para volver_"
+            return fappointment_messages.APPOINTMENT_CANT_RESCHEDULE.format(status=apt["status"])
 
         # Calcular horas hasta la cita
         apt_datetime = datetime.strptime(
@@ -2202,31 +2249,63 @@ class ClientHandler:
             )
 
         # ✅ Si llegó aquí, el usuario está seleccionando una fecha
+        available_dates = session.get_temp('available_dates')
+
+        # Intentar primero como número de lista
         try:
             selection = int(message)
-            available_dates = session.get_temp('available_dates')
-
             if not available_dates or selection < 1 or selection > len(available_dates):
                 return "⚠️ Opción inválida.\n\n_Escribe el número de la fecha o *0* para volver_"
-
             selected_date = available_dates[selection - 1]
 
-            # Guardar fecha seleccionada
-            session.set_temp('new_date', selected_date['date_db'])
-            session.set_temp('new_date_str', selected_date['date_str'])
-
-            # ✅ IMPORTANTE: Limpiar el flag de fechas mostradas
-            session.set_temp('reschedule_dates_shown', False)
-
-            # Transicionar a selección de horario
-            session.transition_to(
-                ConversationState.CLIENT_RESCHEDULE_SELECT_TIME)
-
-            # Llamar directamente al handler de selección de horario
-            return self.handle_client_reschedule_select_time(session, 'start')
-
         except ValueError:
-            return "⚠️ Por favor, ingresa el número de la fecha.\n\n_Escribe *0* para volver_"
+            # No es número — intentar parsear como fecha natural ("el viernes", "mañana", "01/04")
+            from src.core.validators import parse_date
+            from datetime import date as _date, timedelta
+            import re as _re
+
+            date_obj = parse_date(message)
+
+            # Si no parseó directo, buscar día de semana
+            if not date_obj:
+                DIAS = {
+                    'lunes': 0, 'martes': 1, 'miercoles': 2, 'miércoles': 2,
+                    'jueves': 3, 'viernes': 4, 'sabado': 5, 'sábado': 5, 'domingo': 6
+                }
+                msg_norm = message.strip().lower()
+                for dia, weekday in DIAS.items():
+                    if dia in msg_norm:
+                        today_wd = _date.today().weekday()
+                        days_ahead = (weekday - today_wd) % 7 or 7
+                        date_obj = _date.today() + timedelta(days=days_ahead)
+                        break
+
+            if date_obj and available_dates:
+                # Buscar esa fecha en las opciones disponibles
+                date_str_match = date_obj.strftime("%Y-%m-%d")
+                matched = next(
+                    (d for d in available_dates if d['date_db'] == date_str_match),
+                    None
+                )
+                if matched:
+                    selected_date = matched
+                else:
+                    return (
+                        f"No tengo disponibilidad para esa fecha.\n\n"
+                        "_Elegí un número de la lista o *0* para volver_"
+                    )
+            else:
+                # No se pudo interpretar — resetear
+                session.clear_temp()
+                session.transition_to(ConversationState.START)
+                return None
+
+        # Guardar fecha seleccionada
+        session.set_temp('new_date', selected_date['date_db'])
+        session.set_temp('new_date_str', selected_date['date_str'])
+        session.set_temp('reschedule_dates_shown', False)
+        session.transition_to(ConversationState.CLIENT_RESCHEDULE_SELECT_TIME)
+        return self.handle_client_reschedule_select_time(session, 'start')
 
     def handle_client_reschedule_select_time(self, session: SessionData, message: str) -> str:
         """
@@ -2316,7 +2395,9 @@ class ClientHandler:
             )
 
         except ValueError:
-            return "⚠️ Por favor, ingresa el número del horario.\n\n_Escribe *0* para volver_"
+            session.clear_temp()
+            session.transition_to(ConversationState.START)
+            return None
 
     def handle_client_reschedule_confirm(self, session: SessionData, message: str) -> str:
         """
@@ -2506,9 +2587,9 @@ class ClientHandler:
 
         # Badge de estado
         if apt['status'] == 'pendiente_confirmacion':
-            status_badge = "Estado: ⏳ *Pendiente de confirmación*"
+            status_badge = "Estado: ⏳ *Pendiente*"
         elif apt['status'] == 'confirmada':
-            status_badge = "Estado: ✅ *Confirmada*"
+            status_badge = "Estado: ✅ *Agendada*"
         elif apt['status'] == 'completada':
             status_badge = "Estado: ✔️ *Completada*"
         else:
@@ -2580,15 +2661,8 @@ class ClientHandler:
                 )
                 session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
                 
-                search_date_formatted = session.get_temp('search_date_formatted', '')
-                return f"""Volviendo a los resultados...
-
-✅ Profesionales disponibles para {search_date_formatted}:
-
-{formatted}
-
-Responde con el número para ver detalles.
-O escribe '0' para volver al menú."""
+                session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+                return formatted
             else:
                 session.clear_temp()
                 session.transition_to(ConversationState.CLIENT_MAIN_MENU)
@@ -2603,25 +2677,109 @@ O escribe '0' para volver al menú."""
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return "❌ Error: Sesión expirada.\n\n" + client_messages.CLIENT_MAIN_MENU
         
-        # Validate numeric input
-        try:
-            selection = int(message)
-        except ValueError:
-            return "⚠️ Por favor, ingresa el número del horario que deseas agendar.\n\nEscribe '0' para volver."
-        
-        # Get available slots
-        slots = professional_service.get_available_slots(
+        # Cargar los mismos slots que se mostraron en pantalla
+        # (aplicando el mismo filtro de franja horaria)
+        time_preference = session.get_temp('time_preference')
+        all_slots = professional_service.get_available_slots(
             professional['phone'],
             search_date,
             duration_minutes=50
         )
-        
+
+        # Filtrar por franja si aplica — para que los números coincidan con lo mostrado
+        if time_preference and all_slots:
+            from datetime import datetime as _dt
+            FRANJAS = {
+                'mañana': (6, 13),
+                'tarde':  (13, 20),
+                'noche':  (20, 24),
+            }
+            rango = FRANJAS.get(time_preference)
+            if rango:
+                slots = [
+                    s for s in all_slots
+                    if rango[0] <= _dt.strptime(s['start'], '%H:%M').hour < rango[1]
+                ]
+            else:
+                slots = all_slots
+        else:
+            slots = all_slots
+
         if not slots:
-            return "❌ No hay horarios disponibles.\n\nEscribe '0' para volver."
-        
-        # Validate selection
+            return "❌ No hay horarios disponibles.\n\nEscribí *0* para volver."
+
+        # Intentar como número directo
+        try:
+            selection = int(message)
+
+        except ValueError:
+            # No es número — intentar como hora natural: "a las 9", "09:00", "las 10:40"
+            import re as _re
+            time_match = _re.search(r'(\d{1,2})(?:[:h](\d{2}))?', message)
+            selection = None
+
+            if time_match:
+                hour = int(time_match.group(1))
+                minute = int(time_match.group(2)) if time_match.group(2) else 0
+                time_str = f"{hour:02d}:{minute:02d}"
+
+                # Buscar el slot con match exacto hora:minuto
+                target = f"{hour:02d}:{minute:02d}"
+                for i, slot in enumerate(slots, 1):
+                    if slot['start'] == target:
+                        selection = i
+                        print(f"[CLIENT] 🕐 Hora natural '{message}' → slot #{i}: {slot['start']}")
+                        break
+                # Si no hay match exacto, intentar solo por hora
+                if selection is None:
+                    for i, slot in enumerate(slots, 1):
+                        if slot['start'].startswith(f"{hour:02d}:"):
+                            selection = i
+                            print(f"[CLIENT] 🕐 Hora aproximada '{message}' → slot #{i}: {slot['start']}")
+                            break
+
+            if selection is None:
+                # En CLIENT_VIEW_DETAIL_WITH_BOOKING el usuario ya eligió profesional
+                # y está viendo horarios. Solo salir si hay señales explícitas de
+                # NUEVA búsqueda — no basta con longitud o keywords ambiguas.
+                #
+                # Keywords ACCIONABLES: implican cambio de fecha, franja, profesional o
+                # intención distinta (cancelar, ver citas). No incluir palabras que
+                # el usuario puede usar para comentar lo que ve ("horarios", "trabaja", etc.)
+                NUEVA_BUSQUEDA_KW = {
+                    # Días de semana — quiere otra fecha
+                    'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo',
+                    # Expresiones de fecha
+                    'para el', 'para la', 'este ', 'próximo', 'proximo', 'semana que',
+                    # Cambio de franja explícito con intención
+                    'por la tarde', 'por la mañana', 'por la noche',
+                    'a la tarde', 'a la mañana',
+                    # Intenciones distintas
+                    'cancelar', 'ver mis', 'mis turnos', 'para mi', 'para un',
+                    'mi tio', 'mi mama', 'mi papa', 'mi primo', 'mi hijo',
+                    # Verbos de acción de búsqueda explícita
+                    'busco otro', 'buscar otro', 'quiero otro', 'busco un',
+                    'quiero buscar', 'necesito otro',
+                }
+                msg_lower_kw = message.strip().lower()
+
+                es_nueva_busqueda = any(kw in msg_lower_kw for kw in NUEVA_BUSQUEDA_KW)
+
+                if es_nueva_busqueda:
+                    # Dejar pasar al NLU — puede ser search_professional, book_for_third_party, etc.
+                    session.clear_temp()
+                    session.transition_to(ConversationState.START)
+                    return None
+                else:
+                    # Comentario sobre los horarios — mantener estado y orientar
+                    return (
+                        "Para elegir el horario respondé con el número de la lista.\n\n"
+                        "_Escribí *0* para volver a los resultados_"
+                    )
+
+        # Validate selection range
         if selection < 1 or selection > len(slots):
-            return f"⚠️ Número inválido. Elegí entre 1 y {len(slots)}.\n\nEscribe '0' para volver."
+            return f"⚠️ Elegí un número entre 1 y {len(slots)}.\n\nEscribí *0* para volver."
         
         # Get selected slot
         selected_slot = slots[selection - 1]
@@ -2661,18 +2819,16 @@ O escribe '0' para volver al menú."""
             if client_name:
                 booking_for_info = f"👤 Paciente: {client_name}\n"
 
-        return f"""✅ CONFIRMAR AGENDAMIENTO
-{'=' * 40}
-
-{booking_for_info}👨‍⚕️ Profesional: {prof_name}
-📅 Fecha: {day_name} {date_formatted}
-⏰ Horario: {selected_slot['start']} - {selected_slot['end']}
-📱 Contacto: {prof_phone}
-
-¿Confirmas esta cita?
-
-1️⃣ Sí, confirmar turno
-0️⃣ No, volver atrás"""
+        return appointment_messages.CONFIRM_BOOKING_HEADER.format(
+            patient_line=booking_for_info,
+            emoji_prof=DomainConfig.EMOJI_PROFESSIONAL,
+            prof_name=prof_name,
+            day=day_name,
+            date=date_formatted,
+            start=selected_slot['start'],
+            end=selected_slot['end'],
+            phone=prof_phone,
+        )
 
     def handle_client_confirm_booking(self, session: SessionData, message: str) -> str:
         """
@@ -2782,10 +2938,9 @@ O escribe '0' para volver al menú."""
                 f"tiene {global_count} turnos activos en total")
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return (
-                f"⚠️ Tenés {global_count} turnos activos en total.\n\n"
-                f"Para agendar uno nuevo, primero cancelá alguno de los existentes.\n\n"
-                f"Escribí *mis turnos* para verlos."
+            return appointment_messages.BOOKING_LIMIT_GLOBAL.format(
+                count=global_count,
+                s='s' if global_count > 1 else '',
             )
         # ── Fin validación global ────────────────────────────────────────────────
 
@@ -2801,11 +2956,10 @@ O escribe '0' para volver al menú."""
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             prof_name = professional.get('name', 'este profesional')
-            return (
-                f"⚠️ Ya tenés {active_count} turno{'s' if active_count > 1 else ''} "
-                f"activo{'s' if active_count > 1 else ''} con {prof_name}.\n\n"
-                f"Si necesitás otro horario, primero cancelá uno de los turnos existentes.\n\n"
-                f"Escribí *mis turnos* para verlos."
+            return appointment_messages.BOOKING_LIMIT_PER_PROFESSIONAL.format(
+                count=active_count,
+                s='s' if active_count > 1 else '',
+                prof_name=prof_name,
             )
         # ── Fin validación por profesional ───────────────────────────────────────
 
@@ -2865,11 +3019,7 @@ O escribe '0' para volver al menú."""
 
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return f"""❌ Error al agendar la cita.
-
-    Por favor, intenta nuevamente o contacta al profesional directamente.
-
-    {client_messages.CLIENT_MAIN_MENU}"""
+            return appointment_messages.BOOKING_ERROR
 
         session.set_temp('appointment_id', appointment_id)
         session.transition_to(ConversationState.CLIENT_BOOKING_CONFIRMED)
@@ -2892,27 +3042,16 @@ O escribe '0' para volver al menú."""
             name_str = f" — {tp_name}" if tp_name else ""
             booking_for_info = f"\n    👤 Paciente: tu {relation}{name_str}"
 
-        return f"""✅ ¡CITA AGENDADA CON ÉXITO!
-    {'=' * 40}
-
-    Tu cita ha sido registrada en el calendario del profesional.
-
-    📋 RESUMEN DE LA CITA:{booking_for_info}
-
-    👨‍⚕️ Profesional: {prof_name}
-    📅 Fecha: {day_name} {date_formatted}
-    ⏰ Horario: {booking_start_time} - {booking_end_time}
-    📱 Contacto: {prof_phone}
-
-    📌 Estado: Confirmada
-
-    El profesional ha recibido tu reserva automáticamente.
-
-    ¿Qué deseas hacer?
-
-    1️⃣ Ver mis citas
-    2️⃣ Nueva búsqueda
-    0️⃣ Menú principal"""
+        return appointment_messages.BOOKING_SUCCESS.format(
+            slot_name_upper=DomainConfig.APPOINTMENT_NAME_UPPER,
+            slot_name_plural=DomainConfig.APPOINTMENT_NAME_PLURAL,
+            patient_line=booking_for_info,
+            emoji_prof=DomainConfig.EMOJI_PROFESSIONAL,
+            prof_name=prof_name,
+            day=day_name,
+            date=date_formatted,
+            start=booking_start_time,
+        )
     def _handle_third_party_escape(self, session: SessionData, message: str):
         """
         Helper compartido — detecta si el usuario quiere escapar del flujo de tercero.
@@ -2961,12 +3100,7 @@ O escribe '0' para volver al menú."""
         # Cualquier otra entrada avanza al nombre
         if len(msg) > 0:
             session.transition_to(ConversationState.CLIENT_THIRD_PARTY_NAME)
-            return (
-                f"👤 *Nombre del paciente*\n\n"
-                f"¿Cuál es el nombre completo de tu {relation}?\n\n"
-                f"Ejemplo: Juan Pérez\n\n"
-                f"_Escribe *0* para volver · *cancelar* para salir_"
-            )
+            return appointment_messages.THIRD_PARTY_INTRO.format(relation=relation)
 
     def handle_client_third_party_name(self, session: SessionData, message: str) -> str:
         """
@@ -2989,25 +3123,18 @@ O escribe '0' para volver al menú."""
                 time_preference=time_preference
             )
 
-        name = message.strip()
-        if not name or len(name) < 2:
+        validation = validate_name(message)
+        if not validation.valid:
             return (
-                "⚠️ Por favor ingresá el nombre completo del paciente.\n\n"
+                f"⚠️ {validation.error}\n\n"
                 "Ejemplo: Juan Pérez\n\n"
                 "_Escribe *0* para volver · *cancelar* para salir_"
             )
-
+        name = validation.value  # normalizado en Title Case
         session.set_temp('third_party_name', name)
         session.transition_to(ConversationState.CLIENT_THIRD_PARTY_PHONE)
-        return (
-            f"📞 *Teléfono de {name}* (opcional)\n\n"
-            f"Si tenés el número de WhatsApp de tu {session.get_temp('third_party_relation') or 'familiar'}, "
-            f"le enviaremos un recordatorio del turno directamente.\n\n"
-            f"Formato: +5491112345678\n\n"
-            f"• Escribí el teléfono\n"
-            f"• O enviá *saltar* para omitir\n\n"
-            f"_Escribe *0* para volver · *cancelar* para salir_"
-        )
+        relation = session.get_temp('third_party_relation') or 'familiar'
+        return appointment_messages.THIRD_PARTY_PHONE.format(name=name, relation=relation)
 
     def handle_client_third_party_phone(self, session: SessionData, message: str) -> str:
         """
@@ -3023,26 +3150,23 @@ O escribe '0' para volver al menú."""
             # Volver al nombre
             session.transition_to(ConversationState.CLIENT_THIRD_PARTY_NAME)
             relation = session.get_temp('third_party_relation') or 'familiar'
-            return (
-                f"👤 *Nombre del paciente*\n\n"
-                f"¿Cuál es el nombre completo de tu {relation}?\n\n"
-                f"_Escribe *0* para volver · *cancelar* para salir_"
-            )
+            return appointment_messages.THIRD_PARTY_INTRO.format(relation=relation)
 
         if message.lower() == 'saltar':
             session.set_temp('third_party_phone', None)
         else:
-            session.set_temp('third_party_phone', message.strip())
+            phone_validation = validate_phone_ar(message)
+            if not phone_validation.valid:
+                return (
+                    f"⚠️ {phone_validation.error}\n\n"
+                    "• Escribí el teléfono (ej: 1112345678)\n"
+                    "• O enviá *saltar* para omitir\n\n"
+                    "_Escribe *0* para volver · *cancelar* para salir_"
+                )
+            session.set_temp('third_party_phone', phone_validation.value)  # normalizado
 
         session.transition_to(ConversationState.CLIENT_THIRD_PARTY_AGE)
-        return (
-            f"🎂 *Edad de {name}* (opcional)\n\n"
-            f"¿Cuántos años tiene?\n\n"
-            f"Ejemplo: 12\n\n"
-            f"• Escribí la edad\n"
-            f"• O enviá *saltar* para omitir\n\n"
-            f"_Escribe *0* para volver · *cancelar* para salir_"
-        )
+        return appointment_messages.THIRD_PARTY_AGE.format(name=name)
 
     def handle_client_third_party_age(self, session: SessionData, message: str) -> str:
         """
@@ -3058,24 +3182,21 @@ O escribe '0' para volver al menú."""
         if message.strip().lower() in {'0', 'volver', 'atrás', 'atras'}:
             # Volver al teléfono
             session.transition_to(ConversationState.CLIENT_THIRD_PARTY_PHONE)
-            return (
-                f"📞 *Teléfono de {name}* (opcional)\n\n"
-                f"• Escribí el teléfono\n"
-                f"• O enviá *saltar* para omitir\n\n"
-                f"_Escribe *0* para volver · *cancelar* para salir_"
-            )
+            relation = session.get_temp('third_party_relation') or 'familiar'
+            return appointment_messages.THIRD_PARTY_PHONE.format(name=name, relation=relation)
 
         if message.lower() == 'saltar':
             session.set_temp('third_party_age', None)
         else:
-            age = message.strip()
-            if age.isdigit() and 0 <= int(age) <= 120:
-                session.set_temp('third_party_age', int(age))
-            else:
+            age_validation = validate_age(message)
+            if not age_validation.valid:
                 return (
-                    "⚠️ Ingresá una edad válida (ej: 12) o escribí *saltar*.\n\n"
+                    f"⚠️ {age_validation.error}\n\n"
+                    "• Escribí la edad (ej: 12)\n"
+                    "• O enviá *saltar* para omitir\n\n"
                     "_Escribe *0* para volver · *cancelar* para salir_"
                 )
+            session.set_temp('third_party_age', int(age_validation.value))
 
         # Todos los datos recolectados — marcar y retomar confirmación
         session.set_temp('third_party_data_collected', True)
@@ -3117,13 +3238,14 @@ O escribe '0' para volver al menú."""
             )
 
         # Validar nombre
-        name = message.strip()
-        if not name or len(name) < 2:
+        validation = validate_name(message)
+        if not validation.valid:
             return (
-                "⚠️ Por favor ingresá tu nombre completo.\n\n"
+                f"⚠️ {validation.error}\n\n"
                 "Ejemplo: María González\n\n"
                 "_Escribe *0* para cancelar_"
             )
+        name = validation.value  # normalizado en Title Case
 
         # Guardar en BD — add_client usa ON CONFLICT DO UPDATE, seguro si ya existe
         db.add_client(phone=session.phone_number, name=name)
@@ -3156,4 +3278,7 @@ O escribe '0' para volver al menú."""
             return client_messages.CLIENT_MAIN_MENU
         
         else:
-            return "⚠️ Opción inválida.\n\n1️⃣ Ver mis citas\n2️⃣ Nueva búsqueda\n0️⃣ Menú principal"
+            # Texto libre — resetear y reprocesar por NLU
+            session.clear_temp()
+            session.transition_to(ConversationState.START)
+            return None
