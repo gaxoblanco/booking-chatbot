@@ -1,6 +1,6 @@
 # 🏗️ ARQUITECTURA DEL PROYECTO
 ## Sistema de Gestión de Turnos — WhatsApp Bot
-**Versión 5.0 — Marzo 2026**
+**Versión 6.0 — Marzo 2026**
 
 ---
 
@@ -8,15 +8,16 @@
 
 1. [Visión General](#visión-general)
 2. [Estructura del Proyecto](#estructura-del-proyecto)
-3. [Sistema NLU/ML](#sistema-nluml)
-4. [Integraciones Externas](#integraciones-externas)
-5. [Seguridad](#seguridad)
-6. [Flujo de Datos](#flujo-de-datos)
-7. [Base de Datos](#base-de-datos)
-8. [CRON Jobs](#cron-jobs)
-9. [Setup y Deployment](#setup-y-deployment)
-10. [Testing](#testing)
-11. [Variables de Entorno](#variables-de-entorno)
+3. [Sistema de Mensajes y Tonos](#sistema-de-mensajes-y-tonos)
+4. [Sistema NLU/ML](#sistema-nluml)
+5. [Integraciones Externas](#integraciones-externas)
+6. [Seguridad](#seguridad)
+7. [Flujo de Datos](#flujo-de-datos)
+8. [Base de Datos](#base-de-datos)
+9. [CRON Jobs](#cron-jobs)
+10. [Setup y Deployment](#setup-y-deployment)
+11. [Testing](#testing)
+12. [Variables de Entorno](#variables-de-entorno)
 
 ---
 
@@ -26,7 +27,7 @@ Bot conversacional de WhatsApp para gestión completa de turnos médicos.
 Permite a clientes buscar y reservar turnos, y a profesionales gestionar
 su agenda — todo desde WhatsApp, sin apps adicionales.
 
-### Stack Tecnológico v5.0
+### Stack Tecnológico v6.0
 
 ```
 WhatsApp (Twilio API)
@@ -42,7 +43,7 @@ Flask Webhook (Python 3.10)
 │                                                     │
 │  ┌─────────────────────┐  ┌──────────────────────┐  │
 │  │  HybridIntentDetect │  │  SessionManager      │  │
-│  │  ML (spaCy) 98.1%  │  │  → Redis (TTL 30min) │  │
+│  │  ML (spaCy) 99.2%  │  │  → Redis (TTL 30min) │  │
 │  │  + Rules fallback  │  │  → Memory fallback   │  │
 │  └─────────────────────┘  └──────────────────────┘  │
 │                                                     │
@@ -79,7 +80,7 @@ Flask Webhook (Python 3.10)
 | Mensajería | Twilio WhatsApp API |
 | Base de datos | SQLite |
 | Calendario | Google Calendar API (Service Account) |
-| NLP/ML | spaCy 3.7.2 + es_core_news_sm (98.1% accuracy) |
+| NLP/ML | spaCy 3.7.2 + TextCatEnsemble (99.2% accuracy) |
 | Sesiones | Redis 7 (fallback: memoria) |
 | Container | Docker + Docker Compose |
 | Archivos | FileParser (CSV + Excel via openpyxl) |
@@ -149,11 +150,18 @@ booking-chatbot/
 │   │   ├── domain_filters_config.py     # Filtros habilitados por dominio
 │   │   └── settings.py                  # Variables de entorno
 │   │
-│   ├── 📁 messages/
-│   │   ├── messages_common.py
-│   │   ├── messages_client.py
-│   │   ├── messages_professional.py
-│   │   └── messages_appointments.py
+│   ├── 📁 messages/                     # ← Sistema de tonos multi-tenant
+│   │   ├── loader.py                    # Carga tono según TENANT_TONE (singleton)
+│   │   ├── messages_common.py           # Wrapper @property → loader.get_msg()
+│   │   ├── messages_client.py           # Wrapper @property → loader.get_msg()
+│   │   ├── messages_appointments.py     # Wrapper @property + helpers estáticos
+│   │   ├── messages_professional.py     # Wrapper @property → loader.get_msg()
+│   │   └── 📁 tones/
+│   │       ├── demo.py                  # Tono aspiracional (número de demostración)
+│   │       └── coloquial.py             # Tono vecinal (centros locales, Formosa/NOA)
+│   │
+│   ├── 📁 utils/
+│   │   └── validators.py                # Validación nombre, teléfono AR, edad
 │   │
 │   ├── 📁 filters/                      # Sistema de filtros modular
 │   │   ├── filter_manager.py
@@ -210,6 +218,7 @@ booking-chatbot/
 │
 └── 📁 docs/
     ├── ARCHITECTURE.md                  # Este archivo — índice del sistema
+    ├── TONE_SYSTEM.md                   # Sistema de tonos: cómo crear y registrar
     ├── SECURITY.md                      # Plan y estado de seguridad completo
     ├── SETUP_INSTRUCTIONS.md            # Setup paso a paso
     ├── GOOGLE_CALENDAR_SERVICE.md       # Integración Google Calendar
@@ -217,6 +226,52 @@ booking-chatbot/
     ├── ml_agenda_import_intents.md      # Spec intenciones importación agenda
     └── ml_book_for_third_party.md       # Spec intención agendar para terceros
 ```
+
+---
+
+## 🎨 SISTEMA DE MENSAJES Y TONOS
+
+### Concepto
+
+Cada instancia del bot puede hablar con una personalidad distinta (tono)
+sin modificar el código. El tono se configura por variable de entorno.
+
+```env
+TENANT_TONE=coloquial   # o: demo
+```
+
+### Flujo de carga
+
+```
+TENANT_TONE (env)
+      │
+      ▼
+src/messages/loader.py  ← singleton, carga una vez al arrancar
+      │
+      ├── get_msg("CLAVE") → devuelve el string del tono activo
+      │
+      ▼
+src/messages/messages_*.py  ← wrappers con @property
+      │
+      ▼
+client_handler.py / bot_controller.py  ← usan appointment_messages.CLAVE
+```
+
+### Tonos disponibles
+
+| Tono | Uso | Personalidad |
+|---|---|---|
+| `demo` | Número de demostración | Aspiracional, muestra el valor del producto |
+| `coloquial` | Centros locales (Formosa/NOA) | Vecinal, directo, sin corporativismo |
+
+### Agregar un tono nuevo
+
+1. Copiar `src/messages/tones/coloquial.py` → `src/messages/tones/nuevo_tono.py`
+2. Editar los strings
+3. Registrar en `src/messages/loader.py`: agregar al set `REGISTERED`
+4. Configurar en `.env`: `TENANT_TONE=nuevo_tono`
+
+**Documentación completa:** `docs/TONE_SYSTEM.md`
 
 ---
 
@@ -229,200 +284,142 @@ Mensaje del usuario
         │
         ▼
 HybridIntentDetector
+  ├── RuleBasedDetector (reglas explícitas)
+  └── MLIntentDetector (HTTP → ml-intent-service)
         │
-        ├─ ML prediction (spaCy) ─── confidence ≥ 0.7 ──→ usar intent ML
-        │                                                         │
-        └─ Rules fallback ────────── confidence < 0.7 ──→ usar intent reglas
-                                                                  │
-                                                                  ▼
-                                                      EntityExtractor
-                                                      (especialidad, fecha,
-                                                       zona, horario, etc.)
+        ├── Si ML confidence >= 0.7 → usar ML
+        └── Si ML confidence < 0.7  → usar Rules (fallback)
 ```
 
-### Intenciones actuales
+### Intenciones (14)
 
-| Intent | Descripción | Estados donde aplica |
-|--------|-------------|----------------------|
-| `search_professional` | Buscar profesional | START, CLIENT_MAIN_MENU, filtros |
-| `view_my_appointments` | Ver mis turnos | START, CLIENT_MAIN_MENU |
-| `cancel_appointment` | Cancelar turno | START, CLIENT_MAIN_MENU |
-| `reschedule_appointment` | Reprogramar | START, CLIENT_MAIN_MENU |
-| `confirm_appointment` | Confirmar turno | AWAITING_REMINDER_RESPONSE |
-| `view_tomorrow` | Ver disponibles mañana | START, CLIENT_MAIN_MENU |
-| `greeting` | Saludo | Todos |
-| `unknown` | No detectado | — |
+| Intención | Descripción |
+|---|---|
+| `search_professional` | Buscar y agendar turno |
+| `book_for_third_party` | Agendar para familiar/tercero |
+| `view_my_appointments` | Ver mis citas |
+| `view_tomorrow` | Ver disponibles mañana |
+| `cancel_appointment` | Cancelar turno |
+| `info_center` | Información del centro |
+| `greeting` | Saludo |
+| `unknown` | Fuera de alcance |
+| `agenda_view_ready` | Revisar agenda importada (sin errores) |
+| `agenda_view_overlaps` | Ver solapamientos de agenda |
+| `agenda_view_existing` | Ver pacientes existentes |
+| `agenda_view_errors` | Ver errores de importación |
+| `agenda_confirm_upload` | Confirmar carga de agenda |
+| `agenda_cancel_upload` | Cancelar carga de agenda |
 
-### Intenciones pendientes de integración
+### Estados con NLU habilitado
 
-**Grupo A — Importación de agenda** (solo en `PROF_AGENDA_IMPORT_REVIEW`):
+El NLU solo corre en estados donde el usuario puede escribir texto libre.
+En estados de selección numérica (resultados, horarios) se interceptan
+los números directamente para evitar clasificaciones erróneas.
+
+```python
+nlu_enabled_states = [
+    START, CLIENT_MAIN_MENU, CLIENT_NEW_USER_MENU,
+    CLIENT_MULTIFILTER_MENU, CLIENT_FILTER_INPUT,
+    CLIENT_VIEW_APPOINTMENTS, CLIENT_APPOINTMENT_DETAIL,
+    CLIENT_BOOKING_CONFIRMED, PROF_MAIN_MENU, PROF_AGENDA_IMPORT_REVIEW,
+]
 ```
-AGENDA_VIEW_READY, AGENDA_VIEW_OVERLAPS, AGENDA_VIEW_EXISTING,
-AGENDA_VIEW_ERRORS, AGENDA_CONFIRM_UPLOAD, AGENDA_CANCEL_UPLOAD
-```
-Documentación: `docs/ml_agenda_import_intents.md`
 
-**Grupo B — Agendar para terceros** (mismos estados que `search_professional`):
-```
-BOOK_FOR_THIRD_PARTY
-```
-Documentación: `docs/ml_book_for_third_party.md`
+### Cambio de intención en estados numéricos
 
-### Servicio ML
-
-El modelo corre en un container separado (`ml-intent-service`):
-- Framework: spaCy 3.7.2
-- Dataset: ~1.050 ejemplos
-- Accuracy: 98.1% (epoch 19/30)
-- RAM: ~647 MiB
-- Endpoint: `POST http://ml-service:8000/predict`
+Si el usuario escribe texto libre en un estado de selección numérica,
+el handler devuelve `None`. El `BotController` detecta el `None`,
+resetea el estado a `START` y reprocesa el mensaje por el NLU en el
+mismo turno — sin pedirle al usuario que repita.
 
 ---
 
 ## 🔗 INTEGRACIONES EXTERNAS
 
+### Twilio WhatsApp
+
+- Recibe mensajes via webhook POST `/webhook`
+- Envía mensajes via TwiML XML
+- Usa templates aprobados para recordatorios y ofertas de waitlist
+- Valida firma HMAC en producción
+
 ### Google Calendar
 
-```
-Service Account
-    │
-    ├── Lectura de disponibilidad (pull)
-    ├── Creación de eventos (al reservar turno)
-    ├── Cancelación de eventos (al cancelar turno)
-    ├── Eventos recurrentes (carga masiva de pacientes)
-    └── Watch channels (notificaciones push)
-              │
-              └── Google hace POST a /google-calendar/webhook
-                  cuando hay cambios en el calendario del profesional
-```
+- Service Account con acceso delegado a calendarios de profesionales
+- Push notifications via watch channels (renuevan cada 7 días)
+- Sync bidireccional: booking bot ↔ Google Calendar
+- Slot calculation: `working_hours - booked_events = available_slots`
 
-**Watch channels:**
-- Cada profesional tiene un canal registrado en Google
-- Expiran cada 7 días — se renuevan automáticamente en el CRON diario
-- Setup inicial: `docker exec -it whatsapp-demo python scripts/setup_calendar_watches.py`
-- Si el webhook no llega, el CRON hace sync como fallback (cada 24hs)
+### ml-intent-service
 
-### Twilio
-
-- Recibe mensajes de WhatsApp y hace POST a `/webhook`
-- Se usa para enviar mensajes salientes (recordatorios, ofertas, notificaciones)
-- Templates aprobados para recordatorios (`TWILIO_REMINDER_TEMPLATE_SID`)
-- Media (CSV/Excel) se descarga con autenticación básica desde `MediaUrl0`
-
-### Redis
-
-- Sesiones de usuario con TTL de 30 minutos
-- Si Redis no está disponible → fallback automático a memoria
-- Sin autenticación en desarrollo — configurar password en producción
+- Container separado (puerto 8000, red Docker interna)
+- spaCy 3.7.2 + TextCatEnsemble
+- Accuracy: 99.2% (344 ejemplos base → 6964 con augmentation)
+- Autenticado via `ML_API_KEY`
 
 ---
 
 ## 🔒 SEGURIDAD
 
-Documentación completa en [`docs/SECURITY.md`](SECURITY.md).
+Ver `docs/SECURITY.md` para el detalle completo.
 
-### Resumen — todas las medidas implementadas
+### Medidas activas
 
-| Fase | Issues | Estado |
-|------|--------|--------|
-| Core (Issues 1-9) | Límites de booking, rate limiting, aislamiento de datos, validación E.164, ownership | ✅ |
-| Fase 1 | Firma Twilio, rate limit Calendar webhook, descarga segura | ✅ |
-| Fase 2 | Redis con contraseña, MASTER_ACCESS_KEY sin default, PII en logs | ✅ |
-| Fase 3 | CSV/Excel injection, channel token en logs | ✅ |
-
-### Archivos clave
-
-| Archivo | Responsabilidad |
-|---------|----------------|
-| `src/security/twilio_validator.py` | Validación firma HMAC-SHA1 de Twilio |
-| `src/core/rate_limiter.py` | Rate limiting webhook + Calendar webhook |
-| `src/core/booking_limiter.py` | Anti-spam confirmación de booking |
-| `src/core/logger.py` | SanitizedLogger — enmascara PII en logs |
-| `src/integrations/file_parser/file_parser.py` | Sanitización CSV injection |
+- Validación de firma Twilio (HMAC) en producción
+- Rate limiting: 10 msgs/min por número, bloqueo 5 min
+- Anti-spam en booking: 5 intentos/hora por número
+- Límite de turnos activos: 2 por profesional, 5 global
+- Validación de ownership: cliente solo puede cancelar sus propias citas
+- Validación de inputs: nombre (max 60 chars, sin números), teléfono AR, edad
 
 ---
 
 ## 🔄 FLUJO DE DATOS
 
-### Reserva de turno (cliente)
+### Búsqueda y reserva de turno
 
 ```
-Cliente: "turno con psicóloga mañana"
+Usuario: "turno con gaston el jueves"
     │
     ▼
-HybridIntentDetector → intent: search_professional
-                     → entities: {especialidad: psicología, fecha: mañana}
+NLU → search_professional
+    │   entities: {fecha, professional_name}
+    ▼
+ConversationContext.update_entities()
+    │   (reset si viene desde START/MAIN_MENU)
+    ▼
+_execute_smart_search()
     │
-    ▼
-ClientHandler._try_intent_shortcut()
+    ├── client_service.search_professionals_by_filters()
+    │       └── professional_service.get_available_slots() [cache 15min]
     │
-    ▼
-ProfessionalService.search_professionals_by_filters()
-    │
-    ▼
-GoogleCalendarService.get_available_slots()  → disponibilidad en tiempo real
-    │
-    ▼
-Cliente elige profesional + fecha + horario
-    │
-    ▼
-BookingLimiter.record_attempt()  → anti-spam
-    │
-    ▼
-AppointmentService.create_appointment()
-    ├── Crea evento en Google Calendar del profesional
-    └── Guarda en appointments (BD) con google_event_id
-    │
-    ▼
-Cliente recibe confirmación + profesional recibe email de Google
-```
-
-### Cancelación del profesional (push)
-
-```
-Profesional elimina evento en Google Calendar
-    │ < 1 segundo
-    ▼
-Google POST → /google-calendar/webhook
-    │
-    ▼
-WatchManager.validate_notification_token()  → verifica canal
-    │
-    ▼
-_process_calendar_change()  → hilo daemon
-    │
-    ▼
-AppointmentCalendarService.sync_appointment_from_google()
-    → status: 'cancelada_profesional'
-    │
-    ▼
-CancellationNotifier.notify_patient()
-    ├── Busca próximo slot disponible (14 días)
-    ├── MessageSender.send_with_retry()
-    │   └── Si falla 3 veces → alerta al profesional
-    └── Marca cancellation_notified=1
+    └── format_search_results_with_slots() → CLIENT_SHOW_RESULTS
+            │
+            ▼ (usuario selecciona número o nombre)
+        CLIENT_VIEW_DETAIL_WITH_BOOKING
+            │
+            ▼ (usuario selecciona horario)
+        CLIENT_CONFIRM_BOOKING
+            │
+            ▼ (usuario confirma)
+        AppointmentCalendarService.create_appointment()
+            ├── GoogleCalendarService.create_event()
+            └── db.create_appointment()
 ```
 
 ### Importación de agenda (profesional)
 
 ```
-Profesional envía CSV/Excel por WhatsApp
+Profesional sube CSV/Excel via WhatsApp
     │
     ▼
-handle_media_upload()
-    ├── identify_user() → is_active + calendar_id ✓
-    ├── FileParser.parse() → List[Dict]
-    └── CalendarImportService.analyze()
-        ├── ready:     nuevos sin conflicto
-        ├── duplicate: ya existen
-        ├── overlap:   solapamiento de horario
-        └── error:     datos inválidos
+FileParser → List[Dict] de pacientes
     │
     ▼
-SessionManager.save_session() → Redis
-Estado: PROF_AGENDA_IMPORT_REVIEW
-    │
-Profesional puede explorar subconjuntos (ver listos, solapamientos, etc.)
+CalendarImportService.preview()
+    │   analiza solapamientos, existentes, errores
+    ▼
+Profesional puede explorar subconjuntos
     │
     ▼
 Profesional confirma → CalendarImportService.execute()
@@ -589,11 +586,15 @@ python tests/test_bot_interactive.py --scenario filters
 python tests/test_bot_interactive.py --scenario quick
 ```
 
-### Preview de mensajes
+### Verificar tono activo
 
 ```bash
-# Ver cómo luce el flujo de importación de agenda
-docker exec -it whatsapp-demo python tests/preview_calendar_import_ux.py
+docker exec -it whatsapp-demo python -c "
+import os; os.environ['TENANT_TONE'] = 'coloquial'
+from src.messages.loader import get_msg, reload_tone
+reload_tone()
+print(get_msg('CLIENT_MAIN_MENU'))
+"
 ```
 
 ---
@@ -613,6 +614,11 @@ GOOGLE_CALENDAR_WEBHOOK_URL=https://tu-dominio.com/google-calendar/webhook
 
 # ── Dominio ─────────────────────────────────────────────────────
 DOMAIN_PRESET=SALUD   # SALUD | PSICOLOGIA | BELLEZA | LEGAL | FITNESS
+                      # Afecta: terminología, políticas de cancelación, filtros
+
+# ── Tono de mensajes ─────────────────────────────────────────────
+TENANT_TONE=coloquial # demo | coloquial
+                      # Ver docs/TONE_SYSTEM.md para crear tonos nuevos
 
 # ── Redis ────────────────────────────────────────────────────────
 REDIS_URL=redis://redis:6379/0
@@ -627,6 +633,10 @@ FLASK_ENV=development
 FLASK_PORT=5000
 ENVIRONMENT=development
 
+# ── Rate limiting (opcional, override del DomainConfig) ──────────
+RATE_LIMIT_MAX_MESSAGES_PER_WINDOW=100  # dev: subir límite para testing
+RATE_LIMIT_BLOCK_MINUTES=0              # dev: sin bloqueo
+
 # ── Email / SMTP (para invitaciones a profesionales) ─────────────
 SMTP_HOST=mail.tudominio.com
 SMTP_PORT=587
@@ -638,6 +648,7 @@ SMTP_PASSWORD=xxxx
 
 ## 📚 DOCUMENTACIÓN ADICIONAL
 
+- `docs/TONE_SYSTEM.md` — sistema de tonos: crear, registrar y verificar
 - `docs/SECURITY.md` — detalles de cada medida de seguridad
 - `docs/SETUP_INSTRUCTIONS.md` — guía paso a paso
 - `docs/GOOGLE_CALENDAR_SERVICE.md` — integración con Google Calendar
@@ -648,5 +659,5 @@ SMTP_PASSWORD=xxxx
 
 ---
 
-**Versión:** 5.1
+**Versión:** 6.0
 **Última actualización:** Marzo 2026
