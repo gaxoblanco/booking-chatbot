@@ -34,20 +34,24 @@ echo ""
 # DATABASE INITIALIZATION
 # ==================================================
 
+# DB en /app/data/ — montado como volumen persistente en docker-compose
+DB_PATH="/app/data/database.db"
+mkdir -p /app/data  # garantizar que el directorio existe
+
 # Si RESET_DB=true, borrar la DB existente para recrearla desde cero
 # Uso: docker compose run -e RESET_DB=true whatsapp-demo
 #   o: RESET_DB=true docker compose up
 if [ "$RESET_DB" = "true" ]; then
-    if [ -f "database.db" ]; then
+    if [ -f "$DB_PATH" ]; then
         echo "⚠️  RESET_DB=true — borrando database.db existente..."
-        rm database.db
+        rm "$DB_PATH"
         echo "🗑️  database.db eliminada"
     else
         echo "ℹ️  RESET_DB=true — no había database.db, continuando..."
     fi
 fi
 
-if [ ! -f "database.db" ]; then
+if [ ! -f "$DB_PATH" ]; then
     echo "📄 Initializing database..."
     python scripts/init_db.py
     
@@ -65,7 +69,7 @@ echo ""
 echo "📊 Database tables:"
 python -c "
 import sqlite3
-conn = sqlite3.connect('database.db')
+conn = sqlite3.connect('/app/data/database.db')
 cursor = conn.cursor()
 cursor.execute('SELECT name FROM sqlite_master WHERE type=\"table\" ORDER BY name')
 tables = [row[0] for row in cursor.fetchall()]
@@ -86,7 +90,7 @@ if [ "$FLASK_ENV" = "development" ] || [ "$ENVIRONMENT" = "development" ] || [ "
     # Check current professional count
     PROF_COUNT=$(python -c "
 import sqlite3
-conn = sqlite3.connect('database.db')
+conn = sqlite3.connect('/app/data/database.db')
 cursor = conn.cursor()
 cursor.execute('SELECT COUNT(*) FROM professionals')
 count = cursor.fetchone()[0]
@@ -97,11 +101,12 @@ print(count)
     echo "📊 Profesionales actuales: $PROF_COUNT"
     
     # Try to find CSV file in multiple locations
+    # data/ está montado en /app/data/csv_src vía docker-compose
     CSV_FILES=(
+        "/app/data/csv_src/profesionales_demo.csv"
+        "/app/data/csv_src/profesionales.csv"
         "/app/data/profesionales_demo.csv"
         "/app/data/profesionales.csv"
-        "/app/profesionales_demo.csv"
-        "/app/profesionales.csv"
     )
     
     CSV_FOUND=""
@@ -116,35 +121,17 @@ print(count)
         echo "📂 CSV encontrado: $CSV_FOUND"
         
         if [ "$PROF_COUNT" -eq "0" ]; then
-            echo "📥 Cargando profesionales desde CSV..."
-            python scripts/load_professionals_from_csv.py "$CSV_FOUND"
-            
-            if [ $? -eq 0 ]; then
-                echo "✅ Profesionales cargados exitosamente"
-                
-                # Show count after loading
-                NEW_COUNT=$(python -c "
-import sqlite3
-conn = sqlite3.connect('database.db')
-cursor = conn.cursor()
-cursor.execute('SELECT COUNT(*) FROM professionals')
-count = cursor.fetchone()[0]
-conn.close()
-print(count)
-")
-                echo "📊 Total profesionales: $NEW_COUNT"
-            else
-                echo "❌ Error al cargar profesionales"
-            fi
+            echo "⚠️  No hay profesionales cargados."
+            echo "💡 Para cargar, ejecutá manualmente:"
+            echo "   docker exec whatsapp-demo python scripts/csv/load_professionals_from_csv.py $CSV_FOUND"
         else
             echo "⏭️  Ya hay $PROF_COUNT profesionales registrados"
-            echo "💡 Para recargar, elimina database.db y reinicia"
         fi
     else
         echo "⚠️  No se encontró CSV de profesionales"
-        echo "💡 Monta el archivo en:"
-        echo "   - /app/data/profesionales_demo.csv"
-        echo "   - O copia con: docker cp profesionales.csv whatsapp-demo:/app/data/"
+        echo "💡 Ubicaciones buscadas:"
+        echo "   - /app/data/csv_src/profesionales_demo.csv"
+        echo "   - /app/data/csv_src/profesionales.csv"
     fi
     
     echo ""
@@ -160,7 +147,7 @@ if [ -f "config/google/service-account.json" ]; then
     # Quick validation of professionals with calendar_id
     CALENDAR_COUNT=$(python -c "
 import sqlite3
-conn = sqlite3.connect('database.db')
+conn = sqlite3.connect('/app/data/database.db')
 cursor = conn.cursor()
 cursor.execute(\"SELECT COUNT(*) FROM professionals WHERE calendar_id IS NOT NULL AND calendar_id != ''\")
 count = cursor.fetchone()[0]

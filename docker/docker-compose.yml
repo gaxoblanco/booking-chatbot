@@ -33,6 +33,8 @@ services:
       - TZ=America/Argentina/Buenos_Aires
       - DOMAIN_PRESET=${DOMAIN_PRESET:-SALUD} # Default: SALUD
       - PYTHONPATH=/app
+      # Base de datos — en /app/data/ para que persista entre rebuilds
+      - DATABASE_PATH=/app/data/database.db
       # Access keys configuration
       - MASTER_ACCESS_KEY=${MASTER_ACCESS_KEY:-}
       - ALLOW_KEY_REUSE=${ALLOW_KEY_REUSE:-false}
@@ -42,11 +44,19 @@ services:
       # WhatsApp Templates
       - TWILIO_REMINDER_TEMPLATE_SID=${TWILIO_REMINDER_TEMPLATE_SID:-}
       - TWILIO_SLOT_OFFER_TEMPLATE_SID=${TWILIO_SLOT_OFFER_TEMPLATE_SID:-}
+      # Redis — URL con contraseña (debe coincidir con REDIS_PASSWORD)
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
 
     # Volume mounts (desde raíz del proyecto)
     volumes:
-      # Mount database (persistent storage)
+      # Base de datos SQLite (persistente entre rebuilds)
       - ../data/db:/app/data
+
+      # CSVs de carga — accesibles como /app/data/profesionales_demo.csv etc.
+      - ../data:/app/data/csv_src
+
+      # CSVs de pacientes rechazados
+      - ../data/rechazados:/app/data/rechazados
 
       # Mount conversations logs (persistent storage para ML)
       - conversations:/app/data/conversations
@@ -69,12 +79,6 @@ services:
 
       # Mount Google Calendar credentials
       - ../src/integrations/google_calendar_service:/app/src/integrations/google_calendar_service
-
-      # Montar carpeta data/ completa (CSV de carga y datos demo)
-      - ../data:/app/data/csv
-
-      # CSVs de pacientes no cargados (rechazados por solapamiento u otros errores)
-      - ../data/rechazados:/app/data/rechazados
     
     # Health check
     healthcheck:
