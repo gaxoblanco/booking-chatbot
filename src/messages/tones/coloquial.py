@@ -163,14 +163,14 @@ CLIENT_APPOINTMENT_DETAIL = (
 )
 
 CLIENT_APPOINTMENT_OPTIONS_CONFIRMED = (
-    "¿Qué querés hacer con {article} {slot_name}?\n\n"
+    f"¿Qué querés hacer con el {DomainConfig.APPOINTMENT_NAME}?\n\n"
     "1️⃣ Reprogramar\n"
     "2️⃣ Cancelar\n"
     "0️⃣ Volver"
 )
 
 CLIENT_APPOINTMENT_OPTIONS_PENDING = (
-    "¿Qué querés hacer con {article} {slot_name}?\n\n"
+    f"¿Qué querés hacer con el {DomainConfig.APPOINTMENT_NAME}?\n\n"
     "1️⃣ Reprogramar\n"
     "2️⃣ Cancelar\n"
     "0️⃣ Volver"
@@ -217,17 +217,25 @@ CLIENT_APPOINTMENT_FINISHED = (
 
 # Reprogramación
 CLIENT_RESCHEDULE_SELECT_DATE = (
+    "📅 *Tu turno actual:* {old_date} a las {old_time}\n\n"
     "¿Para qué fecha querés reprogramar?\n\n"
+    "{available_dates}\n\n"
+    "Podés escribir el número, el día (*el viernes*, *mañana*) o una fecha (*01/04*)\n\n"
     "_Escribí *0* para volver_"
 )
 
 CLIENT_RESCHEDULE_SELECT_TIME = (
-    "¿A qué horario?\n\n"
+    "🕐 *Horarios disponibles para {new_date}:*\n\n"
+    "{available_slots}\n\n"
+    "Respondé con el número del horario.\n\n"
     "_Escribí *0* para volver_"
 )
 
 CLIENT_RESCHEDULE_CONFIRM = (
-    "Nueva fecha: {date} a las {start}.\n\n"
+    "📋 *Cambio de turno*\n\n"
+    "❌ Turno actual: {old_date} a las {old_time}\n"
+    "✅ Nuevo turno: {new_date} a las {new_time}\n"
+    "👨\u200d⚕️ {professional_name}\n\n"
     "¿Confirmamos el cambio?\n\n"
     "1️⃣ Sí · 0️⃣ No"
 )
