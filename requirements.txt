@@ -35,8 +35,12 @@ pytest==7.4.3
 pytest-mock==3.12.0
 pytest-cov==4.1.0
 
+# Almacenar el estado de las conversaciones y tokens de acceso
 openpyxl==3.1.0
 redis==4.0.0
+
+# Scheduler para tareas programadas
+apscheduler==3.10.4
 
 # ==========================================
 # ML / NLU Dependencies (spaCy Intent Detection)
