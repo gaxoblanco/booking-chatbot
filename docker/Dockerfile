@@ -60,7 +60,6 @@ RUN mkdir -p /app/data/certificates && \
 # Copy application files
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
-COPY .env.example /app/
 
 # Copy Docker entrypoint script
 COPY docker/docker-entrypoint.sh /app/docker-entrypoint.sh
