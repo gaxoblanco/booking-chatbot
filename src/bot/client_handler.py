@@ -1938,9 +1938,12 @@ class ClientHandler:
             # Limpiar flag de error (si existía)
             session.set_temp('cancel_error_shown', False)
             
-            # Formatear fecha
+            # Formatear fecha en español
             date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
-            date_str = date_obj.strftime("%A %d de %B de %Y").title()
+            _dias  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+            _meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                      'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+            date_str = f"{_dias[date_obj.weekday()]} {date_obj.day} de {_meses[date_obj.month-1]} de {date_obj.year}"
 
             # Mostrar política si existe
             policy_info = ""
@@ -1982,14 +1985,23 @@ class ClientHandler:
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return client_messages.CLIENT_MAIN_MENU
 
-        # Si es '0', significa cancelar sin motivo
+        # '0' = volver sin cancelar
         if message == '0':
-            reason = None
-        elif message == '1':
-            # Confirmando cancelación sin motivo
+            session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
+            appointment_id = session.get_temp('appointment_id')
+            if appointment_id:
+                apt = db.get_appointment(appointment_id)
+                if apt:
+                    return self._format_appointment_detail(session, apt)
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.handle_client_view_appointments(session, '')
+
+        # '1' = confirmar cancelación
+        if message == '1':
             reason = None
         else:
-            # El mensaje es el motivo
+            # El mensaje es el motivo de cancelación
             reason = message
 
         print(f"[CANCEL_HANDLER] 💬 Motivo: {reason or 'Sin motivo'}")
@@ -2280,8 +2292,45 @@ class ClientHandler:
                         date_obj = _date.today() + timedelta(days=days_ahead)
                         break
 
+            # Intentar también "mañana" / "hoy" de forma directa
+            if not date_obj:
+                msg_low = message.strip().lower()
+                if msg_low in ('mañana', 'manana'):
+                    date_obj = _date.today() + timedelta(days=1)
+                elif msg_low == 'hoy':
+                    date_obj = _date.today()
+                elif msg_low == 'pasado mañana' or msg_low == 'pasado manana':
+                    date_obj = _date.today() + timedelta(days=2)
+
+            # Intentar DD/MM sin año → asumir año actual o siguiente
+            if not date_obj:
+                import re as _re2
+                m = _re2.match(r'^(\d{1,2})/(\d{1,2})$', message.strip())
+                if m:
+                    from datetime import date as _d2
+                    day, month = int(m.group(1)), int(m.group(2))
+                    year = _d2.today().year
+                    try:
+                        candidate = _date(year, month, day)
+                        if candidate < _date.today():
+                            candidate = _date(year + 1, month, day)
+                        date_obj = candidate
+                    except ValueError:
+                        pass
+
+            # Intentar DD/MM/YY con año de 2 dígitos
+            if not date_obj:
+                m = _re2.match(r'^(\d{1,2})/(\d{1,2})/(\d{2})$', message.strip())
+                if m:
+                    day, month, year_2d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    year = 2000 + year_2d
+                    try:
+                        date_obj = _date(year, month, day)
+                    except ValueError:
+                        pass
+
             if date_obj and available_dates:
-                # Buscar esa fecha en las opciones disponibles
+                # Primero buscar en la lista pre-cargada
                 date_str_match = date_obj.strftime("%Y-%m-%d")
                 matched = next(
                     (d for d in available_dates if d['date_db'] == date_str_match),
@@ -2289,16 +2338,41 @@ class ClientHandler:
                 )
                 if matched:
                     selected_date = matched
+                elif date_obj < _date.today():
+                    return "Esa fecha ya paso. Elegi una fecha futura.\n\n_Escribi *0* para volver_"
                 else:
-                    return (
-                        f"No tengo disponibilidad para esa fecha.\n\n"
-                        "_Elegí un número de la lista o *0* para volver_"
+                    # Fecha fuera de la lista pre-cargada — consultar disponibilidad
+                    professional_phone = session.get_temp('professional_phone')
+                    appointment_id = session.get_temp('appointment_id')
+                    slots = professional_service.get_available_slots(
+                        professional_phone=professional_phone,
+                        date=date_str_match,
+                        exclude_appointment_id=appointment_id,
                     )
+                    if slots:
+                        dias = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+                        day_name = dias[date_obj.weekday()]
+                        date_str_fmt = date_obj.strftime("%d/%m/%Y")
+                        selected_date = {
+                            'date_db':    date_str_match,
+                            'date_str':   date_str_fmt,
+                            'day_name':   day_name,
+                            'slots_count': len(slots),
+                        }
+                    else:
+                        date_fmt = date_obj.strftime("%d/%m/%Y")
+                        return (
+                            f"No hay disponibilidad para el {date_fmt}.\n\n"
+                            "Elegi otra fecha o un numero de la lista.\n\n"
+                            "_Escribi *0* para volver_"
+                        )
             else:
-                # No se pudo interpretar — resetear
-                session.clear_temp()
-                session.transition_to(ConversationState.START)
-                return None
+                # No se pudo interpretar — pedir de nuevo sin resetear
+                return (
+                    "⚠️ No entendí la fecha. Escribí el número de la opción "
+                    "o una fecha como *el viernes*, *mañana*, *01/04*.\n\n"
+                    "_Escribí *0* para volver_"
+                )
 
         # Guardar fecha seleccionada
         session.set_temp('new_date', selected_date['date_db'])
@@ -2723,20 +2797,12 @@ class ClientHandler:
                 minute = int(time_match.group(2)) if time_match.group(2) else 0
                 time_str = f"{hour:02d}:{minute:02d}"
 
-                # Buscar el slot con match exacto hora:minuto
-                target = f"{hour:02d}:{minute:02d}"
+                # Buscar el slot que empiece con ese horario
                 for i, slot in enumerate(slots, 1):
-                    if slot['start'] == target:
+                    if slot['start'].startswith(f"{hour:02d}:"):
                         selection = i
                         print(f"[CLIENT] 🕐 Hora natural '{message}' → slot #{i}: {slot['start']}")
                         break
-                # Si no hay match exacto, intentar solo por hora
-                if selection is None:
-                    for i, slot in enumerate(slots, 1):
-                        if slot['start'].startswith(f"{hour:02d}:"):
-                            selection = i
-                            print(f"[CLIENT] 🕐 Hora aproximada '{message}' → slot #{i}: {slot['start']}")
-                            break
 
             if selection is None:
                 # En CLIENT_VIEW_DETAIL_WITH_BOOKING el usuario ya eligió profesional
@@ -3265,17 +3331,21 @@ class ClientHandler:
             session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
             return self.handle_client_view_appointments(session, 'start')
         
-        elif message == '2':
-            # Nueva búsqueda
+        elif message in ('2', '0'):
+            # Nueva búsqueda o menú principal — usar menú dinámico
+            # para que las opciones (con/sin "Ver mis citas") sean consistentes
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
-        
-        elif message == '0':
-            # Menú principal
-            session.clear_temp()
-            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            return client_messages.CLIENT_MAIN_MENU
+            from src.services.user_service import user_service
+            return user_service.generate_welcome_message({
+                'user_type': 'new',
+                'name': None,
+                'is_registered': False,
+                'has_pending_appointments': False,
+                'pending_appointments': [],
+                'profile': None,
+                'phone_number': session.phone_number
+            })
         
         else:
             # Texto libre — resetear y reprocesar por NLU

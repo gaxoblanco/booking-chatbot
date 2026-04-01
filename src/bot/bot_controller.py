@@ -49,6 +49,7 @@ from src.core.states import (
 )
 from src.core.conversation_context import context_manager
 from src.bot.reminder_handler import should_handle_as_reminder, handle_reminder_response
+import os
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import sys
@@ -196,6 +197,21 @@ class BotController:
                 session.clear_temp()
                 session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
                 return self.client_handler.handle_client_view_appointments(session, '')
+
+        # Interceptar texto natural en CLIENT_APPOINTMENT_DETAIL antes del NLU
+        # "reprogramar", "cancelar", "1", "2" — el NLU los confunde
+        if session.state == ConversationState.CLIENT_APPOINTMENT_DETAIL:
+            _REPROG = {'reprogramar', 'quiero reprogramar', 'cambiar fecha',
+                       'cambiar turno', 'mover turno', 'mover fecha'}
+            _CANCEL = {'cancelar', 'quiero cancelar', 'no puedo ir',
+                       'no voy', 'borrar turno', 'eliminar turno'}
+            msg_apt = msg_stripped.lower()
+            if msg_stripped in ('1',) or msg_apt in _REPROG:
+                handler = self.get_handler_for_state(session.state)
+                return handler(session, '1')
+            if msg_stripped in ('2',) or msg_apt in _CANCEL:
+                handler = self.get_handler_for_state(session.state)
+                return handler(session, '2')
 
         # Interceptar números en CLIENT_BOOKING_CONFIRMED antes del NLU
         if (session.state == ConversationState.CLIENT_BOOKING_CONFIRMED
@@ -359,13 +375,22 @@ class BotController:
             # CLIENT_SHOW_RESULTS excluido: solo números o nombres — el NLU confunde '2','3' como intenciones
             ConversationState.CLIENT_FILTER_INPUT,
             ConversationState.CLIENT_VIEW_APPOINTMENTS,
-            ConversationState.CLIENT_APPOINTMENT_DETAIL,
+            # CLIENT_APPOINTMENT_DETAIL excluido — solo acepta 1/2/0 + texto natural
+            # que se intercepta antes del NLU
             # CLIENT_BOOKING_CONFIRMED excluido: solo números 1/2/0 — NLU confunde con unknown
             ConversationState.PROF_MAIN_MENU,
             ConversationState.PROF_AGENDA_IMPORT_REVIEW,    
         ]
         
         if session.state in nlu_enabled_states:
+            # Números solos → siempre son selección de menú, nunca intención semántica.
+            # El ML no tiene contexto para saber qué significa "2" en cada estado,
+            # así que los pasamos directo al handler sin pasar por NLU.
+            if msg_stripped.isdigit():
+                handler = self.get_handler_for_state(session.state)
+                if handler:
+                    return handler(session, message)
+
             # Prefixear mensaje con estado para intenciones contextuales
             PREFIXED_STATES = {ConversationState.PROF_AGENDA_IMPORT_REVIEW}
             text_for_model = (
@@ -399,9 +424,10 @@ class BotController:
             # donde el usuario podría estar escribiendo texto libre válido).
             # ==========================================
             UNKNOWN_INTERCEPT_STATES = {
+                # Solo interceptar en START donde el usuario escribe libremente
+                # En los menús (MAIN_MENU, etc.) los números son opciones válidas
+                # y no deben ser interceptados como "unknown"
                 ConversationState.START,
-                ConversationState.CLIENT_MAIN_MENU,
-                ConversationState.CLIENT_NEW_USER_MENU,
                 ConversationState.CLIENT_SHOW_RESULTS,
                 ConversationState.PROF_MAIN_MENU,
             }
@@ -532,11 +558,19 @@ class BotController:
                     return shortcut_response
         # ==========================================
         # 4.5 PRIORIDAD: RESPUESTA A RECORDATORIO
-        # Debe evaluarse ANTES de los comandos globales y el routing normal
-        # porque "1", "2", "0" también son opciones de menú y el reminder
-        # tiene que ganarles en prioridad cuando hay uno pendiente.
+        # Solo interceptar si el usuario está en un estado "neutro" (START, MAIN_MENU)
+        # o en AWAITING_REMINDER_RESPONSE explícito.
+        # Si está navegando un flujo activo (viendo citas, resultados, etc.)
+        # NO interceptar — el "2" puede ser selección de cita, no respuesta al reminder.
         # ==========================================
-        if should_handle_as_reminder(session, message):
+        _REMINDER_ALLOWED_STATES = {
+            ConversationState.START,
+            ConversationState.CLIENT_MAIN_MENU,
+            ConversationState.CLIENT_NEW_USER_MENU,
+            ConversationState.AWAITING_REMINDER_RESPONSE,
+        }
+        if (session.state in _REMINDER_ALLOWED_STATES
+                and should_handle_as_reminder(session, message)):
             return handle_reminder_response(session, message)
 
         # ==========================================
@@ -551,20 +585,40 @@ class BotController:
         if message_lower in ['menu', 'menú', 'volver'] and session.state not in _VOLVER_EXCLUIR:
             return self.handle_return_to_menu(session)
 
-        if message_lower in ['cancelar', 'cancel', 'salir']:
+        # Comando global 'cancelar' — excluir estados donde el handler lo maneja como confirmación
+        _CANCELAR_EXCLUIR = {
+            ConversationState.CLIENT_CANCEL_REASON,     # cancelar = confirmar la cancelación
+            ConversationState.CLIENT_CONFIRM_BOOKING,   # cancelar = volver
+        }
+        if message_lower in ['cancelar', 'cancel', 'salir'] and session.state not in _CANCELAR_EXCLUIR:
             return self.handle_cancel(session)
 
         if message_lower in ['ayuda', 'help', '?']:
             return common_messages.HELP_MESSAGE
         
         # ==========================================
-        # Comando secreto: disparar recordatorios manualmente
-        if message_lower in ['enviar recordatorio', 'enviar recordatorios']:
-            import os
-            if os.getenv('FLASK_ENV', 'development') != 'production':
-                from src.services.reminder_service import reminder_service
-                result = reminder_service.trigger_reminders_now()
-                return result['message']
+        # Comandos secretos — solo en development
+        if os.getenv('FLASK_ENV', 'development') != 'production':
+            if message_lower in ['enviar recordatorio', 'enviar recordatorios']:
+                from src.integrations.scheduler.engine import scheduler_engine
+                result = scheduler_engine.trigger_job('reminders')
+                sent    = result.get('sent', 0)
+                checked = result.get('checked', 0)
+                errors  = result.get('errors', 0)
+                if not result.get('success'):
+                    return f"❌ Error: {result.get('error', 'desconocido')}"
+                if checked == 0:
+                    return "📭 No hay citas para mañana."
+                return f"✅ Recordatorios: {sent}/{checked} enviados. Errores: {errors}"
+
+            if message_lower in ['scheduler status', 'estado scheduler']:
+                from src.integrations.scheduler.engine import scheduler_engine
+                status = scheduler_engine.get_status()
+                lines = [f"🔄 Scheduler: {'✅ corriendo' if status['running'] else '❌ detenido'}"]
+                for jid, jinfo in status.get('jobs', {}).items():
+                    next_run = jinfo.get('next_run', 'N/A')
+                    lines.append(f"  • {jid}: próximo {next_run}")
+                return "\n".join(lines)
         # ==========================================
 
         # ==========================================
