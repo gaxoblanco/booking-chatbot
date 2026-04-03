@@ -382,6 +382,22 @@ class BotController:
             ConversationState.PROF_AGENDA_IMPORT_REVIEW,    
         ]
         
+        # ==========================================
+        # 4.2 PRIORIDAD: RESPUESTA A RECORDATORIO
+        # Va ANTES del bypass de números — si hay reminder pendiente,
+        # "1"/"2"/"0" son respuestas al recordatorio, no selección de menú.
+        # Solo en estados neutros para no interferir con flujos activos.
+        # ==========================================
+        _REMINDER_ALLOWED_STATES = {
+            ConversationState.START,
+            ConversationState.CLIENT_MAIN_MENU,
+            ConversationState.CLIENT_NEW_USER_MENU,
+            ConversationState.AWAITING_REMINDER_RESPONSE,
+        }
+        if (session.state in _REMINDER_ALLOWED_STATES
+                and should_handle_as_reminder(session, message)):
+            return handle_reminder_response(session, message)
+
         if session.state in nlu_enabled_states:
             # Números solos → siempre son selección de menú, nunca intención semántica.
             # El ML no tiene contexto para saber qué significa "2" en cada estado,
@@ -556,22 +572,7 @@ class BotController:
                 )
                 if shortcut_response:
                     return shortcut_response
-        # ==========================================
-        # 4.5 PRIORIDAD: RESPUESTA A RECORDATORIO
-        # Solo interceptar si el usuario está en un estado "neutro" (START, MAIN_MENU)
-        # o en AWAITING_REMINDER_RESPONSE explícito.
-        # Si está navegando un flujo activo (viendo citas, resultados, etc.)
-        # NO interceptar — el "2" puede ser selección de cita, no respuesta al reminder.
-        # ==========================================
-        _REMINDER_ALLOWED_STATES = {
-            ConversationState.START,
-            ConversationState.CLIENT_MAIN_MENU,
-            ConversationState.CLIENT_NEW_USER_MENU,
-            ConversationState.AWAITING_REMINDER_RESPONSE,
-        }
-        if (session.state in _REMINDER_ALLOWED_STATES
-                and should_handle_as_reminder(session, message)):
-            return handle_reminder_response(session, message)
+        # (Reminder check movido a sección 4.2 — antes del bypass de números)
 
         # ==========================================
         # 5. COMANDOS GLOBALES
