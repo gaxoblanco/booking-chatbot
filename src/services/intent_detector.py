@@ -117,9 +117,23 @@ class IntentDetector:
         ]
         
         self.info_keywords = [
-            'información', 'info', 'sobre el centro',
-            'conocer más', 'datos', 'contacto', 'ubicación',
-            'horarios de atención', 'dónde están'
+            # Frases directas sobre el centro
+            'información del centro', 'info del centro', 'datos del centro',
+            'sobre el centro', 'sobre salud conecta', 'sobre ustedes',
+            'quiero saber sobre el centro', 'quiero saber sobre salud conecta',
+            'quiero saber sobre el servicio', 'quiero información',
+            'contame sobre el centro', 'contame sobre salud conecta',
+            # Funcionamiento
+            'cómo funciona', 'como funciona', 'qué hacen', 'que hacen',
+            'más información', 'mas informacion', 'quiero saber más',
+            # Contacto y ubicación  
+            'dónde están', 'donde estan', 'dónde queda', 'donde queda',
+            'dirección del centro', 'número de teléfono del centro',
+            'cómo los contacto', 'como los contacto',
+            'horarios de atención', 'horario de atención',
+            # Keywords simples (al final para no sobredetectar)
+            'información', 'info', 'conocer más', 'datos', 'contacto',
+            'ubicación', 'ubicacion',
         ]
         
         # ==========================================
@@ -338,15 +352,18 @@ class IntentDetector:
             return Intent.VIEW_TOMORROW, 0.9
         
         # Prioridad 4: Información del centro
+        # IMPORTANTE: va ANTES del chequeo de zona para que "sobre el centro"
+        # no se confunda con zona=centro
         if self._contains_any(message, self.info_keywords):
             return Intent.INFO_CENTER, 0.9
-        
+
         # Prioridad 5: Búsqueda de profesional
         # (es la más común, así que tiene keywords más amplios)
         if self._contains_any(message, self.search_keywords):
             return Intent.SEARCH_PROFESSIONAL, 0.85
-        
+
         # Si menciona especialidad o zona, asumir búsqueda
+        # Solo si no es una frase de info (ya chequeado arriba)
         if self._extract_especialidad(message) or self._extract_zona(message):
             return Intent.SEARCH_PROFESSIONAL, 0.8
         
