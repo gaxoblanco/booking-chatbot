@@ -601,16 +601,9 @@ class BotController:
         # Comandos secretos — solo en development
         if os.getenv('FLASK_ENV', 'development') != 'production':
             if message_lower in ['enviar recordatorio', 'enviar recordatorios']:
-                from src.integrations.scheduler.engine import scheduler_engine
-                result = scheduler_engine.trigger_job('reminders')
-                sent    = result.get('sent', 0)
-                checked = result.get('checked', 0)
-                errors  = result.get('errors', 0)
-                if not result.get('success'):
-                    return f"❌ Error: {result.get('error', 'desconocido')}"
-                if checked == 0:
-                    return "📭 No hay citas para mañana."
-                return f"✅ Recordatorios: {sent}/{checked} enviados. Errores: {errors}"
+                from src.integrations.reminder import reminder_integration_service
+                result = reminder_integration_service.trigger_now()
+                return result.get('message', '❌ Error ejecutando recordatorios.')
 
             if message_lower in ['scheduler status', 'estado scheduler']:
                 from src.integrations.scheduler.engine import scheduler_engine

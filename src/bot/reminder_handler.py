@@ -49,63 +49,94 @@ def should_handle_as_reminder(session: SessionData, message: str) -> bool:
 def handle_reminder_response(session: SessionData, message: str) -> str:
     """
     Maneja la respuesta del cliente a un recordatorio.
-    
+
     Args:
         session: Sesión del usuario
         message: Respuesta ("1", "2" o "0")
-    
+
     Returns:
         Mensaje de respuesta para el cliente
     """
     logger.info(f"[REMINDER] Procesando respuesta '{message}' de {session.phone_number}")
-    
-    # Procesar respuesta
+
     result = reminder_service.handle_reminder_response(
         client_phone=session.phone_number,
         response=message
     )
-    
+
     if not result['success']:
         return result.get('message', "Error procesando tu respuesta.")
-    
-    # Manejar según acción
+
     action = result.get('action')
-    
+
     # OPCIÓN 1: CONFIRMADO
     if action == 'confirmed':
-        # Limpiar estado y volver al menú
         session.clear_temp()
         session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-        
         return result['message']
-    
+
     # OPCIÓN 2: REPROGRAMAR
     elif action == 'reschedule':
-        # Transicionar a flujo de reprogramación
         session.transition_to(ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-        
-        # Guardar appointment_id en temp
         reminder = reminder_service._get_pending_reminder(session.phone_number)
         if reminder:
-            session.store_temp('appointment_id', reminder['appointment_id'])
-        
+            apt_id = reminder['appointment_id']
+            session.store_temp('appointment_id', apt_id)
+
+            # El turno original queda libre al reprogramar → ofrecer a waitlist
+            import threading
+            threading.Thread(
+                target=_trigger_waitlist,
+                args=(apt_id, "cancelled"),
+                daemon=True,
+                name=f"waitlist-reminder-{apt_id}"
+            ).start()
+
         return result['message']
-    
-    # OPCIÓN 0: CANCELAR
+
+    # OPCIÓN 0: CANCELAR — conecta automáticamente con waitlist
     elif action == 'cancel':
-        # Transicionar a confirmación de cancelación
         session.transition_to(ConversationState.CLIENT_CANCEL_APPOINTMENT)
-        
-        # Guardar appointment_id en temp
         reminder = reminder_service._get_pending_reminder(session.phone_number)
         if reminder:
-            session.store_temp('appointment_id', reminder['appointment_id'])
-        
+            apt_id = reminder['appointment_id']
+            session.store_temp('appointment_id', apt_id)
+
+            # Disparar waitlist en hilo separado — no bloquea la respuesta al paciente
+            import threading
+            from src.services.waitlist_service import waitlist_service
+            threading.Thread(
+                target=_trigger_waitlist,
+                args=(apt_id,),
+                daemon=True,
+                name=f"waitlist-reminder-{apt_id}"
+            ).start()
+
         return result['message']
-    
+
     else:
         return "Error procesando tu respuesta. Por favor, intenta nuevamente."
 
+
+def _trigger_waitlist(appointment_id: int, reason: str = "cancelled") -> None:
+        """
+        Dispara waitlist para un turno liberado desde un recordatorio.
+        Corre en hilo separado para no bloquear la respuesta WhatsApp.
+
+        Args:
+            appointment_id: ID de la cita que quedó libre
+            reason: 'cancelled' | 'rescheduled'
+        """
+        try:
+            from src.services.waitlist_service import waitlist_service
+            logger.info(f"[REMINDER→WAITLIST] Slot liberado por '{reason}' — cita #{appointment_id}")
+            result = waitlist_service.handle_slot_freed(
+                freed_appointment_id=appointment_id,
+                reason=reason
+            )
+            logger.info(f"[REMINDER→WAITLIST] Resultado: {result}")
+        except Exception as e:
+            logger.error(f"[REMINDER→WAITLIST] Error procesando waitlist para #{appointment_id}: {e}")
 
 # =========================================================================
 # INTEGRACIÓN CON BOT_CONTROLLER
