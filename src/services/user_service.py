@@ -7,6 +7,7 @@ Core del sistema de reconocimiento inteligente.
 VERSIÓN CON LOGS DETALLADOS PARA DEBUGGING
 """
 
+import os
 import json
 from datetime import datetime
 from typing import Dict, Optional, List
@@ -197,103 +198,92 @@ class UserService:
     def generate_welcome_message(self, user_info: Dict) -> str:
         """
         Genera mensaje de bienvenida personalizado.
-        
-        Lógica simple:
-        - Profesionales → Menú profesional
-        - Clientes → Verificar citas → Menú dinámico (3 o 4 opciones)
-        
+ 
+        El encabezado viene del tono activo (common_messages.WELCOME_NEW_USER
+        o WELCOME_RETURNING). El menú dinámico se construye acá con
+        DomainConfig para adaptarse al dominio.
+ 
         Args:
-            user_info: Debe incluir 'phone_number' para verificar citas
-        
+            user_info: debe incluir 'phone_number' para verificar citas activas.
+ 
         Returns:
-            Mensaje de bienvenida
+            Encabezado del tono + menú dinámico con las opciones disponibles.
         """
-        user_type = user_info.get('user_type', 'new')
-        name = user_info.get('name')
+        from src.database.database import db
+        from datetime import datetime
+        from src.messages.messages_common import common_messages
+ 
+        user_type    = user_info.get('user_type', 'new')
+        name         = user_info.get('name')           # None si usuario nuevo
         phone_number = user_info.get('phone_number', '')
-        
+ 
         print(f"[USER_SERVICE] 🔍 generate_welcome_message()")
         print(f"[USER_SERVICE]    user_type: {user_type}")
-        print(f"[USER_SERVICE]    name: {name}")
+        print(f"[USER_SERVICE]    name: {name!r}")
         print(f"[USER_SERVICE]    phone_number: {phone_number}")
-        
-        # ==========================================
-        # PROFESIONAL
-        # ==========================================
+ 
+        # --------------------------------------------------
+        # PROFESIONAL — menú propio, no pasa por este flujo
+        # --------------------------------------------------
         if user_type == 'professional':
             print(f"[USER_SERVICE] ✅ Es profesional, mostrando menú profesional")
+            from src.messages.messages_professional import professional_messages
             greeting = f"¡Hola Dr/Dra. {name}! 👋" if name else "¡Hola! 👋"
             return f"{greeting}\n\n" + professional_messages.PROF_MAIN_MENU
-        
-        # ==========================================
-        # CLIENTE (registrado o nuevo, da igual)
-        # ==========================================
+ 
+        # --------------------------------------------------
+        # CLIENTE / NUEVO — verificar citas activas
+        # --------------------------------------------------
+        today = datetime.now().strftime("%Y-%m-%d")
+        appointments = db.get_appointments_by_client(
+            client_phone=phone_number,
+            from_date=today
+        )
+        active_appointments = [
+            apt for apt in appointments
+            if apt['status'] in ['pendiente_confirmacion', 'confirmada']
+        ]
+        has_appointments = len(active_appointments) > 0
+        count            = len(active_appointments)
+ 
+        if has_appointments:
+            print(f"[USER_SERVICE] ✅ Menú CON citas ({count} activas)")
         else:
-            print(f"[USER_SERVICE] 👤 Es cliente, verificando citas...")
-            
-            # 1. Verificar si tiene citas (esto aplica para TODOS los clientes)
-            today = datetime.now().strftime("%Y-%m-%d")
-            print(f"[USER_SERVICE]    Fecha hoy: {today}")
-            print(f"[USER_SERVICE]    Consultando: db.get_appointments_by_client('{phone_number}', from_date='{today}')")
-            
-            appointments = db.get_appointments_by_client(
-                client_phone=phone_number,
-                from_date=today
-            )
-            
-            print(f"[USER_SERVICE] 📊 Total citas encontradas: {len(appointments)}")
-            if appointments:
-                for i, apt in enumerate(appointments, 1):
-                    print(f"[USER_SERVICE]    Cita #{i}: {apt.get('appointment_date')} {apt.get('start')} - Status: {apt.get('status')}")
-            
-            # Filtrar solo citas activas
-            active_appointments = [
-                apt for apt in appointments
-                if apt['status'] in ['pendiente_confirmacion', 'confirmada']
-            ]
-            
-            print(f"[USER_SERVICE] ✅ Citas activas (pendiente/confirmada): {len(active_appointments)}")
-            
-            has_appointments = len(active_appointments) > 0
-            count = len(active_appointments)
-            
-            # 2. Saludo (personalizado si tiene nombre, genérico si no)
-            if name:
-                greeting = f"¡Hola {name}! 👋\n\n"
-            else:
-                greeting = f"👋 ¡Bienvenido/a a {DomainConfig.BUSINESS_NAME}!\n\n"
-            
-            # 3. Mensaje base
-            message = greeting
-            message += f"{DomainConfig.WELCOME_TAGLINE}\n\n"
-            message += "¿Qué querés hacer?\n\n"
-            
-            # 4. Menú dinámico
-            message += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
-            message += f"   Búsqueda asistida paso a paso\n\n"
-            
-            message += f"2️⃣ Ver disponibles mañana\n"
-            message += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
-            
-            if has_appointments:
-                # TIENE CITAS → 4 opciones
-                print(f"[USER_SERVICE] ✅ Mostrando menú CON opción de ver citas ({count} citas)")
-                message += f"3️⃣ Ver mis citas programadas\n"
-                message += f"   Gestionar tus {count} cita{'s' if count > 1 else ''}\n\n"
-                
-                message += f"4️⃣ Información del centro\n"
-                message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
-            else:
-                # NO TIENE CITAS → 3 opciones
-                print(f"[USER_SERVICE] ℹ️ Mostrando menú SIN opción de ver citas (0 citas)")
-                message += f"3️⃣ Información del centro\n"
-                message += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
-            
-            message += "Responde con el número de opción."
-            
-            print(f"[USER_SERVICE] ✅ Mensaje generado exitosamente")
-            return message
-
+            print(f"[USER_SERVICE] ℹ️ Menú SIN citas")
+ 
+        # --------------------------------------------------
+        # ENCABEZADO — viene del tono activo
+        # name debe ser un string no vacío para usar WELCOME_RETURNING
+        # --------------------------------------------------
+        if name and name.strip():
+            header = common_messages.WELCOME_RETURNING.format(name=name.strip())
+            print(f"[USER_SERVICE] ✅ Bienvenida generada — usuario: con nombre")
+        else:
+            header = common_messages.WELCOME_NEW_USER
+            print(f"[USER_SERVICE] ✅ Bienvenida generada — usuario: nuevo")
+ 
+        # --------------------------------------------------
+        # MENÚ DINÁMICO — lógica de negocio, no texto del tono
+        # --------------------------------------------------
+        menu  = "¿Qué querés hacer?\n\n"
+        menu += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
+        menu += f"   Búsqueda asistida paso a paso\n\n"
+        menu += f"2️⃣ Ver disponibles mañana\n"
+        menu += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
+ 
+        if has_appointments:
+            menu += f"3️⃣ Ver mis citas programadas\n"
+            menu += f"   Gestionar tus {count} cita{'s' if count > 1 else ''}\n\n"
+            menu += f"4️⃣ Información del centro\n"
+            menu += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+        else:
+            menu += f"3️⃣ Información del centro\n"
+            menu += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+ 
+        menu += "Respondé con el número de opción."
+ 
+        return f"{header}\n\n{menu}"
+ 
     def log_action(
         self,
         phone: str,
@@ -354,54 +344,44 @@ class UserService:
 
     def get_center_info(self) -> str:
         """
-        Genera mensaje con información del centro/negocio.
-        
-        SIMPLE: La mayoría del texto es directo, solo usa variables
-        esenciales de DomainConfig para adaptarse al dominio.
-        
-        Returns:
-            Mensaje con información del centro
+        Genera mensaje con información del centro.
+ 
+        El texto viene del tono activo (common_messages.CENTER_INFO_BODY).
+        El contacto y los horarios se leen del .env del container.
+ 
+        Variables de entorno usadas:
+            CENTER_PHONE     — teléfono de contacto
+            CENTER_EMAIL     — email de contacto
+            CENTER_HOURS_WD  — horario lun-vie
+            CENTER_HOURS_SAT — horario sábado
         """
-        from src.config.domain_config import DomainConfig
-        
-        # Obtener valores básicos con fallbacks
-        business_name = getattr(DomainConfig, 'BUSINESS_NAME', 'Nuestro Centro')
-        tagline = getattr(DomainConfig, 'WELCOME_TAGLINE', 'Conectamos profesionales con clientes')
-        prof_plural = getattr(DomainConfig, 'PROFESSIONAL_TITLE_PLURAL_LOWER', 'profesionales')
-        
-        message = f"""📋 *{business_name}*
-
-    *Sobre Nosotros*
-    {tagline}
-
-    *Servicios*
-    ✅ Búsqueda de {prof_plural} por zona
-    ✅ Agenda online
-    ✅ Confirmación instantánea
-    ✅ Atención presencial y virtual
-
-    *¿Cómo funciona?*
-    1. Elegís el {prof_plural[:-1]} que necesitás
-    2. Seleccionás fecha y horario
-    3. Confirmás tu turno
-    4. ¡Listo! Recibís la confirmación
-
-    *Contacto*
-    📧 info@ejemplo.com
-    📱 +54 11 1234-5678
-    🌐 www.ejemplo.com
-
-    *Horarios*
-    Lun-Vie: 9:00 - 18:00
-    Sábados: 9:00 - 13:00
-
-    ¿Querés buscar ahora?
-    1️⃣ Sí, buscar
-    0️⃣ Volver al menú"""
-
+        import os
+        from src.messages.messages_common import common_messages
+ 
+        contact_phone  = os.getenv("CENTER_PHONE",     "Consultá al centro directamente")
+        contact_email  = os.getenv("CENTER_EMAIL",     "—")
+        hours_weekday  = os.getenv("CENTER_HOURS_WD",  "9:00 - 18:00")
+        hours_saturday = os.getenv("CENTER_HOURS_SAT", "9:00 - 13:00")
+ 
+        if not contact_email:
+            contact_email = "—"
+ 
+        tagline  = common_messages.WELCOME_TAGLINE
+        template = common_messages.CENTER_INFO_BODY
+ 
+        message = template.format(
+            business_name=DomainConfig.BUSINESS_NAME,
+            tagline=tagline,
+            professional_lower=DomainConfig.PROFESSIONAL_TITLE_LOWER,
+            contact_phone=contact_phone,
+            contact_email=contact_email,
+            hours_weekday=hours_weekday,
+            hours_saturday=hours_saturday,
+        )
+ 
+        print(f"[USER_SERVICE] ✅ Center info generada — tono activo")
         return message
-
-
+    
 # === SINGLETON ===
 # Instancia única del servicio para usar en toda la app
 user_service = UserService()
