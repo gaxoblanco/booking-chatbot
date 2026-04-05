@@ -709,5 +709,31 @@ class ProfessionalService:
                 'message': 'error',
                 'calendar_id': None
             }
+        
+
+    def get_active_professionals_with_calendar(self) -> list:
+        """
+        Retorna profesionales activos con Google Calendar configurado.
+        Usado por job_calendar_sync en el scheduler.
+
+        Returns:
+            Lista de dicts con keys: phone, name, calendar_id
+        """
+        try:
+            with self.db.get_connection() as conn:
+                rows = conn.execute("""
+                    SELECT phone, name, calendar_id
+                    FROM professionals
+                    WHERE is_active = 1
+                    AND calendar_id IS NOT NULL
+                    AND calendar_id != ''
+                    ORDER BY name
+                """).fetchall()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"[PROF_SERVICE] ❌ Error obteniendo profesionales con calendario: {e}")
+            return []
+        
+        
 # Global professional service instance
 professional_service = ProfessionalService()
