@@ -24,9 +24,12 @@ class AppointmentMessages:
 
     @property
     def CLIENT_NO_APPOINTMENTS(self):
-        return get_msg("CLIENT_NO_APPOINTMENTS",
-            f"No tenés {DomainConfig.APPOINTMENT_NAME_PLURAL} programadas.\n\n"
+        template = get_msg("CLIENT_NO_APPOINTMENTS",
+            "No tenés {appointment_plural} programadas.\n\n"
             "1️⃣ Buscar profesional\n0️⃣ Volver al menú"
+        )
+        return template.format(
+            appointment_plural=DomainConfig.APPOINTMENT_NAME_PLURAL
         )
 
     @property
@@ -55,17 +58,19 @@ class AppointmentMessages:
 
     @property
     def CLIENT_APPOINTMENT_OPTIONS_CONFIRMED(self):
-        return get_msg("CLIENT_APPOINTMENT_OPTIONS_CONFIRMED",
-            f"1️⃣ Reprogramar {DomainConfig.APPOINTMENT_NAME}\n"
-            f"2️⃣ Cancelar {DomainConfig.APPOINTMENT_NAME}"
+        template = get_msg("CLIENT_APPOINTMENT_OPTIONS_CONFIRMED",
+            "1️⃣ Reprogramar {appointment_name}\n"
+            "2️⃣ Cancelar {appointment_name}"
         )
+        return template.format(appointment_name=DomainConfig.APPOINTMENT_NAME)
 
     @property
     def CLIENT_APPOINTMENT_OPTIONS_PENDING(self):
-        return get_msg("CLIENT_APPOINTMENT_OPTIONS_PENDING",
-            f"1️⃣ Reprogramar {DomainConfig.APPOINTMENT_NAME}\n"
-            f"2️⃣ Cancelar {DomainConfig.APPOINTMENT_NAME}"
+        template = get_msg("CLIENT_APPOINTMENT_OPTIONS_PENDING",
+            "1️⃣ Reprogramar {appointment_name}\n"
+            "2️⃣ Cancelar {appointment_name}"
         )
+        return template.format(appointment_name=DomainConfig.APPOINTMENT_NAME)
 
     @property
     def CLIENT_APPOINTMENT_FINISHED(self):
@@ -103,9 +108,12 @@ class AppointmentMessages:
 
     @property
     def CLIENT_APPOINTMENT_CANCELLED(self):
-        return get_msg("CLIENT_APPOINTMENT_CANCELLED",
-            f"✅ {DomainConfig.APPOINTMENT_NAME_UPPER} cancelada.\n\n"
+        template = get_msg("CLIENT_APPOINTMENT_CANCELLED",
+            "✅ {appointment_upper} cancelada.\n\n"
             "1️⃣ Buscar nuevo turno · 0️⃣ Menú"
+        )
+        return template.format(
+            appointment_upper=DomainConfig.APPOINTMENT_NAME_UPPER
         )
 
     # --- Reprogramación ---
