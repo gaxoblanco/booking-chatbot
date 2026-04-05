@@ -121,7 +121,7 @@ CLIENT_VIEW_APPOINTMENTS = (
 )
 
 CLIENT_NO_APPOINTMENTS = (
-    f"Todavía no tenés {DomainConfig.APPOINTMENT_NAME_PLURAL} agendadas.\n\n"
+    "Todavía no tenés {appointment_plural} agendadas.\n\n"
     "1️⃣ Buscar profesional\n"
     "0️⃣ Volver al menú"
 )
@@ -166,14 +166,14 @@ CLIENT_APPOINTMENT_DETAIL = (
 )
 
 CLIENT_APPOINTMENT_OPTIONS_CONFIRMED = (
-    f"¿Qué querés hacer con el {DomainConfig.APPOINTMENT_NAME}?\n\n"
+    "¿Qué querés hacer con el {appointment_name}?\n\n"
     "1️⃣ Reprogramar\n"
     "2️⃣ Cancelar\n"
     "0️⃣ Volver"
 )
 
 CLIENT_APPOINTMENT_OPTIONS_PENDING = (
-    f"¿Qué querés hacer con el {DomainConfig.APPOINTMENT_NAME}?\n\n"
+    "¿Qué querés hacer con el {appointment_name}?\n\n"
     "1️⃣ Reprogramar\n"
     "2️⃣ Cancelar\n"
     "0️⃣ Volver"
@@ -207,7 +207,7 @@ CLIENT_CANCEL_ERROR = (
 )
 
 CLIENT_APPOINTMENT_CANCELLED = (
-    f"✅ {DomainConfig.APPOINTMENT_NAME_UPPER} cancelada.\n\n"
+    "✅ {appointment_upper} cancelada.\n\n"
     "1️⃣ Buscar nuevo turno · 0️⃣ Menú"
 )
 
@@ -403,4 +403,68 @@ BOOKING_LIMIT_PER_PROFESSIONAL = (
     "Ya tenés {count} turno{s} agendado{s} con {prof_name}.\n\n"
     "Para agendar otro, primero cancelá uno de los existentes.\n\n"
     "Escribí *mis turnos* para verlos."
+)
+
+# ==================================================
+# WELCOME — saludo inicial y bienvenida
+# ==================================================
+# Variables disponibles:
+#   {name}   → nombre del usuario (solo en WELCOME_RETURNING)
+#   {count}  → cantidad de citas activas (solo en WELCOME_RETURNING)
+# Nota: el menú dinámico lo arma el handler usando estas constantes
+#       como encabezado. El tono define la personalidad del saludo.
+
+WELCOME_NEW_USER = (
+    "👋 ¡Bienvenido/a a Viner!\n\n"
+    "Explorá el flujo completo como si fueras un paciente real."
+    "y reservá tu turno para contratar el servicio\n\n"
+)
+WELCOME_RETURNING = (
+    "¡Hola, {name}! 👋\n"
+    "Estás probando Viner\n\n"
+    "Explorá el flujo completo como si fueras un paciente real\n"
+    "y reservá tu turno para contratar el servicio\n\n"
+)
+
+# Tagline del tono — versión aspiracional para el número de demo.
+# Muestra el valor del producto en cada primer contacto.
+WELCOME_TAGLINE = "Turnos sin llamadas. Agenda sin papeles. Todo desde WhatsApp"
+
+
+# ==================================================
+# CENTER_INFO — información del centro
+# ==================================================
+# Variables disponibles:
+#   {business_name}     → DomainConfig.BUSINESS_NAME
+#   {tagline}           → WELCOME_TAGLINE del tono activo
+#   {contact_phone}     → teléfono de contacto del centro
+#   {contact_email}     → email de contacto del centro
+#   {hours_weekday}     → horario lunes a viernes
+#   {hours_saturday}    → horario sábado
+# Nota: las variables se interpolan en user_service.get_center_info()
+
+CENTER_INFO_BODY = (
+    "📱 *Esto es Viner*\n\n"
+ 
+    "Gestionamos tus turnos,\n"
+    "recordamos a tus pacientes\n"
+    "y recuperamos los que se pierden\n" 
+    "sin que tengas que hacer nada.\n\n"
+
+    "Menos ausencias. Más consultas. Sin una sola llamada.\n\n"
+ 
+    # Prueba — qué hace el sistema
+    "*Lo que acabás de ver en acción:*\n"
+    "✅ Búsqueda de profesionales por zona y especialidad\n"
+    "✅ Disponibilidad en tiempo real — sincronizada con Google Calendar\n"
+    "✅ Reserva y confirmación al instante\n"
+    "✅ Recordatorio automático 24hs antes del turno\n"
+    "✅ Reprogramación y cancelación sin llamadas\n"
+    "✅ Lista de espera — si se libera un turno, el paciente lo sabe primero\n\n"
+ 
+    # CTA
+    "Tu centro podría estar funcionando así mañana.\n\n"
+    "📞 {contact_phone}\n"
+    "📧 {contact_email}\n\n"
+    "1️⃣ Seguir probando · 0️⃣ Volver al menú"
 )

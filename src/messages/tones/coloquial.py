@@ -116,7 +116,7 @@ CLIENT_VIEW_APPOINTMENTS = (
 )
 
 CLIENT_NO_APPOINTMENTS = (
-    f"No tenés {DomainConfig.APPOINTMENT_NAME_PLURAL} programadas.\n\n"
+    "No tenés {appointment_plural} programadas.\n\n"
     "1️⃣ Buscar profesional\n"
     "0️⃣ Volver al menú"
 )
@@ -163,14 +163,14 @@ CLIENT_APPOINTMENT_DETAIL = (
 )
 
 CLIENT_APPOINTMENT_OPTIONS_CONFIRMED = (
-    f"¿Qué querés hacer con el {DomainConfig.APPOINTMENT_NAME}?\n\n"
+    "¿Qué querés hacer con el {appointment_name}?\n\n"
     "1️⃣ Reprogramar\n"
     "2️⃣ Cancelar\n"
     "0️⃣ Volver"
 )
 
 CLIENT_APPOINTMENT_OPTIONS_PENDING = (
-    f"¿Qué querés hacer con el {DomainConfig.APPOINTMENT_NAME}?\n\n"
+    "¿Qué querés hacer con el {appointment_name}?\n\n"
     "1️⃣ Reprogramar\n"
     "2️⃣ Cancelar\n"
     "0️⃣ Volver"
@@ -203,7 +203,7 @@ CLIENT_CANCEL_ERROR = (
 )
 
 CLIENT_APPOINTMENT_CANCELLED = (
-    f"✅ {DomainConfig.APPOINTMENT_NAME_UPPER} cancelada.\n\n"
+    "✅ {appointment_upper} cancelada.\n\n"
     "1️⃣ Buscar nuevo turno · 0️⃣ Menú"
 )
 
@@ -400,4 +400,57 @@ BOOKING_LIMIT_PER_PROFESSIONAL = (
     "Ya tenés {count} turno{s} activo{s} con {prof_name}.\n\n"
     "Si necesitás otro horario, primero cancelá uno.\n\n"
     "Escribí *mis turnos* para verlos."
+)
+
+# ==================================================
+# WELCOME — saludo inicial y bienvenida
+# ==================================================
+# Variables disponibles:
+#   {name}   → nombre del usuario (solo en WELCOME_RETURNING)
+#   {count}  → cantidad de citas activas (solo en WELCOME_RETURNING)
+# Nota: el menú dinámico lo arma el handler usando estas constantes
+#       como encabezado. El tono define la personalidad del saludo.
+
+WELCOME_NEW_USER = (
+    "👋 ¡Hola! Bienvenido/a al centro.\n\n"
+    "{tagline}.\n\n"
+    "¿Qué necesitás?"
+)
+
+WELCOME_RETURNING = (
+    "¡Hola, {name}! 👋\n\n"
+    "¿Qué necesitás hoy?"
+)
+
+# Tagline del tono — reemplaza DomainConfig.WELCOME_TAGLINE en el canal WhatsApp.
+# Versión breve, directa, sin corporativismo.
+WELCOME_TAGLINE = "Turnos con {professional_plural} del centro, sin llamadas"
+
+# ==================================================
+# CENTER_INFO — información del centro
+# ==================================================
+# Variables disponibles:
+#   {business_name}     → DomainConfig.BUSINESS_NAME
+#   {tagline}           → WELCOME_TAGLINE del tono activo
+#   {contact_phone}     → teléfono de contacto del centro
+#   {contact_email}     → email de contacto del centro
+#   {hours_weekday}     → horario lunes a viernes
+#   {hours_saturday}    → horario sábado
+# Nota: las variables se interpolan en user_service.get_center_info()
+
+CENTER_INFO_BODY = (
+    "📋 *{business_name}*\n\n"
+    "{tagline}.\n\n"
+    "*¿Cómo funciona?*\n"
+    "1. Elegís el {professional_lower} que necesitás\n"
+    "2. Seleccionás fecha y horario\n"
+    "3. Confirmás tu turno\n\n"
+    "*Horarios de atención*\n"
+    "📅 Lun–Vie: {hours_weekday}\n"
+    "📅 Sáb: {hours_saturday}\n\n"
+    "*Contacto directo*\n"
+    "📞 {contact_phone}\n"
+    "📧 {contact_email}\n\n"
+    "¿Querés buscar turno ahora?\n\n"
+    "1️⃣ Sí · 0️⃣ Volver al menú"
 )
