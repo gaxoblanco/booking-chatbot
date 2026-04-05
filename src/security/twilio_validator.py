@@ -64,7 +64,7 @@ def validate_twilio_signature(request) -> bool:
 
         # La URL debe ser exactamente la que Twilio tiene configurada
         # incluyendo el esquema https://
-        webhook_url = os.getenv('WEBHOOK_URL', '').strip().rstrip('/') + '/webhook'
+        webhook_url = os.getenv('WEBHOOK_URL', '').strip().rstrip('/')
 
         validator = RequestValidator(auth_token)
         is_valid  = validator.validate(
