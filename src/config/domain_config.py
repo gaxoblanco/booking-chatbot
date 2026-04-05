@@ -25,7 +25,7 @@ class DomainConfig:
     DOMAIN_ID = "salud"  # salud, belleza, legal, educacion, fitness, hogar
 
     # Business name
-    BUSINESS_NAME = "Salud Conecta"
+    BUSINESS_NAME = "Viner"
 
     # ==========================================
     # TERMINOLOGY
@@ -130,7 +130,7 @@ class DomainConfig:
     EMOJI_CATEGORY = "🏥"
 
     # Welcome message customization
-    WELCOME_TAGLINE = "Conectamos profesionales de la salud con pacientes"
+    WELCOME_TAGLINE = "Tu centro, siempre completo"
 
     # ==========================================
     # FLOW MESSAGES CUSTOMIZATION
@@ -481,6 +481,39 @@ class DomainPresets:
         "EMOJI_PROFESSIONAL": "👨‍⚕️",
         "EMOJI_CATEGORY": "🏥",
         "WELCOME_TAGLINE": "Conectamos profesionales de la salud con pacientes"
+    }
+
+    DEMO = {
+        "DOMAIN_ID": "demo",
+        "BUSINESS_NAME": "Viner",
+        "PROFESSIONAL_TITLE": "Profesional",
+        "PROFESSIONAL_TITLE_PLURAL": "Profesionales",
+        "PROFESSIONAL_TITLE_LOWER": "profesional",
+        "PROFESSIONAL_TITLE_PLURAL_LOWER": "profesionales",
+        "CERTIFICATE_NAME": "certificado profesional",
+        "CERTIFICATE_EXAMPLES": [
+            "Matrícula profesional",
+            "Título habilitante",
+            "Documento que acredite tu profesión"
+        ],
+        "CATEGORY_LABEL": "Especialidad",
+        "CATEGORIES": {
+            "1": "Médico General",
+            "2": "Dentista",
+            "3": "Psicólogo",
+            "4": "Kinesiólogo",
+            "5": "Nutricionista",
+            "6": "Otro"
+        },
+        "CUSTOM_FIELD_1_LABEL": "Acepta Prepaga",
+        "EMOJI_PROFESSIONAL": "👨‍⚕️",
+        "EMOJI_CATEGORY": "🏥",
+        "WELCOME_TAGLINE": "Tu centro, siempre completo",
+        "APPOINTMENT_NAME": "turno",
+        "APPOINTMENT_NAME_PLURAL": "turnos",
+        "APPOINTMENT_NAME_UPPER": "Turno",
+        "CANCELLATION_HOURS_LIMIT": 24,
+        "CANCELLATION_POLICY": "Podés cancelar hasta 24 horas antes sin costo.",
     }
 
     BELLEZA = {
