@@ -1,6 +1,6 @@
 # 🏗️ ARQUITECTURA DEL PROYECTO
 ## Sistema de Gestión de Turnos — WhatsApp Bot
-**Versión 6.0 — Marzo 2026**
+**Versión 6.1 — Abril 2026**
 
 ---
 
@@ -471,33 +471,46 @@ sin romper instalaciones previas.
 
 ## ⏰ CRON JOBS
 
-El CRON corre diariamente a las 17:30 via:
+Los jobs corren via **APScheduler** dentro del proceso Flask — no hay crontab del sistema operativo activo. El scheduler arranca junto con la app y registra 6 jobs en background.
+
+Ver `docs/REMINDER_INTEGRATION.md` para el ciclo completo de recordatorios.
+
+### Jobs registrados
+
+```
+job_reminders     → cron 17:30  — ReminderIntegrationService.run_send_cycle()
+                                   recordatorios a pacientes con turno mañana
+
+job_auto_confirm  → cron 20:30  — ReminderIntegrationService.run_confirm_cycle()
+                                   auto-confirma reminders sin respuesta (+3h)
+
+job_retry_queue   → interval 1h — MessageSender.process_retry_queue()
+                                   reintenta mensajes fallidos
+
+job_calendar_sync → cron 17:31  — sync cancelaciones desde Google Calendar
+                                   fallback del webhook push
+
+job_watches       → cron 17:32  — WatchManager.renew_all_expiring()
+                                   renueva watch channels que vencen en 24h
+
+job_waitlist      → cron 17:33  — WaitlistService.process_expired_offers()
+                                   limpia ofertas expiradas y reintenta cascada
+```
+
+### Configuración
+
 ```bash
-30 17 * * * docker exec whatsapp-demo python -m src.cron.daily_reminder_job
+REMINDER_TIME=17:30    # horario base de los jobs diarios (HH:MM)
+FLASK_ENV=development  # en development los jobs no se disparan automáticamente
+                       # solo via comando secreto del bot
 ```
 
-### Pasos en orden
+### Fallback CLI
 
-```
-Paso 0: MessageSender.process_retry_queue()
-        → reintenta mensajes que fallaron en las últimas horas
+`src/cron/daily_reminder_job.py` sigue disponible para testing manual y emergencias:
 
-Paso 1: ReminderService.send_daily_reminders()
-        → busca citas de mañana → envía recordatorio WhatsApp
-        → paciente puede confirmar (1), reprogramar (2) o cancelar (0)
-
-Paso 2: WaitlistService.process_expired_offers()
-        → limpia ofertas expiradas
-        → reintenta cascada con siguiente candidato
-
-Paso 3: run_cancellation_sync()
-        → fallback del webhook push
-        → sincroniza citas confirmadas de los próximos 7 días
-        → detecta cancelaciones no notificadas
-
-Paso 4: WatchManager.renew_all_expiring()
-        → renueva watch channels que vencen en las próximas 24hs
-        → los watches expiran cada 7 días
+```bash
+docker exec whatsapp-demo python -m src.cron.daily_reminder_job
 ```
 
 ---
@@ -653,11 +666,12 @@ SMTP_PASSWORD=xxxx
 - `docs/SETUP_INSTRUCTIONS.md` — guía paso a paso
 - `docs/GOOGLE_CALENDAR_SERVICE.md` — integración con Google Calendar
 - `docs/INTENT_DETECTION_SYSTEM.md` — arquitectura del sistema NLU/ML
+- `docs/REMINDER_INTEGRATION.md` — ciclo completo de recordatorios automáticos
 - `docs/ml_agenda_import_intents.md` — spec intenciones importación agenda
 - `docs/ml_book_for_third_party.md` — spec intención agendar para terceros
 - `docs/gap4_agenda_import_spec.md` — spec flujo importación completo
 
 ---
 
-**Versión:** 6.0
-**Última actualización:** Marzo 2026
+**Versión:** 6.1
+**Última actualización:** Abril 2026
