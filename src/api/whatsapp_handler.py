@@ -22,7 +22,7 @@ from src.core.rate_limiter import rate_limiter, RateLimiter
 # Usa una subclase para tener límites propios sin tocar RateLimiter
 class _CalendarRateLimiter(RateLimiter):
     """Rate limiter con parámetros fijos para el webhook de Google Calendar."""
-    MAX_MESSAGES   = 30   # máx 30 notificaciones por minuto
+    MAX_MESSAGES   = 60   # máx 30 notificaciones por minuto
     WINDOW_SECONDS = 60
     BLOCK_MINUTES  = 5
 
@@ -115,7 +115,7 @@ def home():
 # ==========================================
 # WHATSAPP WEBHOOK
 # ==========================================
-from src.security.twilio_validator import validate_twilio_signature
+from src.security.twilio_validator import validate_twilio_signature, validate_twilio_signature_safe
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """
@@ -130,7 +130,7 @@ def webhook():
     - TwiML response with bot's reply
     """
     if os.getenv('ENVIRONMENT') == 'production':
-        if not validate_twilio_signature(request):
+        if not validate_twilio_signature_safe(request):
             return '', 403
     # Extraer datos del request de Twilio
     incoming_msg = request.values.get('Body', '').strip()
@@ -468,80 +468,6 @@ def handle_media_upload(sender, num_media):
         "para carga de agenda."
     )
 
-def handle_certificate_upload_success(sender):
-    """
-    Handle successful certificate upload for professionals.
-
-    Args:
-        sender (str): Phone number without 'whatsapp:' prefix
-
-    Returns:
-        str: Confirmation message with menu
-    """
-    session = session_manager.get_session(sender)
-
-    if session.state == ConversationState.PROF_NEED_ACCESS_KEY:
-        return bot.handle_prof_certificate_uploaded(session)
-
-    from src.core.messages import Messages
-    return Messages.PROF_CERTIFICATE_RECEIVED
-
-
-def download_media(sender, media_url, media_type):
-    """
-    Download media file from Twilio and save locally.
-
-    Args:
-        sender (str): Phone number (used for folder structure)
-        media_url (str): Twilio URL to download media
-        media_type (str): MIME type (e.g., 'image/jpeg', 'application/pdf')
-
-    Returns:
-        str: Path to saved file, or None if failed
-    """
-    try:
-        auth     = (Config.TWILIO_ACCOUNT_SID, Config.TWILIO_AUTH_TOKEN)
-        response = requests.get(media_url, auth=auth, timeout=10)
-
-        if response.status_code != 200:
-            print(f"❌ Failed to download: HTTP {response.status_code}")
-            return None
-
-        user_dir = os.path.join(Config.CERTIFICATES_DIR, sender)
-        os.makedirs(user_dir, exist_ok=True)
-
-        extension = get_file_extension(media_type)
-
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename  = f"certificate_{timestamp}.{extension}"
-        file_path = os.path.join(user_dir, filename)
-
-        with open(file_path, 'wb') as f:
-            f.write(response.content)
-
-        professional_service.save_certificate(sender, file_path)
-
-        return file_path
-
-    except Exception as e:
-        print(f"❌ Exception downloading media: {str(e)}")
-        return None
-
-
-def get_file_extension(media_type):
-    """Map MIME type to file extension."""
-    mime_map = {
-        'image/jpeg':      'jpg',
-        'image/jpg':       'jpg',
-        'image/png':       'png',
-        'image/gif':       'gif',
-        'image/webp':      'webp',
-        'application/pdf': 'pdf',
-    }
-    return mime_map.get(media_type, 'bin')
-
-
 # ==========================================
 # APPLICATION ENTRY POINT
 # ==========================================
@@ -566,8 +492,18 @@ if __name__ == '__main__':
     print(f"\n💡 Use ngrok to expose this server to the internet:")
     print(f"   ngrok http {Config.FLASK_PORT}\n")
 
+    # ── Scheduler ──────────────────────────────────────────────────────────
+    # Corre en background thread. En development los jobs no se disparan solos
+    # (solo via comando secreto del bot). En production corren según REMINDER_TIME.
+    from src.integrations.scheduler.engine import scheduler_engine
+    import atexit
+    scheduler_engine.start()
+    atexit.register(scheduler_engine.stop)
+    # ───────────────────────────────────────────────────────────────────────
+
     app.run(
         host='0.0.0.0',
         port=Config.FLASK_PORT,
-        debug=Config.FLASK_DEBUG
+        debug=Config.FLASK_DEBUG,
+        threaded=False  # Un request a la vez — evita condiciones de carrera en sesiones Redis
     )
