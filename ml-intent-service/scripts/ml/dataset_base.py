@@ -134,12 +134,12 @@ DATASET_BASE = [
 
     # Con nombre de profesional
     {
-        "message": "quiero turno con la doctora María González",
+        "message": "quiero turno con María González",
         "intent": "search_professional",
         "entities": {"professional_name": "maría gonzález"}
     },
     {
-        "message": "necesito ver al doctor Juan Pérez",
+        "message": "necesito ver a Juan Pérez",
         "intent": "search_professional",
         "entities": {"professional_name": "juan pérez"}
     },
@@ -185,7 +185,7 @@ DATASET_BASE = [
         "entities": {"professional_name": "lópez"}
     },
     {
-        "message": "quiero cita con el doctor Fernández",
+        "message": "quiero turno con Fernández",
         "intent": "search_professional",
         "entities": {"professional_name": "fernández"}
     },
@@ -195,7 +195,7 @@ DATASET_BASE = [
         "entities": {"professional_name": "rodríguez"}
     },
     {
-        "message": "sesión con la doctora Martínez",
+        "message": "sesión con Martínez",
         "intent": "search_professional",
         "entities": {"professional_name": "martínez"}
     },
@@ -396,6 +396,216 @@ DATASET_BASE = [
     {"message": "cómo llego al consultorio", "intent": "info_center", "entities": {}},
     {"message": "están en Buenos Aires", "intent": "info_center", "entities": {}},
     {"message": "me das los datos del centro", "intent": "info_center", "entities": {}},
+    # --- Casos problemáticos: "centro" confundido con zona ---
+    {"message": "quiero saber sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "quiero ver sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "info sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "información sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "qué es este centro", "intent": "info_center", "entities": {}},
+    {"message": "qué es salud conecta", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona salud conecta", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona esto", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona el servicio", "intent": "info_center", "entities": {}},
+    {"message": "quiero saber sobre el lugar", "intent": "info_center", "entities": {}},
+    {"message": "sobre el lugar", "intent": "info_center", "entities": {}},
+    {"message": "contame sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "más info sobre el centro", "intent": "info_center", "entities": {}},
+    {"message": "sobre ustedes", "intent": "info_center", "entities": {}},
+
+    # --- Ejemplos producto / demo (Viner) ---
+    {"message": "qué es esto", "intent": "info_center", "entities": {}},
+    {"message": "qué es viner", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona viner", "intent": "info_center", "entities": {}},
+    {"message": "qué hace este bot", "intent": "info_center", "entities": {}},
+    {"message": "contame del producto", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona el turnero", "intent": "info_center", "entities": {}},
+    {"message": "qué incluye el servicio", "intent": "info_center", "entities": {}},
+    {"message": "quiero contratar", "intent": "info_center", "entities": {}},
+    {"message": "me interesa el sistema", "intent": "info_center", "entities": {}},
+    {"message": "cuánto cuesta", "intent": "info_center", "entities": {}},
+    {"message": "cómo lo instalo en mi centro", "intent": "info_center", "entities": {}},
+    {"message": "quiero esto para mi consultorio", "intent": "info_center", "entities": {}},
+    {"message": "esto es para mí", "intent": "info_center", "entities": {}},
+    {"message": "más información", "intent": "info_center", "entities": {}},
+    {"message": "info", "intent": "info_center", "entities": {}},
+    {"message": "quiero saber más", "intent": "info_center", "entities": {}},
+    {"message": "contame más", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona esto", "intent": "info_center", "entities": {}},
+
+    # --- Ejemplos dominio EDUCACION ---
+    {"message": "qué clases dan", "intent": "info_center", "entities": {}},
+    {"message": "qué materias ofrecen", "intent": "info_center", "entities": {}},
+    {"message": "información de la academia", "intent": "info_center", "entities": {}},
+    {"message": "sobre la academia", "intent": "info_center", "entities": {}},
+    {"message": "datos de la escuela", "intent": "info_center", "entities": {}},
+    {"message": "qué cursos tienen", "intent": "info_center", "entities": {}},
+    {"message": "horarios de clases", "intent": "info_center", "entities": {}},
+
+    # --- Ejemplos dominio FITNESS ---
+    {"message": "qué servicios ofrecen", "intent": "info_center", "entities": {}},
+    {"message": "información del gimnasio", "intent": "info_center", "entities": {}},
+    {"message": "sobre el gimnasio", "intent": "info_center", "entities": {}},
+    {"message": "qué actividades tienen", "intent": "info_center", "entities": {}},
+    {"message": "qué disciplinas dan", "intent": "info_center", "entities": {}},
+    {"message": "horarios del gimnasio", "intent": "info_center", "entities": {}},
+    {"message": "datos del gym", "intent": "info_center", "entities": {}},
+
+    # --- Ejemplos dominio LEGAL ---
+    {"message": "información del estudio", "intent": "info_center", "entities": {}},
+    {"message": "sobre el estudio jurídico", "intent": "info_center", "entities": {}},
+    {"message": "qué casos manejan", "intent": "info_center", "entities": {}},
+    {"message": "en qué se especializan", "intent": "info_center", "entities": {}},
+    {"message": "datos del estudio", "intent": "info_center", "entities": {}},
+
+    # --- Ejemplos dominio BELLEZA ---
+    {"message": "información del salón", "intent": "info_center", "entities": {}},
+    {"message": "qué servicios hacen", "intent": "info_center", "entities": {}},
+    {"message": "sobre el salón", "intent": "info_center", "entities": {}},
+    {"message": "qué tratamientos ofrecen", "intent": "info_center", "entities": {}},
+    {"message": "datos del spa", "intent": "info_center", "entities": {}},
+
+    # --- Ejemplos genéricos multi-dominio ---
+    {"message": "información", "intent": "info_center", "entities": {}},
+    {"message": "sobre el lugar", "intent": "info_center", "entities": {}},
+    {"message": "qué ofrecen", "intent": "info_center", "entities": {}},
+    {"message": "qué tienen disponible", "intent": "info_center", "entities": {}},
+    {"message": "me das info", "intent": "info_center", "entities": {}},
+    {"message": "horarios de atención", "intent": "info_center", "entities": {}},
+    {"message": "cómo los contacto", "intent": "info_center", "entities": {}},
+    {"message": "tienen redes sociales", "intent": "info_center", "entities": {}},
+    {"message": "dónde están ubicados", "intent": "info_center", "entities": {}},
+    {"message": "cuáles son sus servicios", "intent": "info_center", "entities": {}},
+
+    # --- info_center — frases que buscan la opción 3 del menú ---
+    {"message": "3", "intent": "info_center", "entities": {}},
+    {"message": "opción 3", "intent": "info_center", "entities": {}},
+    {"message": "el 3", "intent": "info_center", "entities": {}},
+    {"message": "quiero saber qué es esto", "intent": "info_center", "entities": {}},
+    {"message": "qué es este servicio", "intent": "info_center", "entities": {}},
+    {"message": "cómo funciona todo esto", "intent": "info_center", "entities": {}},
+    {"message": "explicame qué hacen", "intent": "info_center", "entities": {}},
+    {"message": "contame sobre el servicio", "intent": "info_center", "entities": {}},
+    {"message": "qué es viner", "intent": "info_center", "entities": {}},
+    {"message": "quiero conocer más", "intent": "info_center", "entities": {}},
+    {"message": "info del sistema", "intent": "info_center", "entities": {}},
+    {"message": "datos de contacto", "intent": "info_center", "entities": {}},
+    {"message": "cómo me comunico", "intent": "info_center", "entities": {}},
+    {"message": "quiero hablar con alguien", "intent": "info_center", "entities": {}},
+    {"message": "tienen teléfono", "intent": "info_center", "entities": {}},
+    {"message": "email de contacto", "intent": "info_center", "entities": {}},
+    {"message": "quiero contratar esto", "intent": "info_center", "entities": {}},
+    {"message": "me interesa esto para mi negocio", "intent": "info_center", "entities": {}},
+    {"message": "cómo lo consigo", "intent": "info_center", "entities": {}},
+    {"message": "quiero implementar esto", "intent": "info_center", "entities": {}},
+
+
+    # --- Ejemplos cancel_appointment — múltiples dominios ---
+    {"message": "quiero cancelar mi clase", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no puedo ir al gym hoy", "intent": "cancel_appointment", "entities": {}},
+    {"message": "cancelo la clase de mañana", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero dar de baja mi sesión de entrenamiento", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no voy a poder ir a la clase", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero cancelar mi clase de inglés", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no puedo ir a la clase de matemáticas", "intent": "cancel_appointment", "entities": {}},
+    {"message": "cancelo la lección de mañana", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero dar de baja mi clase", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero cancelar mi turno en el salón", "intent": "cancel_appointment", "entities": {}},
+    {"message": "cancelo el turno de peluquería", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no puedo ir al salón mañana", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero cancelar la consulta con el abogado", "intent": "cancel_appointment", "entities": {}},
+    {"message": "cancelo la reunión con el estudio", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero cancelar", "intent": "cancel_appointment", "entities": {}},
+    {"message": "cancelo", "intent": "cancel_appointment", "entities": {}},
+    {"message": "no voy a poder ir", "intent": "cancel_appointment", "entities": {}},
+    {"message": "quiero dar de baja mi reserva", "intent": "cancel_appointment", "entities": {}},
+    {"message": "necesito cancelar mi reserva", "intent": "cancel_appointment", "entities": {}},
+    {"message": "borro mi reserva", "intent": "cancel_appointment", "entities": {}},
+
+    # --- Ejemplos view_my_appointments — múltiples dominios ---
+    {"message": "qué clases tengo reservadas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver mis clases", "intent": "view_my_appointments", "entities": {}},
+    {"message": "tengo clase esta semana", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mis sesiones de entrenamiento", "intent": "view_my_appointments", "entities": {}},
+    {"message": "qué tengo reservado en el gym", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver mis clases programadas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "qué clases tengo esta semana", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mis lecciones pendientes", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver mi turno en el salón", "intent": "view_my_appointments", "entities": {}},
+    {"message": "tengo turno de peluquería", "intent": "view_my_appointments", "entities": {}},
+    {"message": "cuándo es mi turno", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mis reservas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver mis reservas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "qué tengo programado", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mis próximas citas", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver mis próximos turnos", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mis turnos", "intent": "view_my_appointments", "entities": {}},
+    {"message": "mostrame lo que tengo", "intent": "view_my_appointments", "entities": {}},
+    {"message": "tengo algo reservado", "intent": "view_my_appointments", "entities": {}},
+    {"message": "ver mis citas", "intent": "view_my_appointments", "entities": {}},
+
+    # --- Ejemplos view_tomorrow — múltiples dominios ---
+    {"message": "hay clases de yoga mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "qué clases hay mañana en el gym", "intent": "view_tomorrow", "entities": {}},
+    {"message": "entrenadores disponibles mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana hay sesiones libres", "intent": "view_tomorrow", "entities": {}},
+    {"message": "hay clases disponibles mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "qué profesores tienen horarios mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana hay lugar en inglés", "intent": "view_tomorrow", "entities": {}},
+    {"message": "hay turnos en el salón mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana tienen lugar en peluquería", "intent": "view_tomorrow", "entities": {}},
+    {"message": "el abogado atiende mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "hay consultas disponibles mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana qué hay", "intent": "view_tomorrow", "entities": {}},
+    {"message": "disponibilidad mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "qué hay para mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana hay lugar", "intent": "view_tomorrow", "entities": {}},
+    {"message": "ver lo disponible mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "qué se puede reservar para mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "horarios de mañana", "intent": "view_tomorrow", "entities": {}},
+    {"message": "mañana tienen disponible", "intent": "view_tomorrow", "entities": {}},
+
+    # --- Ejemplos greeting — múltiples dominios ---
+    {"message": "hola buenas", "intent": "greeting", "entities": {}},
+    {"message": "buenas", "intent": "greeting", "entities": {}},
+    {"message": "buen dia", "intent": "greeting", "entities": {}},
+    {"message": "hola qué onda", "intent": "greeting", "entities": {}},
+    {"message": "hola cómo van", "intent": "greeting", "entities": {}},
+    {"message": "hola buen día", "intent": "greeting", "entities": {}},
+    {"message": "hola buenas tardes", "intent": "greeting", "entities": {}},
+    {"message": "hola buenas noches", "intent": "greeting", "entities": {}},
+    {"message": "hola!", "intent": "greeting", "entities": {}},
+    {"message": "holaa!", "intent": "greeting", "entities": {}},
+    {"message": "hola, cómo están", "intent": "greeting", "entities": {}},
+    {"message": "good morning", "intent": "greeting", "entities": {}},
+    {"message": "buen día che", "intent": "greeting", "entities": {}},
+    {"message": "hola todo bien", "intent": "greeting", "entities": {}},
+    {"message": "saludos", "intent": "greeting", "entities": {}},
+
+    # --- Ejemplos unknown — múltiples dominios ---
+    {"message": "cuánto cuesta la membresía", "intent": "unknown", "entities": {}},
+    {"message": "tienen vestuarios", "intent": "unknown", "entities": {}},
+    {"message": "tienen estacionamiento en el gym", "intent": "unknown", "entities": {}},
+    {"message": "se puede pagar en cuotas", "intent": "unknown", "entities": {}},
+    {"message": "cuánto dura el curso", "intent": "unknown", "entities": {}},
+    {"message": "dan certificados", "intent": "unknown", "entities": {}},
+    {"message": "tienen clases online", "intent": "unknown", "entities": {}},
+    {"message": "cuánto vale la inscripción", "intent": "unknown", "entities": {}},
+    {"message": "cuánto sale el corte", "intent": "unknown", "entities": {}},
+    {"message": "aceptan tarjeta en el salón", "intent": "unknown", "entities": {}},
+    {"message": "tienen estacionamiento cerca", "intent": "unknown", "entities": {}},
+    {"message": "cuánto cobran la consulta", "intent": "unknown", "entities": {}},
+    {"message": "trabajan los fines de semana", "intent": "unknown", "entities": {}},
+    {"message": "hacen contratos", "intent": "unknown", "entities": {}},
+    {"message": "se puede pagar con tarjeta", "intent": "unknown", "entities": {}},
+    {"message": "tienen descuentos", "intent": "unknown", "entities": {}},
+    {"message": "hacen factura", "intent": "unknown", "entities": {}},
+    {"message": "atienden online", "intent": "unknown", "entities": {}},
+    {"message": "tienen app", "intent": "unknown", "entities": {}},
+    {"message": "cuánto tiempo dura la sesión", "intent": "unknown", "entities": {}},
+    {"message": "tienen redes", "intent": "unknown", "entities": {}},
+    {"message": "qué medios de pago aceptan", "intent": "unknown", "entities": {}},
+
 
     # ==========================================
     # INTENT: GREETING (6 ejemplos)
@@ -474,7 +684,7 @@ DATASET_BASE = [
         "entities": {"fecha": "jueves"}
     },
     {
-        "message": "teno q ver al dotor xa mañana",
+        "message": "teno q ver a mi profesional xa mañana",
         "intent": "search_professional",
         "entities": {"fecha": "mañana"}
     },
@@ -503,7 +713,7 @@ DATASET_BASE = [
         "entities": {"fecha": "viernes", "professional_name": "fernandes"}
     },
     {
-        "message": "quero ver al dotor garsía",
+        "message": "quero ver a garsía",
         "intent": "search_professional",
         "entities": {"professional_name": "garcía"}
     },
@@ -537,7 +747,7 @@ DATASET_BASE = [
         "entities": {"fecha": "domingo", "professional_name": "lópez"}
     },
     {
-        "message": "nesesito al psicologo xa mañana",
+        "message": "nesesito ver a mi profesional xa mañana",
         "intent": "search_professional",
         "entities": {"especialidad": "psicología", "fecha": "mañana"}
     },
@@ -1122,7 +1332,6 @@ DATASET_BASE = [
     # ==========================================
 
     # Patrón: pregunta directa de disponibilidad
-    {"message": "tienen psicólogo disponible el martes", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "martes"}},
     {"message": "hay lugar el lunes a la mañana", "intent": "search_professional", "entities": {"fecha": "lunes", "horario": "mañana"}},
     {"message": "tienen algo para el viernes tarde", "intent": "search_professional", "entities": {"fecha": "viernes", "horario": "tarde"}},
     {"message": "cuándo tienen lugar esta semana", "intent": "search_professional", "entities": {}},
@@ -1187,18 +1396,13 @@ DATASET_BASE = [
     # ==========================================
 
     # Dislexia — inversión y confusión de letras
-    {"message": "nesesito turno kon el psicologo", "intent": "search_professional", "entities": {"especialidad": "psicología"}},
     {"message": "queiro un turno para el miercolse", "intent": "search_professional", "entities": {"fecha": "miércoles"}},
     {"message": "buscoa un profesional para el luns", "intent": "search_professional", "entities": {"fecha": "lunes"}},
-    {"message": "nececito ber al medico el biernes", "intent": "search_professional", "entities": {"fecha": "viernes"}},
-    {"message": "turno con el dotor para el marets", "intent": "search_professional", "entities": {"fecha": "martes"}},
     {"message": "kiero turno para manana por la tarde", "intent": "search_professional", "entities": {"fecha": "mañana", "horario": "tarde"}},
 
     # Dislexia — omisión de sílabas
     {"message": "nesito turno mañana", "intent": "search_professional", "entities": {"fecha": "mañana"}},
-    {"message": "quero turno con nutrision", "intent": "search_professional", "entities": {"especialidad": "nutrición"}},
     {"message": "busko profional pa el jue", "intent": "search_professional", "entities": {"fecha": "jueves"}},
-    {"message": "turno con psiclog el sabdo", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "sábado"}},
 
     # Baja alfabetización — fonético puro
     {"message": "kiero turno x mañana", "intent": "search_professional", "entities": {"fecha": "mañana"}},
@@ -1208,7 +1412,6 @@ DATASET_BASE = [
 
     # Baja alfabetización — sin puntuación, todo junto
     {"message": "holakieroturnoparaeliunes", "intent": "search_professional", "entities": {"fecha": "lunes"}, "no_augment": True},
-    {"message": "nesesitoturnoconelpsicologomanana", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "mañana"}, "no_augment": True},
     {"message": "turnoparaelmartes", "intent": "search_professional", "entities": {"fecha": "martes"}, "no_augment": True},
     {"message": "turnoparamisobrino", "intent": "book_for_third_party", "entities": {"third_party_relation": "sobrino"}, "no_augment": True},
     {"message": "kieroturnoparmimama", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}, "no_augment": True},
@@ -1216,11 +1419,9 @@ DATASET_BASE = [
     # Baja alfabetización — separación incorrecta
     {"message": "quiero tur no para el lu nes", "intent": "search_professional", "entities": {"fecha": "lunes"}, "no_augment": True},
     {"message": "nece sito tur no ma ñana", "intent": "search_professional", "entities": {"fecha": "mañana"}, "no_augment": True},
-    {"message": "bus co psi co lo go pa ra ma ña na", "intent": "search_professional", "entities": {"especialidad": "psicología", "fecha": "mañana"}, "no_augment": True},
 
     # Mayúsculas aleatorias (adultos mayores)
     {"message": "QUIERO TURNO PARA EL LUNES", "intent": "search_professional", "entities": {"fecha": "lunes"}, "no_augment": True},
-    {"message": "NESESITO VER AL PSICOLOGO", "intent": "search_professional", "entities": {"especialidad": "psicología"}, "no_augment": True},
     {"message": "KIERO TURNO X MI PRIMO EL LUNES", "intent": "book_for_third_party", "entities": {"third_party_relation": "primo", "fecha": "lunes"}, "no_augment": True},
     {"message": "MI MAMA NECESITA TURNO", "intent": "book_for_third_party", "entities": {"third_party_relation": "mamá"}, "no_augment": True},
     {"message": "KIERO CANCELAR MI TURNO", "intent": "cancel_appointment", "entities": {}, "no_augment": True},
