@@ -448,8 +448,8 @@ CENTER_INFO_BODY = (
  
     "Gestionamos tus turnos,\n"
     "recordamos a tus pacientes\n"
-    "y recuperamos los que se pierden\n" 
-    "sin que tengas que hacer nada.\n\n"
+    "y recuperamos los que se pierden\n\n" 
+    # "sin que tengas que hacer nada.\n\n"
 
     "Menos ausencias. Más consultas. Sin una sola llamada.\n\n"
  
@@ -464,7 +464,8 @@ CENTER_INFO_BODY = (
  
     # CTA
     "Tu centro podría estar funcionando así mañana.\n\n"
-    "📞 {contact_phone}\n"
+    "Agenda un turno para contrarlo hoy mismo.\n\n"
+    # "📞 {contact_phone}\n"
     "📧 {contact_email}\n\n"
     "1️⃣ Seguir probando · 0️⃣ Volver al menú"
 )
