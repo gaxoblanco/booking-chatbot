@@ -14,6 +14,7 @@ Uso:
 Author: Salud Conecta
 """
 
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict
 import logging
@@ -274,7 +275,8 @@ class ReminderService:
 2️⃣ Necesito reprogramar
 0️⃣ Cancelar turno
 
-_Por favor, responde antes de las 20:00 hs_"""
+_Por favor, responde antes de las 20:00 hs_
+_Caso de no responder se auto-confirma_"""
 
         return message
     
