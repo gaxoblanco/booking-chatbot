@@ -21,6 +21,7 @@ import logging
 
 from src.database.database import db
 from src.integrations.appointment_calendar_service import AppointmentCalendarService
+from src.integrations.conversation_context_service.event_store import event_store
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -209,6 +210,11 @@ class ReminderService:
         if sent:
             self._mark_reminder_sent(apt['id'])   # ← mantener siempre
             logger.info(f"✅ Recordatorio enviado exitosamente")
+            event_store.record(
+                client_phone   = apt['client_phone'],
+                event_type     = 'reminder_sent',
+                appointment_id = apt['id'],
+            )
 
             # Recordatorio informativo al paciente real si tiene número distinto
             patient_phone = apt.get('patient_phone')
@@ -348,7 +354,16 @@ _Caso de no responder se auto-confirma_"""
             }
         
         appointment_id = reminder['appointment_id']
-        
+
+        # Registrar evento de respuesta
+        _action_map = {'1': 'confirmed', '2': 'rescheduled', '0': 'cancelled'}
+        event_store.record(
+            client_phone   = client_phone,
+            event_type     = 'reminder_response',
+            intent         = f"reminder_{_action_map.get(response, 'unknown')}",
+            appointment_id = appointment_id,
+        )
+
         # Opción 1: CONFIRMAR
         if response == '1':
             return self._confirm_appointment(appointment_id, client_phone)
@@ -559,6 +574,12 @@ _Caso de no responder se auto-confirma_"""
                     stats["confirmed"] += 1
                     stats["appointments"].append(apt_id)
                     logger.info(f"  OK Cita #{apt_id} auto-confirmada")
+                    event_store.record(
+                        client_phone   = client,
+                        event_type     = 'reminder_response',
+                        intent         = 'reminder_auto_confirmed',
+                        appointment_id = apt_id,
+                    )
                 else:
                     stats["errors"] += 1
                     logger.error(f"  ERROR auto-confirmando #{apt_id}")
