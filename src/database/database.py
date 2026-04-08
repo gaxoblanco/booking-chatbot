@@ -515,6 +515,59 @@ class Database:
             """)
 
             # ==========================================
+            # TABLE: conversation_events
+            # Registro de eventos de conversación por usuario.
+            # Permite inferir contexto entre sesiones sin guardar
+            # el texto de los mensajes (eso va al JSONL anonimizado).
+            # Purga automática: eventos > 7 días se eliminan por job.
+            # ==========================================
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_events (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                    -- Quién
+                    client_phone    TEXT NOT NULL,
+                    session_id      TEXT,
+
+                    -- Qué pasó
+                    event_type      TEXT NOT NULL CHECK(event_type IN (
+                                        'message',
+                                        'reminder_sent',
+                                        'reminder_response',
+                                        'booking',
+                                        'cancel',
+                                        'reschedule',
+                                        'flow_interrupted'
+                                    )),
+
+                    -- Contexto NLU
+                    intent          TEXT,
+                    confidence      REAL,
+
+                    -- Contexto de sesión
+                    state_before    TEXT,
+                    state_after     TEXT,
+
+                    -- Relación con cita (opcional)
+                    appointment_id  INTEGER,
+
+                    -- Timestamp
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    FOREIGN KEY (client_phone) REFERENCES clients(phone),
+                    FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_conv_events_phone_time
+                ON conversation_events(client_phone, created_at DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_conv_events_type
+                ON conversation_events(client_phone, event_type, created_at DESC)
+            """)
+
+            # ==========================================
             # MIGRACIONES DEFENSIVAS
             # Columnas agregadas en versiones posteriores.
             # ALTER TABLE falla silenciosamente si ya existen.
