@@ -1,6 +1,6 @@
 # 🏗️ ARQUITECTURA DEL PROYECTO
 ## Sistema de Gestión de Turnos — WhatsApp Bot
-**Versión 6.1 — Abril 2026**
+**Versión 6.2 — Abril 2026**
 
 ---
 
@@ -69,6 +69,12 @@ Flask Webhook (Python 3.10)
     │ WaitlistService    │  ← cubre turnos cancelados
     │ ReminderService    │  ← recordatorios automáticos
     └────────────────────┘
+          │
+    ┌─────┴──────────────────────────┐
+    │ ConversationContextService     │  ← inferencia de contexto entre sesiones
+    │   EventStore   (BD)            │  ← escritura/lectura conversation_events
+    │   ContextService (inferencia)  │  ← had_reminder_sent, interrupted_flow
+    └────────────────────────────────┘
 ```
 
 ### Tecnologías
@@ -445,6 +451,9 @@ slot_offers             -- ofertas de waitlist
 calendar_watches        -- watch channels de Google Calendar
 message_retry_queue     -- cola de reintentos de mensajes fallidos
 notifications           -- notificaciones del sistema
+conversation_events     -- eventos de conversación por usuario (v6.2)
+                        --  event_type, intent, confidence, state_before
+                        --  retención: 7 días, purga automática
 ```
 
 ### Columnas agregadas recientemente
@@ -646,6 +655,10 @@ FLASK_ENV=development
 FLASK_PORT=5000
 ENVIRONMENT=development
 
+# ── Recordatorios — ventana de respuesta ────────────────────────
+REMINDER_SEND_TIME=17:30    # hora de envío (también controla jobs diarios)
+REMINDER_CLOSE_TIME=20:30   # hora límite para aceptar respuestas del paciente
+
 # ── Rate limiting (opcional, override del DomainConfig) ──────────
 RATE_LIMIT_MAX_MESSAGES_PER_WINDOW=100  # dev: subir límite para testing
 RATE_LIMIT_BLOCK_MINUTES=0              # dev: sin bloqueo
@@ -667,11 +680,12 @@ SMTP_PASSWORD=xxxx
 - `docs/GOOGLE_CALENDAR_SERVICE.md` — integración con Google Calendar
 - `docs/INTENT_DETECTION_SYSTEM.md` — arquitectura del sistema NLU/ML
 - `docs/REMINDER_INTEGRATION.md` — ciclo completo de recordatorios automáticos
+- `docs/CONVERSATION_CONTEXT_SERVICE.md` — sistema de contexto conversacional entre sesiones (v6.2)
 - `docs/ml_agenda_import_intents.md` — spec intenciones importación agenda
 - `docs/ml_book_for_third_party.md` — spec intención agendar para terceros
 - `docs/gap4_agenda_import_spec.md` — spec flujo importación completo
 
 ---
 
-**Versión:** 6.1
+**Versión:** 6.2
 **Última actualización:** Abril 2026
