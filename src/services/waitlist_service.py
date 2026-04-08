@@ -444,29 +444,51 @@ _Esta oferta expira en {self.offer_expiration_minutes} minutos_"""
             return None
     
     def _accept_offer(self, offer: Dict) -> Dict:
-        """Cliente acepta la oferta - mover su turno."""
+        """
+        Cliente acepta la oferta — mueve el turno en BD y en Google Calendar.
+
+        Orden de operaciones:
+            1. Cancelar la cita liberada en BD (libera UNIQUE constraint)
+            2. Marcar oferta como 'accepted'
+            3. Calcular new_end_time desde duration_minutes de la cita original
+            4. Mover la cita del cliente en BD
+            5. Actualizar Google Calendar (reschedule del evento)
+        """
         try:
-            logger.info(f"✅ Cliente {offer['offered_to_client_phone']} aceptó oferta #{offer['id']}")
-            
-            # TODO: Implementar movimiento de turno
-            # 1. Actualizar appointment original con nueva fecha/hora
-            # 2. Actualizar Google Calendar
-            # 3. Marcar oferta como 'accepted'
-            # 4. Marcar turno viejo como 'moved'
-            
+            logger.info(
+                f"✅ Cliente {offer['offered_to_client_phone']} "
+                f"aceptó oferta #{offer['id']}"
+            )
+
+            # ── Datos que necesitamos ────────────────────────────────────────
+            freed_apt_id    = offer['freed_appointment_id']
+            original_apt_id = offer['original_appointment_id']
+            new_date        = offer['freed_date']
+            new_start       = offer['freed_time']
+
+            # Calcular new_end desde duration_minutes de la cita original
+            original_apt = self.db.get_appointment(original_apt_id)
+            if not original_apt:
+                raise ValueError(f"Cita original #{original_apt_id} no encontrada")
+
+            duration = original_apt.get('duration_minutes', 50)
+            h, m     = map(int, new_start.split(':'))
+            end_total_min = h * 60 + m + duration
+            new_end  = f"{end_total_min // 60:02d}:{end_total_min % 60:02d}"
+
+            # ── Paso 1-4: BD ─────────────────────────────────────────────────
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # Paso 1: Cancelar el turno liberado para liberar la constraint UNIQUE
-                # (professional_phone, appointment_date, start)
-                # Sin esto el UPDATE de la cita del cliente falla con UNIQUE constraint
+                # 1. Cancelar el turno liberado para liberar UNIQUE constraint
+                #    (professional_phone, appointment_date, start)
                 cursor.execute("""
                     UPDATE appointments
                     SET status = 'cancelada_cliente'
                     WHERE id = ?
-                """, (offer['freed_appointment_id'],))
+                """, (freed_apt_id,))
 
-                # Paso 2: Marcar oferta como aceptada
+                # 2. Marcar oferta como aceptada
                 cursor.execute("""
                     UPDATE slot_offers
                     SET status = 'accepted',
@@ -474,41 +496,66 @@ _Esta oferta expira en {self.offer_expiration_minutes} minutos_"""
                     WHERE id = ?
                 """, (offer['id'],))
 
-                # Paso 3: Mover la cita del cliente a la nueva fecha/hora
+                # 3. Mover la cita del cliente a la nueva fecha/hora
                 cursor.execute("""
                     UPDATE appointments
-                    SET appointment_date = ?,
-                        start = ?,
+                    SET appointment_date    = ?,
+                        start               = ?,
+                        end                 = ?,
                         moved_from_offer_id = ?
                     WHERE id = ?
-                """, (
-                    offer['freed_date'],
-                    offer['freed_time'],
-                    offer['id'],
-                    offer['original_appointment_id']
-                ))
+                """, (new_date, new_start, new_end, offer['id'], original_apt_id))
 
-                logger.info("✅ Turno liberado cancelado, turno del cliente movido exitosamente")
-            
+            logger.info(
+                f"✅ BD actualizada — cita #{original_apt_id} "
+                f"movida a {new_date} {new_start}-{new_end}"
+            )
+
+            # ── Paso 5: Google Calendar ───────────────────────────────────────
+            # Usamos AppointmentCalendarService que ya maneja el reschedule
+            # de forma segura (si no hay google_event_id, solo actualiza BD)
+            try:
+                from src.integrations.appointment_calendar_service import (
+                    AppointmentCalendarService,
+                )
+                calendar_service = AppointmentCalendarService(self.db)
+                calendar_service.reschedule_appointment(
+                    appointment_id = original_apt_id,
+                    new_date       = new_date,
+                    new_start_time = new_start,
+                    new_end_time   = new_end,
+                )
+                logger.info(
+                    f"✅ Google Calendar actualizado — "
+                    f"evento de cita #{original_apt_id} reprogramado"
+                )
+            except Exception as cal_error:
+                # El turno ya está correcto en BD — no revertir.
+                # Solo loguear para que el profesional pueda corregir manualmente.
+                logger.error(
+                    f"⚠️ BD actualizada pero Google Calendar falló "
+                    f"para cita #{original_apt_id}: {cal_error}"
+                )
+
             return {
                 'success': True,
-                'action': 'accepted',
-                'message': f"""✅ ¡Perfecto! Tu turno fue adelantado.
-
-📅 *Nuevo turno:*
-Fecha: {offer['freed_date']}
-Hora: {offer['freed_time']}
-
-Tu turno anterior fue cancelado automáticamente."""
+                'action':  'accepted',
+                'message': (
+                    f"✅ ¡Perfecto! Tu turno fue adelantado.\n\n"
+                    f"📅 *Nuevo turno:*\n"
+                    f"Fecha: {new_date}\n"
+                    f"Hora: {new_start} hs\n\n"
+                    f"Tu turno anterior fue cancelado automáticamente."
+                ),
             }
-            
+
         except Exception as e:
             logger.error(f"Error aceptando oferta: {e}")
             return {
                 'success': False,
-                'message': "Error moviendo el turno. Intenta nuevamente."
+                'message': "Error moviendo el turno. Intenta nuevamente.",
             }
-    
+
     def _reject_offer(self, offer: Dict) -> Dict:
         """
         Cliente rechaza la oferta.
