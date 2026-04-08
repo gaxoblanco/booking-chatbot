@@ -132,6 +132,16 @@ class BotController:
         # Contexto de conversación (para NLU avanzado)
         conv_context = context_manager.get_context(phone_number)
 
+        # Inferir contexto entre sesiones si la sesión es nueva
+        # Permite orientar el routing sin depender del estado de Redis
+        if session.state.value == 'start':
+            from src.integrations.conversation_context_service import context_service
+            _recent_ctx = context_service.get_recent_context(phone_number)
+            if _recent_ctx['pending_reminder']:
+                # Forzar estado de espera de recordatorio
+                session.transition_to(ConversationState.AWAITING_REMINDER_RESPONSE)
+                print(f"[CTX] Sesión nueva con reminder pendiente → AWAITING_REMINDER_RESPONSE")
+
         # Limpiar mensaje
         message = message.strip()
         message_lower = message.lower()
@@ -644,6 +654,20 @@ class BotController:
                     return self._process_message(session.phone_number, message)
                 session_manager.save_session(session)
                 return common_messages.UNKNOWN_QUERY
+            # Registrar state_after ahora que el handler ya transicionó
+            # Actualiza el último evento registrado con el estado de destino
+            try:
+                from src.integrations.conversation_context_service.event_store import event_store as _es
+                with _es.db.get_connection() as _conn:
+                    _conn.execute("""
+                        UPDATE conversation_events
+                        SET state_after = ?
+                        WHERE client_phone = ?
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """, (session.state.value, phone_number))
+            except Exception:
+                pass  # No crítico — state_after es best-effort
             # Persistir estado en Redis antes de responder
             session_manager.save_session(session)
             return response
