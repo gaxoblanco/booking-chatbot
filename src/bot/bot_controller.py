@@ -37,6 +37,7 @@ from src.config.filter_config import FeatureFlags
 from src.services.user_service import user_service
 from src.services.intent_detector import intent_detector, Intent
 from src.integrations.ml.hybrid_intent_detector import hybrid_intent_detector
+from src.integrations.conversation_context_service.event_store import event_store  
 from src.services.conversation_logger import conversation_logger
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
@@ -482,6 +483,16 @@ class BotController:
                     'ml_confidence': intent_result.get('ml_confidence', 0.0),
                     'rules_confidence': intent_result.get('rules_confidence', 0.0),
                 }
+            )
+
+            # Persistir evento en BD para inferencia de contexto entre sesiones
+            event_store.record(
+                client_phone = phone_number,
+                session_id   = phone_number,
+                event_type   = 'message',
+                intent       = intent_result['intent'].value,
+                confidence   = intent_result['confidence'],
+                state_before = session.state.value,
             )
 
             # Marcar para revisión si confianza baja
