@@ -217,7 +217,7 @@ REMINDER_BACK_TO_OPTIONS = (
     "Tu turno sigue en pie. 👍\n\n"
     "Respondé con:\n"
     "1️⃣ Confirmar que vas\n"
-    "2️⃣ Cambiar el horario\n"
+    "2️⃣ Cambiar el día\n"
     "0️⃣ Cancelar el turno"
 )
 
@@ -429,6 +429,51 @@ BOOKING_LIMIT_PER_PROFESSIONAL = (
     "Ya tenés {count} turno{s} activo{s} con {prof_name}.\n\n"
     "Si necesitás otro horario, primero cancelá uno.\n\n"
     "Escribí *mis turnos* para verlos."
+)
+
+# ==================================================
+# ── Waitlist / Adelantamiento de turno ──
+# ==================================================
+
+SLOT_OFFER_MESSAGE = (
+    "✨ *Turno disponible antes de lo previsto*\n\n"
+    "Se liberó un lugar con *{prof_name}*:\n"
+    "📅 {freed_date} a las {freed_time} hs\n\n"
+    "Tu turno actual es el {current_date} a las {current_time} hs.\n\n"
+    "¿Querés adelantarlo?\n\n"
+    "1️⃣ Sí, me quedo con este turno\n"
+    "2️⃣ No, mantengo el mío\n\n"
+    "_Si no respondés en {expiration_minutes} min, el turno pasa al siguiente en lista._"
+)
+
+SLOT_OFFER_ACCEPTED = (
+    "✅ *Turno adelantado*\n\n"
+    "👨‍⚕️ {prof_name}\n"
+    "📅 {new_date} a las {new_time} hs\n\n"
+    "Tu turno anterior quedó cancelado automáticamente.\n"
+    "¡Te esperamos!"
+)
+
+SLOT_OFFER_REJECTED = (
+    "👍 Perfecto. Mantenemos tu turno:\n\n"
+    "👨‍⚕️ {prof_name}\n"
+    "📅 {current_date} a las {current_time} hs\n\n"
+    "¡Te esperamos!"
+)
+
+SLOT_OFFER_EXPIRED = (
+    "⏰ El turno ya fue tomado por otro paciente.\n\n"
+    "Tu turno sigue en pie:\n"
+    "👨‍⚕️ {prof_name}\n"
+    "📅 {current_date} a las {current_time} hs\n\n"
+    "¡Te esperamos!"
+)
+
+SLOT_OFFER_INVALID = (
+    "No entendí tu respuesta.\n\n"
+    "1️⃣ Sí, adelanto el turno\n"
+    "2️⃣ No, mantengo el mío\n\n"
+    "_La oferta vence en {minutes_left} min._"
 )
 
 # ==================================================
