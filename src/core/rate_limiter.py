@@ -24,7 +24,7 @@ import time
 import threading
 from typing import Dict, List
 from src.config.domain_config import DomainConfig
-
+from src.core.logger import _sanitize
 
 class RateLimiter:
     """
@@ -89,7 +89,7 @@ class RateLimiter:
                 block_until = now + (DomainConfig.RATE_LIMIT_BLOCK_MINUTES * 60)
                 self._blocked[phone] = block_until
                 print(
-                    f"[RATE_LIMIT] 🚫 Bloqueo activado: {phone} "
+                    f"[RATE_LIMIT] 🚫 Bloqueo activado: {_sanitize(phone)} "
                     f"envió {count + 1} mensajes en {window}s. "
                     f"Bloqueado por {DomainConfig.RATE_LIMIT_BLOCK_MINUTES} min."
                 )
@@ -97,7 +97,7 @@ class RateLimiter:
 
             # Dentro del límite — registrar
             self._timestamps[phone].append(now)
-            print(f"[RATE_LIMIT] ✅ {phone}: {count + 1}/{DomainConfig.RATE_LIMIT_MAX_MESSAGES_PER_WINDOW} msgs en ventana")
+            print(f"[RATE_LIMIT] ✅ {_sanitize(phone)}: {count + 1}/{DomainConfig.RATE_LIMIT_MAX_MESSAGES_PER_WINDOW} msgs en ventana")
             return True
 
     def get_stats(self) -> dict:
@@ -136,14 +136,14 @@ class RateLimiter:
         now = time.time()
         if now < self._blocked[phone]:
             remaining = round(self._blocked[phone] - now)
-            print(f"[RATE_LIMIT] 🚫 Mensaje ignorado: {phone} bloqueado ({remaining}s restantes)")
+            print(f"[RATE_LIMIT] 🚫 Mensaje ignorado: {_sanitize(phone)} bloqueado ({remaining}s restantes)")
             return True
 
         # Bloqueo expirado — limpiar
         del self._blocked[phone]
         if phone in self._timestamps:
             del self._timestamps[phone]
-        print(f"[RATE_LIMIT] ✅ Bloqueo expirado para {phone}, restaurado")
+        print(f"[RATE_LIMIT] ✅ Bloqueo expirado para {_sanitize(phone)}, restaurado")
         return False
 
 
