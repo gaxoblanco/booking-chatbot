@@ -112,6 +112,7 @@ class ConversationState(Enum):
     CLIENT_RESCHEDULE_CONFIRM = "client_reschedule_confirm"
 
     AWAITING_REMINDER_RESPONSE = "awaiting_reminder_response"
+    AWAITING_SLOT_OFFER = "awaiting_slot_offer"
 
     # CANCELACIÓN DE CITAS
     CLIENT_CONFIRM_CANCEL = "client_confirm_cancel"    # Confirmar cancelación

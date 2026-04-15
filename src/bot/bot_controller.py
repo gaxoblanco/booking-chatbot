@@ -38,7 +38,8 @@ from src.config.filter_config import FeatureFlags
 from src.services.user_service import user_service
 from src.services.intent_detector import intent_detector, Intent
 from src.integrations.ml.hybrid_intent_detector import hybrid_intent_detector
-from src.integrations.conversation_context_service.event_store import event_store  
+from src.integrations.conversation_context_service.event_store import event_store
+from src.integrations.waitlist.slot_offer_handler import should_handle_as_slot_offer, handle_slot_offer_response 
 from src.services.conversation_logger import conversation_logger
 from src.messages.messages_common import common_messages
 from src.messages.messages_client import client_messages
@@ -139,9 +140,11 @@ class BotController:
             from src.integrations.conversation_context_service import context_service
             _recent_ctx = context_service.get_recent_context(phone_number)
             if _recent_ctx['pending_reminder']:
-                # Forzar estado de espera de recordatorio
                 session.transition_to(ConversationState.AWAITING_REMINDER_RESPONSE)
                 print(f"[CTX] Sesión nueva con reminder pendiente → AWAITING_REMINDER_RESPONSE")
+            elif _recent_ctx.get('pending_slot_offer'):
+                session.transition_to(ConversationState.AWAITING_SLOT_OFFER)
+                print(f"[CTX] Sesión nueva con oferta pending → AWAITING_SLOT_OFFER")
 
         # ── PRIORIDAD MÁXIMA: respuesta a recordatorio ──────────────────────
         # Va ANTES del NLU y de cualquier bypass de estado.
@@ -149,6 +152,14 @@ class BotController:
         # del estado de sesión ni de Redis.
         if should_handle_as_reminder(session, message):
             return handle_reminder_response(session, message)
+        
+        # Segunda prioridad: respuesta a oferta de adelantamiento (waitlist)
+        # Consulta BD directamente — no depende del estado de sesión.
+        if should_handle_as_slot_offer(session, message):
+            response = handle_slot_offer_response(session, message)
+            if response is not None:
+                return response
+            # response == None significa que la oferta ya no existe
 
         # Limpiar mensaje
         message = message.strip()
@@ -1213,7 +1224,7 @@ class BotController:
             ConversationState.CLIENT_CONFIRM_CANCEL: self.client_handler.handle_confirm_cancel,
             ConversationState.CLIENT_SELECT_CANCEL: self.client_handler.handle_select_cancel,
             ConversationState.AWAITING_REMINDER_RESPONSE: lambda s, m: handle_reminder_response(s, m),
-            ConversationState.AWAITING_REMINDER_RESPONSE: lambda s, m: handle_reminder_response(s, m),
+            ConversationState.AWAITING_SLOT_OFFER: lambda s, m: handle_slot_offer_response(s, m),
         }
         return handlers.get(state, self.handle_unknown_state)
 

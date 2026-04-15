@@ -1839,9 +1839,17 @@ class ClientHandler:
         # NORMALIZAR TEXTO LIBRE → 1 o 2
         # ==========================================
         _msg = message.strip().lower()
-        if _msg in ['2', 'no', 'no cancelar', 'mantener', 'no mantener', 'no, mantener', 'no quiero']:
+        _NO  = {'2', 'no', 'no cancelar', 'mantener', 'no mantener', 'no, mantener',
+                'no quiero', 'no gracias', 'nop', 'nope', 'dejalo', 'dejá',
+                'mantene', 'mantené', 'quiero mantener', 'deseo mantener',
+                'no deseo cancelar', 'prefiero mantener'}
+        _SI  = {'1', 'si', 'sí', 's', 'dale', 'ok', 'confirmar', 'confirmo',
+                'si cancelar', 'sí cancelar', 'cancelar', 'quiero cancelar',
+                'deseo cancelar', 'sí quiero', 'si quiero', 'adelante',
+                'proceder', 'procedé'}
+        if _msg in _NO:
             message = '2'
-        elif _msg in ['1', 'si', 'sí', 'confirmar', 'si cancelar', 'sí cancelar']:
+        elif _msg in _SI:
             message = '1'
 
         # ==========================================
@@ -1945,6 +1953,15 @@ class ClientHandler:
 
         if message == '1':
             session.set_temp('cancel_error_shown', False)
+
+            # ── CORTOCIRCUITO: viene del recordatorio ──────────────────────────
+            # El cliente ya vio profesional + fecha en el mensaje del recordatorio
+            # (_initiate_cancellation lo incluye). No repetir confirmación.
+            if from_reminder:
+                session.transition_to(ConversationState.CLIENT_CANCEL_REASON)
+                return self.handle_client_cancel_reason(session, '1')
+            # ── FIN CORTOCIRCUITO ──────────────────────────────────────────────
+
             date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
             _dias  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
             _meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -2072,7 +2089,27 @@ class ClientHandler:
                 return appointment_messages.CANCEL_ERROR_TECHNICAL
 
         print("[CANCEL_HANDLER] 🧹 Limpiando temp_data")
-        # Limpiar temp_data
+
+        # ── Disparar waitlist en background ──────────────────────────────────
+        # Si hay candidatos que quieran adelantar, les enviamos la oferta.
+        # Corre en thread separado para no bloquear la respuesta al cliente.
+        try:
+            import threading
+            from src.services.waitlist_service import waitlist_service
+            threading.Thread(
+                target=waitlist_service.handle_slot_freed,
+                kwargs={
+                    'freed_appointment_id': appointment_id,
+                    'reason': 'cancelled'
+                },
+                daemon=True
+            ).start()
+            print(f"[CANCEL_HANDLER] 🔔 Waitlist thread iniciado para cita #{appointment_id}")
+        except Exception as wl_err:
+            # No interrumpir el flujo de cancelación si waitlist falla
+            print(f"[CANCEL_HANDLER] ⚠️ Waitlist no disparada: {wl_err}")
+        # ── Fin waitlist ──────────────────────────────────────────────────────
+
         session.clear_temp()
         session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
 
@@ -2478,43 +2515,48 @@ class ClientHandler:
             )
 
         # Usuario seleccionó un horario
+        available_slots = session.get_temp('available_slots')
+
+        # Intentar primero como número
         try:
             selection = int(message)
-            available_slots = session.get_temp('available_slots')
-
             if not available_slots or selection < 1 or selection > len(available_slots):
-                return "⚠️ Opción inválida.\n\n_Escribe el número del horario o *0* para volver_"
-
+                return "⚠️ Opción inválida.\n\n_Escribí el número del horario o *0* para volver_"
             selected_slot = available_slots[selection - 1]
 
-            # Guardar horario seleccionado
-            session.set_temp('new_start_time', selected_slot['start'])
-            session.set_temp('new_end_time', selected_slot['end'])
-
-            # Transicionar a confirmación
-            session.transition_to(ConversationState.CLIENT_RESCHEDULE_CONFIRM)
-
-            # Formatear fechas para confirmación
-            original_date = session.get_temp('original_date')
-            original_time = session.get_temp('original_start_time')
-
-            old_date_obj = datetime.strptime(original_date, "%Y-%m-%d")
-            old_date_formatted = old_date_obj.strftime("%d/%m/%Y")
-
-            professional_name = session.get_temp('professional_name')
-
-            return appointment_messages.CLIENT_RESCHEDULE_CONFIRM.format(
-                old_date=old_date_formatted,
-                old_time=original_time,
-                new_date=new_date_str,
-                new_time=selected_slot['start'],
-                professional_name=professional_name
-            )
-
         except ValueError:
-            session.clear_temp()
-            session.transition_to(ConversationState.START)
-            return None
+            # No es número — intentar matchear como hora (ej: "15:40")
+            if available_slots:
+                matched = next(
+                    (s for s in available_slots if s['start'] == message.strip()),
+                    None
+                )
+                if matched:
+                    selected_slot = matched
+                else:
+                    # No matcheó — pedir de nuevo SIN resetear sesión
+                    return "⚠️ No entendí. Escribí el número del horario o la hora exacta (ej: *15:40*).\n\n_Escribí *0* para volver_"
+            else:
+                return "⚠️ Error al cargar horarios. Escribí *0* para volver."
+
+        # Guardar horario seleccionado
+        session.set_temp('new_start_time', selected_slot['start'])
+        session.set_temp('new_end_time', selected_slot['end'])
+        # Transicionar a confirmación
+        session.transition_to(ConversationState.CLIENT_RESCHEDULE_CONFIRM)
+        # Formatear fechas para confirmación
+        original_date = session.get_temp('original_date')
+        original_time = session.get_temp('original_start_time')
+        old_date_obj = datetime.strptime(original_date, "%Y-%m-%d")
+        old_date_formatted = old_date_obj.strftime("%d/%m/%Y")
+        professional_name = session.get_temp('professional_name')
+        return appointment_messages.CLIENT_RESCHEDULE_CONFIRM.format(
+            old_date=old_date_formatted,
+            old_time=original_time,
+            new_date=new_date_str,
+            new_time=selected_slot['start'],
+            professional_name=professional_name
+        )
 
     def handle_client_reschedule_confirm(self, session: SessionData, message: str) -> str:
         """
