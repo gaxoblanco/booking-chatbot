@@ -163,29 +163,26 @@ def normalize_reminder_response(message: str) -> str | None:
 # =========================================================================
 
 def should_handle_as_reminder(session: SessionData, message: str) -> bool:
-    """
-    Determina si el mensaje debe tratarse como respuesta a un recordatorio.
 
-    Tres capas de validación en orden:
-      1. Ventana de tiempo: solo entre REMINDER_SEND_TIME y REMINDER_CLOSE_TIME
-      2. Sesión sin flujo activo: no interceptar si el paciente está en medio de algo
-      3. Reminder pendiente en BD + mensaje normalizable
-    """
+    # -----------------------------------------------------------------
+    # CAPA 0 — Si ya está en estado de espera, interceptar SIEMPRE
+    # (el paciente respondió tarde, pero la sesión ya está en el estado correcto)
+    # -----------------------------------------------------------------
+    if session.state == ConversationState.AWAITING_REMINDER_RESPONSE:
+        return True
+
+    # -----------------------------------------------------------------
+    # CAPA 1 — Ventana de tiempo (solo para intercepción desde estado neutral)
+    # -----------------------------------------------------------------
     from datetime import datetime
     import os
 
-    # -----------------------------------------------------------------
-    # CAPA 1 — Ventana de tiempo
-    # -----------------------------------------------------------------
-
     def _parse_time_env(var: str, default: str) -> int:
-        """Convierte 'HH:MM' del .env a minutos desde medianoche."""
         raw = os.getenv(var, default)
         try:
             h, m = raw.split(":")
             return int(h) * 60 + int(m)
         except Exception:
-            logger.warning(f"[REMINDER] {var} inválido: '{raw}' — usando {default}")
             h, m = default.split(":")
             return int(h) * 60 + int(m)
 
@@ -198,13 +195,11 @@ def should_handle_as_reminder(session: SessionData, message: str) -> bool:
 
     # -----------------------------------------------------------------
     # CAPA 2 — Sesión sin flujo activo
-    # Si el paciente está en medio de otra cosa, no interceptar
     # -----------------------------------------------------------------
     _NEUTRAL_STATES = {
         ConversationState.START,
         ConversationState.CLIENT_MAIN_MENU,
         ConversationState.CLIENT_NEW_USER_MENU,
-        ConversationState.AWAITING_REMINDER_RESPONSE,
     }
     if session.state not in _NEUTRAL_STATES:
         return False
@@ -212,11 +207,6 @@ def should_handle_as_reminder(session: SessionData, message: str) -> bool:
     # -----------------------------------------------------------------
     # CAPA 3 — Reminder pendiente en BD + mensaje reconocible
     # -----------------------------------------------------------------
-    # Caso rápido: estado explícito de espera
-    if session.state == ConversationState.AWAITING_REMINDER_RESPONSE:
-        return True
-
-    # Sesión neutral o expirada: consultar BD solo si el mensaje normaliza
     normalized = normalize_reminder_response(message)
     if normalized is None:
         return False
@@ -238,7 +228,6 @@ def should_handle_as_reminder(session: SessionData, message: str) -> bool:
 def handle_reminder_response(session: SessionData, message: str) -> str:
     """
     Maneja la respuesta del paciente a un recordatorio.
-
     Normaliza el mensaje antes de pasarlo al reminder_service,
     aceptando tanto códigos numéricos como texto libre en español.
 
@@ -258,18 +247,18 @@ def handle_reminder_response(session: SessionData, message: str) -> str:
             f"[REMINDER] Respuesta no reconocida '{message}' "
             f"de {session.phone_number}"
         )
-        return (
-            "No entendí tu respuesta. 😕\n\n"
-            "Respondé con:\n"
-            "1️⃣ *1* — Confirmar que vas\n"
-            "2️⃣ *2* — Cambiar el horario\n"
-            "0️⃣ *0* — Cancelar el turno"
-        )
+        from src.messages.loader import get_msg
+        return get_msg('REMINDER_BACK_TO_OPTIONS')
 
     logger.info(
         f"[REMINDER] Procesando '{message}' → '{normalized}' "
         f"de {session.phone_number}"
     )
+
+    # Obtener reminder ANTES de llamar al servicio —
+    # después de handle_reminder_response el status cambia ('rescheduled',
+    # 'cancelled') y _get_pending_reminder ya no lo encuentra.
+    reminder = reminder_service._get_pending_reminder(session.phone_number)
 
     # Delegar al servicio con el código normalizado
     result = reminder_service.handle_reminder_response(
@@ -290,41 +279,50 @@ def handle_reminder_response(session: SessionData, message: str) -> str:
 
     # --- OPCIÓN 2: REPROGRAMAR ---
     elif action == 'reschedule':
-        session.transition_to(ConversationState.CLIENT_RESCHEDULE_APPOINTMENT)
-        reminder = reminder_service._get_pending_reminder(session.phone_number)
         if reminder:
             apt_id = reminder['appointment_id']
-            session.store_temp('appointment_id', apt_id)
-            # Liberar slot para waitlist — hilo separado para no bloquear respuesta
+            session.clear_temp()
+            session.set_temp('appointment_id', apt_id)
+            session.set_temp('from_reminder', True)
+            session.set_temp('new_date', None)
+            session.set_temp('new_date_str', None)
+            session.set_temp('reschedule_dates_shown', False)
             threading.Thread(
                 target=_trigger_waitlist,
                 args=(apt_id, 'rescheduled'),
                 daemon=True,
                 name=f"waitlist-reminder-{apt_id}"
             ).start()
-        return result['message']
+
+        # Ir directo a selección de fecha — sin mensaje intermedio
+        from src.bot.client_handler import ClientHandler
+        from src.core.states import session_manager
+        client_handler = ClientHandler()
+        response = client_handler.handle_client_reschedule_appointment(session, 'start')
+        # Forzar guardado — reschedule_dates_shown debe persistir entre requests
+        session_manager.save_session(session)
+        return response
 
     # --- OPCIÓN 0: CANCELAR ---
     elif action == 'cancel':
-        session.transition_to(ConversationState.CLIENT_CANCEL_APPOINTMENT)
-        reminder = reminder_service._get_pending_reminder(session.phone_number)
         if reminder:
             apt_id = reminder['appointment_id']
-            session.store_temp('appointment_id', apt_id)
-            # Notificar waitlist — hilo separado
+            session.clear_temp()
+            session.set_temp('appointment_id', apt_id)
+            session.set_temp('from_reminder', True)
             threading.Thread(
                 target=_trigger_waitlist,
                 args=(apt_id, 'cancelled'),
                 daemon=True,
                 name=f"waitlist-reminder-{apt_id}"
             ).start()
+        session.transition_to(ConversationState.CLIENT_CANCEL_APPOINTMENT)
         return result['message']
 
     else:
         logger.error(f"[REMINDER] Acción desconocida: '{action}'")
         return "Error procesando tu respuesta. Por favor, intentá nuevamente."
-
-
+    
 # =========================================================================
 # PASO 4 — WAITLIST (sin cambios respecto a v1.0)
 # =========================================================================
