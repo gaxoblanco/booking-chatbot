@@ -13,6 +13,7 @@ Jobs registrados:
     4. calendar_sync    — sincroniza cancelaciones desde Google Calendar (diario)
     5. watches          — renueva watch channels de Google Calendar (diario)
     6. waitlist         — procesa lista de espera / ofertas expiradas (diario)
+    7. purge_events     — elimina conversation_events > 7 días (diario 03:00)
 
 Configuración:
     REMINDER_TIME=17:30          → horario del job de recordatorios (HH:MM)
@@ -33,6 +34,8 @@ import logging
 import os
 from datetime import datetime
 from typing import Dict
+
+from integrations.reminder import reminder_integration_service
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +210,18 @@ class SchedulerEngine:
                 replace_existing = True,
             )
 
+            # ── 7. Purga de conversation_events ──────────────────────────────
+            self._scheduler.add_job(
+                func     = job_purge_events,
+                trigger  = "cron",
+                hour     = 3,
+                minute   = 0,
+                timezone = timezone,
+                id       = "purge_events",
+                name     = "Purga conversation_events antiguos",
+                replace_existing = True,
+            )
+
         else:
             # Development: registrar jobs sin trigger activo
             # Solo se ejecutan via trigger_job() manual
@@ -217,6 +232,7 @@ class SchedulerEngine:
                 ("calendar_sync",job_calendar_sync,"Sync Google Calendar"),
                 ("watches",      job_watches,      "Renovación watches"),
                 ("waitlist",     job_waitlist,      "Waitlist"),
+                ("purge_events", job_purge_events,  "Purga events"),
             ]:
                 # Fecha en el pasado → nunca se dispara solo
                 self._scheduler.add_job(
@@ -228,7 +244,7 @@ class SchedulerEngine:
                     replace_existing = True,
                 )
 
-        logger.info(f"[SCHEDULER] ✅ {6} jobs registrados")
+        logger.info(f"[SCHEDULER] ✅ {7} jobs registrados")
 
     # =========================================================================
     # DISPARO MANUAL
@@ -253,6 +269,7 @@ class SchedulerEngine:
             "calendar_sync":job_calendar_sync,
             "watches":      job_watches,
             "waitlist":     job_waitlist,
+            "purge_events": job_purge_events,
         }
 
         if job_id not in JOB_MAP:
@@ -321,7 +338,6 @@ def job_reminders() -> Dict:
     """Recordatorios diarios — delegado al ReminderIntegrationService."""
     logger.info("[JOB] 🔔 Iniciando: recordatorios diarios")
     try:
-        from src.integrations.reminder import reminder_integration_service
         return reminder_integration_service.run_send_cycle()
     except Exception as e:
         logger.error(f"[JOB] ❌ Error en recordatorios: {e}")
@@ -332,8 +348,7 @@ def job_auto_confirm() -> Dict:
     """Auto-confirmación por timeout — delegado al ReminderIntegrationService."""
     logger.info("[JOB] 🔔 Iniciando: auto-confirm")
     try:
-        from src.integrations.reminder import reminder_integration_service
-        return reminder_integration_service.run_confirm_cycle()
+        return reminder_integration_service.run_send_cycle()
     except Exception as e:
         logger.error(f"[JOB] ❌ Error en auto-confirm: {e}")
         return {"confirmed": 0, "errors": 1, "error_detail": str(e)}
@@ -475,6 +490,18 @@ def job_waitlist() -> Dict:
     except Exception as e:
         logger.error(f"[JOB] ❌ Error en waitlist: {e}")
         return {"processed": 0, "errors": 1, "error_detail": str(e)}
+    
+def job_purge_events() -> Dict:
+    """Elimina conversation_events con más de 7 días de antigüedad."""
+    logger.info("[JOB] 🔔 Iniciando: purge events")
+    try:
+        from src.integrations.conversation_context_service.event_store import event_store
+        deleted = event_store.purge_old_events()
+        logger.info(f"[JOB] ✅ Purge events: {deleted} eliminados")
+        return {"deleted": deleted, "errors": 0}
+    except Exception as e:
+        logger.error(f"[JOB] ❌ Error en purge events: {e}")
+        return {"deleted": 0, "errors": 1, "error_detail": str(e)}
 
 
 # =============================================================================
