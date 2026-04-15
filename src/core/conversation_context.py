@@ -18,7 +18,7 @@ Ejemplo de uso:
 
 from typing import Dict, List, Optional
 from datetime import datetime
-
+from src.core.logger import _sanitize
 
 class ConversationContext:
     """
@@ -221,7 +221,7 @@ class ContextManager:
             Contexto del usuario
         """
         if phone_number not in self.contexts:
-            print(f"[CONTEXT] Nuevo contexto creado para {phone_number}")
+            print(f"[CONTEXT] Nuevo contexto creado para {_sanitize(phone_number)}")
             self.contexts[phone_number] = ConversationContext(phone_number)
         return self.contexts[phone_number]
     
@@ -234,7 +234,7 @@ class ContextManager:
         """
         if phone_number in self.contexts:
             del self.contexts[phone_number]
-            print(f"[CONTEXT] Contexto eliminado para {phone_number}")
+            print(f"[CONTEXT] Contexto eliminado para {_sanitize(phone_number)}")
     
     def reset_context(self, phone_number: str):
         """
