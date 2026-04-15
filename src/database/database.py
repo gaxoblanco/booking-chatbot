@@ -103,7 +103,6 @@ class Database:
                     timezone TEXT DEFAULT 'America/Argentina/Buenos_Aires'
                 )
             """)
-            
 
             # ==========================================
             # TABLE: client_searches
@@ -125,7 +124,6 @@ class Database:
                 )
             """)
 
-            # Index for analytics queries
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_searches_client 
                 ON client_searches(client_phone)
@@ -177,6 +175,9 @@ class Database:
 
             # ==========================================
             # TABLE: appointments
+            # NOTA: el UNIQUE inline se migra abajo a un índice parcial
+            # que excluye canceladas — permite reutilizar slots liberados
+            # en el sistema de waitlist.
             # ==========================================
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS appointments (
@@ -240,7 +241,6 @@ class Database:
                 )
             """)
 
-            # Índices para optimizar consultas de appointments
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_appointments_client 
                 ON appointments(client_phone)
@@ -408,9 +408,6 @@ class Database:
             # ==========================================
             # TABLE: calendar_watches
             # ==========================================
-            # Watch channels de Google Calendar push notifications.
-            # Cada profesional activo tiene un canal que Google usa
-            # para notificar cambios en su agenda en tiempo real.
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS calendar_watches (
                     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -516,10 +513,6 @@ class Database:
 
             # ==========================================
             # TABLE: conversation_events
-            # Registro de eventos de conversación por usuario.
-            # Permite inferir contexto entre sesiones sin guardar
-            # el texto de los mensajes (eso va al JSONL anonimizado).
-            # Purga automática: eventos > 7 días se eliminan por job.
             # ==========================================
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS conversation_events (
@@ -586,6 +579,113 @@ class Database:
                 except Exception:
                     pass  # Columna ya existe — ignorar
 
+            # ==========================================
+            # MIGRACIÓN: Reemplazar UNIQUE constraint de appointments
+            # ==========================================
+            # El UNIQUE(professional_phone, appointment_date, start) inline no
+            # filtra por status — impide mover un turno al slot de uno cancelado,
+            # lo que rompe el sistema de waitlist (_accept_offer falla con
+            # UNIQUE constraint failed).
+            #
+            # Solución: recrear la tabla sin el UNIQUE inline y reemplazarlo
+            # por un índice parcial que excluye canceladas.
+            #
+            # Idempotente: solo corre si el autoindex original sigue presente.
+            # En BDs ya migradas, has_old_constraint = False → no hace nada.
+            # ==========================================
+            try:
+                cursor.execute("PRAGMA index_list(appointments)")
+                indexes = {row[1]: row for row in cursor.fetchall()}
+
+                # El UNIQUE inline genera 'sqlite_autoindex_appointments_1'
+                has_old_constraint = any(
+                    'autoindex' in name for name in indexes
+                )
+
+                if has_old_constraint:
+                    # executescript maneja su propia transacción implícita.
+                    # NO incluir BEGIN/COMMIT — causa "cannot start a transaction
+                    # within a transaction".
+                    cursor.executescript("""
+                        PRAGMA foreign_keys = OFF;
+
+                        CREATE TABLE appointments_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            google_event_id TEXT,
+                            client_phone TEXT NOT NULL,
+                            professional_phone TEXT NOT NULL,
+                            appointment_date DATE NOT NULL,
+                            start TEXT NOT NULL,
+                            end TEXT NOT NULL,
+                            duration_minutes INTEGER DEFAULT 50,
+                            session_type TEXT CHECK(session_type IN ('primera_vez', 'seguimiento', 'evaluacion')) DEFAULT 'primera_vez',
+                            modality TEXT CHECK(modality IN ('presencial', 'virtual', 'ambas')) DEFAULT 'presencial',
+                            status TEXT CHECK(status IN (
+                                'pendiente_confirmacion','confirmada','completada',
+                                'cancelada_cliente','cancelada_profesional',
+                                'no_asistio','reagendada'
+                            )) DEFAULT 'pendiente_confirmacion',
+                            notes TEXT,
+                            cancellation_reason TEXT,
+                            reminder_sent BOOLEAN DEFAULT 0,
+                            reminder_sent_at TIMESTAMP,
+                            wants_earlier_slot BOOLEAN DEFAULT 1,
+                            moved_from_offer_id INTEGER,
+                            confirmed_by_client BOOLEAN DEFAULT 0,
+                            confirmed_by_client_at TIMESTAMP,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            confirmed_at TIMESTAMP,
+                            cancelled_at TIMESTAMP,
+                            completed_at TIMESTAMP,
+                            last_synced_at TIMESTAMP,
+                            cancellation_notified BOOLEAN DEFAULT 0,
+                            last_google_sync TIMESTAMP DEFAULT NULL,
+                            patient_phone TEXT DEFAULT NULL,
+                            FOREIGN KEY (client_phone) REFERENCES clients(phone),
+                            FOREIGN KEY (professional_phone) REFERENCES professionals(phone)
+                        );
+
+                        INSERT INTO appointments_new SELECT
+                            id, google_event_id, client_phone, professional_phone,
+                            appointment_date, start, end, duration_minutes,
+                            session_type, modality, status, notes, cancellation_reason,
+                            reminder_sent, reminder_sent_at, wants_earlier_slot,
+                            moved_from_offer_id, confirmed_by_client, confirmed_by_client_at,
+                            created_at, updated_at, confirmed_at, cancelled_at, completed_at,
+                            last_synced_at,
+                            COALESCE(cancellation_notified, 0),
+                            last_google_sync,
+                            patient_phone
+                        FROM appointments;
+
+                        DROP TABLE appointments;
+                        ALTER TABLE appointments_new RENAME TO appointments;
+
+                        PRAGMA foreign_keys = ON;
+                    """)
+
+                    # Recrear índices — se pierden con DROP TABLE
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_appointments_client ON appointments(client_phone)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_appointments_professional ON appointments(professional_phone)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_appointments_date_professional ON appointments(professional_phone, appointment_date)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_appointments_last_synced ON appointments(last_synced_at)")
+
+                    # Índice parcial — reemplaza el UNIQUE inline.
+                    # Permite que slots cancelados no bloqueen la reutilización.
+                    conn.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_appointments_slot_active
+                        ON appointments(professional_phone, appointment_date, start)
+                        WHERE status NOT IN ('cancelada_cliente', 'cancelada_profesional')
+                    """)
+
+                    conn.commit()
+                    print("✅ Migración appointments: UNIQUE constraint reemplazado por índice parcial")
+
+            except Exception as e:
+                print(f"⚠️ Migración appointments UNIQUE: {e}")
     # ==========================================
     # PROFESSIONAL CRUD OPERATIONS
     # ==========================================
