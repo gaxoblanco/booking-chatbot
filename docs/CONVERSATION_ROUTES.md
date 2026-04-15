@@ -611,6 +611,68 @@ CLIENT_CANCEL_SUCCESS
 
 ---
 
+## 🔄 FLUJOS DE INTERCEPCIÓN (Alta Prioridad)
+
+Estos flujos se evalúan **antes del NLU** en cada mensaje entrante.
+Si aplican, toman el control completo de la conversación.
+
+### AWAITING_REMINDER_RESPONSE
+
+El cliente tiene un recordatorio pendiente de respuesta (enviado entre `REMINDER_SEND_TIME` y `REMINDER_CLOSE_TIME`).
+
+```
+[reminder_handler.should_handle_as_reminder()]
+    │  consulta BD: appointment_reminders status='sent'
+    │  verifica ventana horaria
+    │
+    ├── "1" / "sí" / "confirmo"   → confirmar asistencia → CLIENT_MAIN_MENU
+    ├── "2" / "reprogramar"       → CLIENT_RESCHEDULE_APPOINTMENT
+    └── "0" / "no puedo"          → CLIENT_CANCEL_APPOINTMENT
+                                        └── waitlist.handle_slot_freed() [thread]
+```
+
+### AWAITING_SLOT_OFFER
+
+El cliente tiene una oferta de adelantamiento de turno pendiente (`slot_offers.status='pending'`).
+La oferta expira en 30 minutos; si no responde, la cascada continúa al siguiente candidato.
+
+```
+[slot_offer_handler.should_handle_as_slot_offer()]
+    │  consulta BD: slot_offers status='pending' + expires_at > now
+    │  fuerza estado → AWAITING_SLOT_OFFER
+    │
+    ├── "1" / "sí" / "dale"
+    │       → waitlist._accept_offer()
+    │       → turno movido en BD + Google Calendar actualizado
+    │       → mensaje con nuevo turno (prof + fecha + hora)
+    │       → CLIENT_MAIN_MENU
+    │
+    ├── "2" / "no" / "mantener"
+    │       → waitlist._reject_offer()
+    │       → cascada: oferta al siguiente candidato
+    │       → mensaje con datos del turno original
+    │       → CLIENT_MAIN_MENU
+    │
+    ├── oferta expirada (responde tarde)
+    │       → _mark_offer_expired()
+    │       → mensaje informando expiración + datos turno original
+    │       → CLIENT_MAIN_MENU
+    │
+    └── texto libre no reconocido
+            → SLOT_OFFER_INVALID: repregunta con tiempo restante
+            → estado permanece en AWAITING_SLOT_OFFER (no rompe el flujo)
+```
+
+**Prioridad de intercepción en `bot_controller._process_message()`:**
+
+```
+1. should_handle_as_reminder()   ← recordatorio (17:30–20:30)
+2. should_handle_as_slot_offer() ← oferta waitlist (hasta 30 min después del envío)
+3. NLU normal
+```
+
+---
+
 ## 📊 MÉTRICAS DE MEJORA
 
 ### **Eficiencia Conversacional:**
@@ -644,6 +706,6 @@ CLIENT_CANCEL_SUCCESS
 
 ---
 
-**Última actualización:** 02/02/2026  
-**Versión:** 3.2  
-**Features principales:** NLU, Context Manager, Validaciones P0, Cancelación
+**Última actualización:** Abril 2026
+**Versión:** 3.3
+**Features principales:** NLU, Context Manager, Validaciones P0, Cancelación, Waitlist

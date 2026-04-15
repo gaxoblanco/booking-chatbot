@@ -188,9 +188,9 @@ logger = get_logger(__name__)
 # 5491112345678   →  549****5678
 ```
 
-**Migración:** Reemplazar `logging.getLogger(__name__)` gradualmente en los módulos
-que manejan PII. Prioridad: `client_service.py`, `whatsapp_handler.py`,
-`session_backends.py`.
+**Migración completada:** `rate_limiter.py`, `whatsapp_handler.py`, `states.py`,
+`conversation_context.py`. Verificado con `tests/smoke/check_pii_logs.py` —
+0 teléfonos en claro en 2000+ líneas de logs.
 
 ---
 

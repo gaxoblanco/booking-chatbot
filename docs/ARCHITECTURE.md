@@ -111,6 +111,8 @@ booking-chatbot/
 │   │
 │   ├── 📁 core/
 │   │   ├── states.py                    # ConversationState enum + SessionManager
+│   │   │                                #   estados: AWAITING_REMINDER_RESPONSE,
+│   │   │                                #            AWAITING_SLOT_OFFER (waitlist)
 │   │   ├── session_backends.py          # RedisSessionBackend + MemorySessionBackend
 │   │   ├── conversation_context.py      # Acumulación de entidades entre mensajes
 │   │   ├── validators.py                # E.164, email, fecha
@@ -139,6 +141,23 @@ booking-chatbot/
 │   │   │   ├── 📁 config/
 │   │   │   ├── 📁 models/
 │   │   │   └── 📁 utils/
+│   │   │
+│   │   ├── 📁 reminder/                 # Ciclo completo de recordatorios
+│   │   │   ├── __init__.py
+│   │   │   └── reminder_integration_service.py  # Orquesta envío + auto-confirm
+│   │   │
+│   │   ├── 📁 waitlist/                 # Flujo de adelantamiento de turnos
+│   │   │   ├── __init__.py
+│   │   │   └── slot_offer_handler.py    # Intercepta respuestas a ofertas de slot
+│   │   │                                #   should_handle_as_slot_offer()
+│   │   │                                #   handle_slot_offer_response()
+│   │   │
+│   │   ├── 📁 scheduler/
+│   │   │   └── engine.py                # APScheduler — 7 jobs registrados
+│   │   │
+│   │   ├── 📁 conversation_context_service/
+│   │   │   ├── event_store.py           # Escritura/lectura conversation_events
+│   │   │   └── context_service.py       # Inferencia: pending_reminder, interrupted_flow
 │   │   │
 │   │   ├── 📁 file_parser/
 │   │   │   ├── __init__.py
@@ -210,7 +229,12 @@ booking-chatbot/
 │   ├── test_gap8_session_manager.py
 │   ├── test_gap9_concurrent_booking.py
 │   ├── preview_calendar_import_ux.py    # Preview mensajes WhatsApp en terminal
-│   └── test_bot_interactive.py          # Test E2E interactivo
+│   ├── test_bot_interactive.py          # Test E2E interactivo
+│   ├── 📁 reminders/
+│   │   ├── test_reminder_responses.py   # Escenarios F-J: respuestas al recordatorio
+│   │   └── test_reminder_window.py      # Escenarios K-O: ventana horaria
+│   └── 📁 waitlist/
+│       └── test_waitlist_e2e.py         # E2E: cancelación → oferta → acepta/rechaza
 │
 ├── 📁 docker/
 │   ├── Dockerfile
@@ -229,6 +253,9 @@ booking-chatbot/
     ├── SETUP_INSTRUCTIONS.md            # Setup paso a paso
     ├── GOOGLE_CALENDAR_SERVICE.md       # Integración Google Calendar
     ├── INTENT_DETECTION_SYSTEM.md       # Sistema NLU/ML en detalle
+    ├── REMINDER_INTEGRATION.md          # Ciclo completo de recordatorios automáticos
+    ├── WAITLIST_INTEGRATION.md          # Ciclo completo de adelantamiento de turnos
+    ├── CONVERSATION_CONTEXT_SERVICE.md  # Sistema de contexto conversacional entre sesiones
     ├── ml_agenda_import_intents.md      # Spec intenciones importación agenda
     └── ml_book_for_third_party.md       # Spec intención agendar para terceros
 ```
@@ -476,6 +503,20 @@ En `_init_db()`, al final del método, hay un bloque de `ALTER TABLE`
 con `try/except` silencioso para agregar columnas en BD existentes
 sin romper instalaciones previas.
 
+También incluye la migración del UNIQUE constraint de `appointments`:
+el índice original `UNIQUE(professional_phone, appointment_date, start)` no filtraba
+por status — impedía que el sistema de waitlist reutilizara slots cancelados.
+La migración lo reemplaza por un índice parcial:
+
+```sql
+CREATE UNIQUE INDEX idx_appointments_slot_active
+ON appointments(professional_phone, appointment_date, start)
+WHERE status NOT IN ('cancelada_cliente', 'cancelada_profesional')
+```
+
+La migración es idempotente: detecta si `sqlite_autoindex_appointments_1` sigue
+presente y solo actúa si es necesario.
+
 ---
 
 ## ⏰ CRON JOBS
@@ -598,14 +639,26 @@ docker exec -it whatsapp-demo python tests/test_gap8_session_manager.py
 docker exec -it whatsapp-demo python tests/test_gap9_concurrent_booking.py
 ```
 
-### Test E2E interactivo
+### Tests de waitlist y recordatorios
 
 ```bash
-python tests/test_bot_interactive.py
+# Waitlist E2E: cancelación → oferta → acepta / rechaza
+docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py
 
-# Escenarios automatizados
-python tests/test_bot_interactive.py --scenario filters
-python tests/test_bot_interactive.py --scenario quick
+# Solo test de aceptación
+docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py --accept
+
+# Solo test de rechazo
+docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py --reject
+
+# Setup manual para probar desde WhatsApp real
+docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py --manual
+
+# Recordatorios: ventana horaria (escenarios K-O)
+docker exec -it whatsapp-demo python tests/reminders/test_reminder_window.py
+
+# Recordatorios: respuestas (escenarios F-J)
+docker exec -it whatsapp-demo python tests/reminders/test_reminder_responses.py
 ```
 
 ### Verificar tono activo
@@ -680,6 +733,7 @@ SMTP_PASSWORD=xxxx
 - `docs/GOOGLE_CALENDAR_SERVICE.md` — integración con Google Calendar
 - `docs/INTENT_DETECTION_SYSTEM.md` — arquitectura del sistema NLU/ML
 - `docs/REMINDER_INTEGRATION.md` — ciclo completo de recordatorios automáticos
+- `docs/WAITLIST_INTEGRATION.md` — ciclo completo de adelantamiento de turnos
 - `docs/CONVERSATION_CONTEXT_SERVICE.md` — sistema de contexto conversacional entre sesiones (v6.2)
 - `docs/ml_agenda_import_intents.md` — spec intenciones importación agenda
 - `docs/ml_book_for_third_party.md` — spec intención agendar para terceros
@@ -687,5 +741,5 @@ SMTP_PASSWORD=xxxx
 
 ---
 
-**Versión:** 6.2
+**Versión:** 6.3
 **Última actualización:** Abril 2026
