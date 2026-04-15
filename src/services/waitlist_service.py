@@ -296,34 +296,57 @@ class WaitlistService:
             return False
     
     def _format_offer_message(self, freed_apt: Dict, candidate: Dict) -> str:
-        """Formatea mensaje de oferta."""
-        # Formatear fecha
-        date_obj = datetime.strptime(freed_apt['appointment_date'], "%Y-%m-%d")
-        dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        dia_nombre = dias[date_obj.weekday()]
-        fecha_formatted = f"{dia_nombre} {date_obj.strftime('%d/%m/%Y')}"
-        
-        # Obtener nombre del profesional
+        """
+        Formatea mensaje de oferta usando el sistema de tonos.
+        Incluye el turno disponible, el turno actual del candidato,
+        y el tiempo de expiración.
+        """
+        from src.messages.loader import get_msg
+
+        # Formatear fecha del slot liberado
+        _DIAS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+        _MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+        def _fmt(date_str):
+            try:
+                d = datetime.strptime(date_str, '%Y-%m-%d')
+                return f"{_DIAS[d.weekday()]} {d.day} de {_MESES[d.month - 1]} de {d.year}"
+            except Exception:
+                return date_str
+
+        # Nombre del profesional
         prof = self.db.get_professional(freed_apt['professional_phone'])
-        prof_name = prof.get('name', 'Profesional') if prof else 'Profesional'
-        
-        message = f"""✨ *TURNO DISPONIBLE*
+        prof_name = prof.get('name', 'el profesional') if prof else 'el profesional'
 
-¡Buenas noticias! Se liberó un turno antes de lo esperado:
+        freed_date   = _fmt(freed_apt['appointment_date'])
+        freed_time   = freed_apt['start']
+        current_date = _fmt(candidate['appointment_date'])
+        current_time = candidate['start']
 
-👨‍⚕️ *Profesional:* {prof_name}
-📅 *Fecha:* {fecha_formatted}
-⏰ *Horario:* {freed_apt['start']} hs
+        tpl = get_msg('SLOT_OFFER_MESSAGE')
+        if tpl:
+            return tpl.format(
+                prof_name=prof_name,
+                freed_date=freed_date,
+                freed_time=freed_time,
+                current_date=current_date,
+                current_time=current_time,
+                expiration_minutes=self.offer_expiration_minutes,
+            )
 
-¿Te gustaría adelantar tu turno?
-
-1️⃣ Sí, acepto este turno
-2️⃣ No, prefiero mantener mi turno actual
-
-_Esta oferta expira en {self.offer_expiration_minutes} minutos_"""
-
-        return message
-    
+        # Fallback si el tono no tiene la constante todavía
+        return (
+            f"✨ *Turno disponible*\n\n"
+            f"Se liberó un lugar con *{prof_name}*:\n"
+            f"📅 {freed_date} a las {freed_time} hs\n\n"
+            f"Tu turno actual es el {current_date} a las {current_time} hs.\n\n"
+            f"¿Querés adelantarlo?\n\n"
+            f"1️⃣ Sí, me quedo con este turno\n"
+            f"2️⃣ No, mantengo el mío\n\n"
+            f"_Si no respondés en {self.offer_expiration_minutes} min, "
+            f"el turno pasa al siguiente._"
+        )
     def _create_offer_record(
         self,
         freed_appointment_id: int,
@@ -480,11 +503,15 @@ _Esta oferta expira en {self.offer_expiration_minutes} minutos_"""
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # 1. Cancelar el turno liberado para liberar UNIQUE constraint
-                #    (professional_phone, appointment_date, start)
+                # 1. Cancelar el turno liberado Y liberar el UNIQUE constraint.
+                #    El índice UNIQUE(professional_phone, appointment_date, start) no filtra
+                #    por status — la fila cancelada sigue bloqueando el slot.
+                #    Solución: ofuscar start/end con el id para liberar el slot de forma única.
                 cursor.execute("""
                     UPDATE appointments
-                    SET status = 'cancelada_cliente'
+                    SET status = 'cancelada_cliente',
+                        start  = 'cancelled_' || id,
+                        end    = 'cancelled_' || id
                     WHERE id = ?
                 """, (freed_apt_id,))
 
