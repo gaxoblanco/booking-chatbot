@@ -116,7 +116,7 @@ class EventStore:
             Lista vacía si no hay eventos o falla la consulta.
         """
         try:
-            since = datetime.now() - timedelta(minutes=window_minutes)
+            since = datetime.utcnow() - timedelta(minutes=window_minutes)
             with db.get_connection() as conn:
                 rows = conn.execute("""
                     SELECT id, client_phone, session_id, event_type,
@@ -127,7 +127,7 @@ class EventStore:
                       AND created_at >= ?
                     ORDER BY created_at ASC
                     LIMIT ?
-                """, (client_phone, since.isoformat(), limit)).fetchall()
+                """, (client_phone, since.strftime("%Y-%m-%d %H:%M:%S"), limit)).fetchall()
                 return [dict(r) for r in rows]
         except Exception as e:
             logger.error(f"[EVENT_STORE] Error leyendo eventos de {client_phone}: {e}")
@@ -155,7 +155,7 @@ class EventStore:
             Dict con el evento, o None si no hay.
         """
         try:
-            since = datetime.now() - timedelta(minutes=window_minutes)
+            since = datetime.utcnow() - timedelta(minutes=window_minutes)
             query = """
                 SELECT id, client_phone, session_id, event_type,
                        intent, confidence, state_before, state_after,

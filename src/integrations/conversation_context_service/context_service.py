@@ -141,7 +141,7 @@ class ContextService:
         minutes_since = self._minutes_ago(last['created_at'])
 
         # Detectar si hay reminder pendiente sin respuesta en la ventana
-        pending_reminder = self._has_pending_reminder(events)
+        pending_reminder = self._has_pending_reminder(events, client_phone)
 
         # Detectar flujo interrumpido
         interrupted = self._detect_interrupted_flow(events)
@@ -249,25 +249,28 @@ class ContextService:
             'minutes_since_last':  None,
         }
 
-    def _has_pending_reminder(self, events: list[dict]) -> bool:
+    def _has_pending_reminder(self, events: list[dict], client_phone: str = None) -> bool:
         """
-        Hay pending_reminder si existe un evento reminder_sent
-        sin un reminder_response posterior.
+        Hay pending_reminder si existe un registro en appointment_reminders
+        con status='sent' y la cita es futura.
+        Fuente de verdad: BD directa — no conversation_events.
         """
-        last_sent     = None
-        last_response = None
-
-        for e in events:
-            if e['event_type'] == 'reminder_sent':
-                last_sent = e['created_at']
-            elif e['event_type'] == 'reminder_response':
-                last_response = e['created_at']
-
-        if not last_sent:
+        if not client_phone:
             return False
-        if not last_response:
-            return True
-        return last_response < last_sent  # respuesta más vieja que el envío
+        try:
+            from src.database.database import db
+            with db.get_connection() as conn:
+                row = conn.execute("""
+                    SELECT COUNT(*) as cnt
+                    FROM appointment_reminders r
+                    JOIN appointments a ON r.appointment_id = a.id
+                    WHERE r.client_phone = ?
+                    AND r.status = 'sent'
+                    AND a.appointment_date >= DATE('now')
+                """, (client_phone,)).fetchone()
+                return row['cnt'] > 0
+        except Exception:
+            return False
 
     def _detect_interrupted_flow(self, events: list[dict]) -> Optional[str]:
         """
