@@ -12,6 +12,7 @@ CAMBIOS EN v3.1:
 
 from enum import Enum
 from datetime import datetime, timedelta
+from src.core.logger import _sanitize
 
 
 class UserRole(Enum):
@@ -158,7 +159,7 @@ class SessionData:
         Args:
             new_state: Nuevo estado de conversación
         """
-        print(f"[SESSION] {self.phone_number}: {self.current_state.value} -> {new_state.value}")
+        print(f"[SESSION] {_sanitize(self.phone_number)}: {self.current_state.value} -> {new_state.value}")
         self.current_state = new_state
         if self._on_change:
             try:
@@ -173,7 +174,7 @@ class SessionData:
         Args:
             role: Rol del usuario (PROFESSIONAL o CLIENT)
         """
-        print(f"[SESSION] {self.phone_number}: Rol establecido como {role.value}")
+        print(f"[SESSION] {_sanitize(self.phone_number)}: Rol establecido como {role.value}")
         self.role = role
 
     def set_temp(self, key: str, value):
@@ -217,7 +218,7 @@ class SessionData:
         Limpia estado, rol y datos temporales.
         Útil para comando "hola" o reinicio.
         """
-        print(f"[SESSION] {self.phone_number}: Reset completo")
+        print(f"[SESSION] {_sanitize(self.phone_number)}: Reset completo")
         self.current_state = ConversationState.START
         self.role = UserRole.UNKNOWN
         self.temp_data = {}
@@ -311,7 +312,7 @@ class SessionManager:
             from src.core.states import SessionData
             session = SessionData(phone_number)
             self._backend.save(session)
-            print(f"[SESSION] Nueva sesión creada para: {phone_number}")
+            print(f"[SESSION] Nueva sesión creada para: {_sanitize(phone_number)}")
 
         # Registrar callback — transition_to() guardará en Redis automáticamente
         session._on_change = self._backend.save
@@ -337,7 +338,7 @@ class SessionManager:
             phone_number: Número de teléfono del usuario
         """
         self._backend.delete(phone_number)
-        print(f"[SESSION] Sesión eliminada: {phone_number}")
+        print(f"[SESSION] Sesión eliminada: {_sanitize(phone_number)}")
  
     def get_stats(self) -> dict:
         """
