@@ -14,7 +14,7 @@ from typing import Dict, Optional, List
 from src.config.domain_config import DomainConfig
 from src.database.database import db
 from src.messages.messages_professional import professional_messages
-
+from src.core.logger import _sanitize
 
 class UserService:
     """
@@ -227,7 +227,6 @@ class UserService:
         # --------------------------------------------------
         if user_type == 'professional':
             print(f"[USER_SERVICE] ✅ Es profesional, mostrando menú profesional")
-            from src.messages.messages_professional import professional_messages
             greeting = f"¡Hola Dr/Dra. {name}! 👋" if name else "¡Hola! 👋"
             return f"{greeting}\n\n" + professional_messages.PROF_MAIN_MENU
  
@@ -324,7 +323,7 @@ class UserService:
 
         # TODO: Implementar cuando tengamos la tabla user_actions
         # Por ahora, solo un placeholder
-        print(f"[LOG] {phone} ({user_type}): {action_type}")
+        print(f"[LOG] {_sanitize(phone)} ({user_type}): {action_type}")
         if details:
             print(f"      Details: {json.dumps(details)}")
 
