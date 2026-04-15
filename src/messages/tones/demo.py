@@ -374,6 +374,13 @@ CANCEL_BLOCKED_CONFIRMED = (
     "Para cancelarla, contactá al profesional{contact}."
 )
 
+CANCEL_CONFIRM_OR_KEEP = (
+    "No entendí tu respuesta. 😕\n\n"
+    "Respondé con:\n"
+    "1️⃣ Sí, cancelar el turno\n"
+    "2️⃣ No, mantener el turno"
+)
+
 # ==================================================
 # ERRORES DE REPROGRAMACIÓN
 # ==================================================
