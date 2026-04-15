@@ -202,6 +202,25 @@ CLIENT_CANCEL_ERROR = (
     "No se pudo cancelar. Intentá de nuevo en unos minutos."
 )
 
+CLIENT_CONFIRM_CANCEL_SELECTION = (
+    "🗑️ *Cancelación de turno:*\n\n"
+    "👨‍⚕️ {professional_name}\n"
+    "📅 {date_formatted}\n"
+    "🕐 {time}\n"
+    "📍 {modality}\n\n"
+    "¿Confirmás la cancelación?\n\n"
+    "1️⃣ Sí, cancelar\n"
+    "0️⃣ No, volver"
+)
+
+REMINDER_BACK_TO_OPTIONS = (
+    "Tu turno sigue en pie. 👍\n\n"
+    "Respondé con:\n"
+    "1️⃣ Confirmar que vas\n"
+    "2️⃣ Cambiar el horario\n"
+    "0️⃣ Cancelar el turno"
+)
+
 CLIENT_APPOINTMENT_CANCELLED = (
     "✅ {appointment_upper} cancelada.\n\n"
     "1️⃣ Buscar nuevo turno · 0️⃣ Menú"
@@ -241,8 +260,11 @@ CLIENT_RESCHEDULE_CONFIRM = (
 )
 
 CLIENT_RESCHEDULE_SUCCESS = (
-    "✅ {slot_name_upper} reprogramada.\n\n"
-    "{prof_name} te espera el {date} a las {start}."
+    "✅ ¡Turno reprogramado!\n\n"
+    "👨‍⚕️ {professional_name}\n"
+    "📅 {new_date}\n"
+    "🕐 {new_time}\n\n"
+    "Te esperamos. ¡Hasta pronto!"
 )
 
 CLIENT_RESCHEDULE_TOO_LATE = (
