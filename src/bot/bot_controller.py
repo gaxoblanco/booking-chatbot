@@ -31,6 +31,7 @@ Ejemplos de uso:
 - "hola" → Sin intent específico → Muestra menú tradicional
 """
 
+from src.integrations.reminder import reminder_integration_service
 from src.bot.professional_handler import ProfessionalHandler
 from src.bot.client_handler import ClientHandler
 from src.config.filter_config import FeatureFlags
@@ -134,13 +135,20 @@ class BotController:
 
         # Inferir contexto entre sesiones si la sesión es nueva
         # Permite orientar el routing sin depender del estado de Redis
-        if session.state.value == 'start':
+        if session.state.value in ('start', 'client_main_menu'):
             from src.integrations.conversation_context_service import context_service
             _recent_ctx = context_service.get_recent_context(phone_number)
             if _recent_ctx['pending_reminder']:
                 # Forzar estado de espera de recordatorio
                 session.transition_to(ConversationState.AWAITING_REMINDER_RESPONSE)
                 print(f"[CTX] Sesión nueva con reminder pendiente → AWAITING_REMINDER_RESPONSE")
+
+        # ── PRIORIDAD MÁXIMA: respuesta a recordatorio ──────────────────────
+        # Va ANTES del NLU y de cualquier bypass de estado.
+        # should_handle_as_reminder() consulta BD directamente — no depende
+        # del estado de sesión ni de Redis.
+        if should_handle_as_reminder(session, message):
+            return handle_reminder_response(session, message)
 
         # Limpiar mensaje
         message = message.strip()
@@ -393,22 +401,6 @@ class BotController:
             ConversationState.PROF_AGENDA_IMPORT_REVIEW,    
         ]
         
-        # ==========================================
-        # 4.2 PRIORIDAD: RESPUESTA A RECORDATORIO
-        # Va ANTES del bypass de números — si hay reminder pendiente,
-        # "1"/"2"/"0" son respuestas al recordatorio, no selección de menú.
-        # Solo en estados neutros para no interferir con flujos activos.
-        # ==========================================
-        _REMINDER_ALLOWED_STATES = {
-            ConversationState.START,
-            ConversationState.CLIENT_MAIN_MENU,
-            ConversationState.CLIENT_NEW_USER_MENU,
-            ConversationState.AWAITING_REMINDER_RESPONSE,
-        }
-        if (session.state in _REMINDER_ALLOWED_STATES
-                and should_handle_as_reminder(session, message)):
-            return handle_reminder_response(session, message)
-
         if session.state in nlu_enabled_states:
             # Números solos → siempre son selección de menú, nunca intención semántica.
             # El ML no tiene contexto para saber qué significa "2" en cada estado,
@@ -622,7 +614,6 @@ class BotController:
         # Comandos secretos — solo en development
         if os.getenv('FLASK_ENV', 'development') != 'production':
             if message_lower in ['enviar recordatorio', 'enviar recordatorios']:
-                from src.integrations.reminder import reminder_integration_service
                 result = reminder_integration_service.trigger_now()
                 return result.get('message', '❌ Error ejecutando recordatorios.')
 
@@ -776,11 +767,11 @@ class BotController:
         # ==========================================
         # INTENT: CANCELAR TURNO
         # ==========================================
-        # DESPUÉS:
         elif intent == Intent.CANCEL_APPOINTMENT:
             print("[NLU] → Cancelar turno")
             session.set_role(UserRole.CLIENT)
-            return self._handle_cancel_appointment(session, user_info)
+            session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+            return self.client_handler.handle_client_view_appointments(session, '')
 
         # ==========================================
         # INTENT: AGENDAR PARA TERCEROS
@@ -1221,6 +1212,8 @@ class BotController:
             ConversationState.CLIENT_RESCHEDULE_CONFIRM: self.client_handler.handle_client_reschedule_confirm,
             ConversationState.CLIENT_CONFIRM_CANCEL: self.client_handler.handle_confirm_cancel,
             ConversationState.CLIENT_SELECT_CANCEL: self.client_handler.handle_select_cancel,
+            ConversationState.AWAITING_REMINDER_RESPONSE: lambda s, m: handle_reminder_response(s, m),
+            ConversationState.AWAITING_REMINDER_RESPONSE: lambda s, m: handle_reminder_response(s, m),
         }
         return handlers.get(state, self.handle_unknown_state)
 
@@ -1248,63 +1241,6 @@ class BotController:
         """Cancela operación actual."""
         session.clear_temp()
         return self.handle_return_to_menu(session)
-    
-    def _handle_cancel_appointment(self, session: SessionData, user_info: Dict) -> str:
-        """
-        Maneja la cancelación de turnos.
-        
-        ⭐ NUEVA FUNCIONALIDAD
-        
-        Flow:
-        1. Obtiene turnos del usuario
-        2. Si tiene 1 solo → Pide confirmación
-        3. Si tiene múltiples → Pregunta cuál cancelar
-        4. Si no tiene → Informa que no hay turnos
-        """
-        from src.services.client_service import client_service
-        
-        try:
-            # Obtener turnos del usuario
-            appointments = client_service.get_user_appointments(session.phone_number)
-            
-            if not appointments or len(appointments) == 0:
-                return ("ℹ️ No tienes turnos agendados para cancelar.\n\n"
-                       "Si deseas agendar un turno nuevo, escribe 'buscar' o 'hola'.")
-            
-            # Si tiene 1 solo turno
-            if len(appointments) == 1:
-                apt = appointments[0]
-                session.set_temp('appointment_to_cancel', apt)
-                session.transition_to(ConversationState.CLIENT_CONFIRM_CANCEL)
-                
-                return (f"🗑️ Cancelación de turno:\n\n"
-                       f"👨‍⚕️ {apt['professional_name']}\n"
-                       f"📅 {apt['date_formatted']}\n"
-                       f"🕐 {apt['time']}\n\n"
-                       f"¿Confirmas la cancelación?\n"
-                       f"• Escribe 'sí' para confirmar\n"
-                       f"• Escribe 'no' para volver")
-            
-            # Si tiene múltiples turnos
-            else:
-                session.set_temp('appointments_list', appointments)
-                session.transition_to(ConversationState.CLIENT_SELECT_CANCEL)
-                
-                mensaje = f"📅 Tienes {len(appointments)} turnos agendados:\n\n"
-                
-                for idx, apt in enumerate(appointments, 1):
-                    mensaje += (f"{idx}️⃣ {apt['professional_name']}\n"
-                              f"   📅 {apt['date_formatted']} - 🕐 {apt['time']}\n\n")
-                
-                mensaje += "\nResponde con el número del turno que deseas cancelar\n"
-                mensaje += "O escribe '0' para volver"
-                
-                return mensaje
-                
-        except Exception as e:
-            print(f"[BOT] Error al obtener turnos para cancelar: {e}")
-            return ("⚠️ Hubo un error al obtener tus turnos.\n\n"
-                   "Por favor intenta de nuevo o contacta al centro.")
 
     def handle_unknown_state(self, session: SessionData, message: str) -> str:
         """Maneja estado desconocido."""
