@@ -210,6 +210,15 @@ class ReminderService:
         if sent:
             self._mark_reminder_sent(apt['id'])   # ← mantener siempre
             logger.info(f"✅ Recordatorio enviado exitosamente")
+            # Limpiar sesión del paciente para que el próximo mensaje
+            # sea interceptado como respuesta al recordatorio,
+            # sin importar en qué flujo estaba antes.
+            try:
+                from src.core.states import session_manager
+                session_manager.clear_session(apt['client_phone'])
+                logger.info(f"[REMINDER] 🧹 Sesión limpiada: {apt['client_phone']}")
+            except Exception as e:
+                logger.warning(f"[REMINDER] No se pudo limpiar sesión: {e}")
             event_store.record(
                 client_phone   = apt['client_phone'],
                 event_type     = 'reminder_sent',
@@ -395,7 +404,7 @@ _Caso de no responder se auto-confirma_"""
             JOIN appointments a ON r.appointment_id = a.id
             WHERE r.client_phone = ?
             AND r.status = 'sent'
-            AND a.appointment_date > DATE('now')
+            AND a.appointment_date >= DATE('now')
             ORDER BY r.sent_at DESC
             LIMIT 1
         """
