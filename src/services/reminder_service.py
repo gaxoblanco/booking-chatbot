@@ -487,8 +487,13 @@ _Caso de no responder se auto-confirma_"""
             return {'success': False}
     
     def _initiate_cancellation(self, appointment_id: int, client_phone: str) -> Dict:
-        """Inicia flujo de cancelación."""
+        """
+        Inicia flujo de cancelación desde recordatorio.
+        Obtiene datos de la cita para mostrar profesional + fecha en el mensaje,
+        evitando la segunda confirmación redundante en client_handler.
+        """
         try:
+            # Marcar reminder como 'cancelled' en la tabla
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -498,17 +503,64 @@ _Caso de no responder se auto-confirma_"""
                     WHERE appointment_id = ?
                     AND client_phone = ?
                 """, (appointment_id, client_phone))
-            
+
+            # Buscar datos de la cita para el mensaje enriquecido
+            apt_data = None
+            try:
+                with self.db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT a.appointment_date, a.start, p.name AS professional_name
+                        FROM appointments a
+                        LEFT JOIN professionals p ON a.professional_phone = p.phone
+                        WHERE a.id = ?
+                    """, (appointment_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        cols = [desc[0] for desc in cursor.description]
+                        apt_data = dict(zip(cols, row))
+            except Exception as e:
+                logger.warning(f"[REMINDER] No se pudieron cargar datos de cita: {e}")
+
+            # Construir mensaje con o sin datos de la cita
+            if apt_data:
+                from datetime import datetime as _dt
+                _DIAS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+                _MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                        'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+                try:
+                    fecha_dt  = _dt.strptime(apt_data['appointment_date'], '%Y-%m-%d')
+                    fecha_str = (
+                        f"{_DIAS[fecha_dt.weekday()]} "
+                        f"{fecha_dt.day} de "
+                        f"{_MESES[fecha_dt.month - 1]} de "
+                        f"{fecha_dt.year}"
+                    )
+                except Exception:
+                    fecha_str = apt_data['appointment_date']
+
+                prof_name = apt_data.get('professional_name') or 'tu profesional'
+                hora_str  = apt_data.get('start', '')
+
+                message = (
+                    f"❌ ¿Cancelamos el turno con *{prof_name}*?\n"
+                    f"📅 {fecha_str} a las {hora_str}\n\n"
+                    f"1️⃣ Sí, cancelar\n"
+                    f"2️⃣ No, mantener turno"
+                )
+            else:
+                # Fallback si no se pudieron cargar los datos
+                message = "❌ ¿Estás seguro que querés cancelar?\n\n1️⃣ Sí, cancelar\n2️⃣ No, mantener turno"
+
             return {
                 'success': True,
                 'action': 'cancel',
-                'message': "❌ ¿Estás seguro que querés cancelar?\n\n1️⃣ Sí, cancelar\n2️⃣ No, mantener turno"
+                'message': message
             }
-            
+
         except Exception as e:
             logger.error(f"Error iniciando cancellation: {e}")
-            return {'success': False}
-        
+            return {'success': False}   
     # =========================================================================
     # AUTO-CONFIRMACIÓN POR TIMEOUT
     # =========================================================================
