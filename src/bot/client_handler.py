@@ -47,6 +47,7 @@ class ClientHandler:
     4. Búsqueda VIRTUAL → sesiones online directamente
     5. Búsqueda PRESENCIAL → filtro por zona
     """
+    
 
     def __init__(self):
         """
@@ -73,7 +74,6 @@ class ClientHandler:
         """
         from src.services.user_service import user_service
         from datetime import datetime, date, timedelta
-        from src.database.database import db 
         
         # Validar comandos especiales
         message_lower = message.lower().strip()
@@ -95,7 +95,6 @@ class ClientHandler:
             session.set_role(UserRole.CLIENT)
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
 
-            from src.database.database import db
             client = db.get_client(session.phone_number)
 
             if client and client.get('name'):
@@ -284,7 +283,6 @@ class ClientHandler:
         Returns:
             Mensaje de bienvenida con menú dinámico
         """
-        from src.database.database import db
         from datetime import datetime
         
         name = user_info.get('name')
@@ -1692,8 +1690,11 @@ class ClientHandler:
             if apt['status'] == 'pendiente_confirmacion':
                 status_emoji = "⏳"
                 status_text = "Pendiente"
-            elif apt['status'] == 'confirmada':
+            elif apt['status'] == 'confirmada' and apt.get('confirmed_by_client'):
                 status_emoji = "✅"
+                status_text = "Confirmada"
+            elif apt['status'] == 'confirmada':
+                status_emoji = "📅"
                 status_text = "Agendada"
             else:
                 status_emoji = "✅"
@@ -1778,7 +1779,6 @@ class ClientHandler:
                 CONFIRM_WORDS = {'dale', 'si', 'sí', 'ok', 'bueno', 'ver', 'mostrar'}
                 if message.strip().lower() in CONFIRM_WORDS:
                     # Mostrar el detalle de la cita actual
-                    from src.database.database import db
                     apt = db.get_appointment(appointment_id)
                     if apt:
                         return self._format_appointment_detail(session, apt)
@@ -1831,20 +1831,24 @@ class ClientHandler:
     def handle_client_cancel_appointment(self, session: SessionData, message: str) -> str:
         """
         Maneja confirmación de cancelación de cita.
-
         Valida que se pueda cancelar y pide confirmación.
         """
         from datetime import datetime, timedelta
 
         # ==========================================
+        # NORMALIZAR TEXTO LIBRE → 1 o 2
+        # ==========================================
+        _msg = message.strip().lower()
+        if _msg in ['2', 'no', 'no cancelar', 'mantener', 'no mantener', 'no, mantener', 'no quiero']:
+            message = '2'
+        elif _msg in ['1', 'si', 'sí', 'confirmar', 'si cancelar', 'sí cancelar']:
+            message = '1'
+
+        # ==========================================
         # VERIFICAR SI VENIMOS DE UN ERROR PREVIO
         # ==========================================
-        # Si mostramos un error (no se puede cancelar) y el usuario presiona 0
         if message == '0':
-            # Limpiar cualquier flag de error
             session.set_temp('cancel_error_shown', False)
-            
-            # Volver a la lista de citas
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
             return self.handle_client_view_appointments(session, '')
@@ -1856,7 +1860,6 @@ class ClientHandler:
 
         if not appointment_id:
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-            
             from src.services.user_service import user_service
             welcome_msg = user_service.generate_welcome_message({
                 'user_type': 'new',
@@ -1869,45 +1872,39 @@ class ClientHandler:
             })
             return welcome_msg
 
-        # Obtener datos de la cita
         apt = db.get_appointment(appointment_id)
 
         if not apt:
-            # Error al cargar - pero permitir volver con 0
             session.set_temp('cancel_error_shown', True)
             return appointment_messages.APPOINTMENT_LOAD_ERROR
-        
+
         # ── Validación de ownership ─────────────────────────────────────────
-        # Verificar que la cita pertenece al usuario de la sesión.
-        # Defensivo: session.phone_number puede diferir de client_phone si
-        # hay un bug de estado o manipulación de sesión.
         if apt.get('client_phone') != session.phone_number:
             print(f"[CLIENT] 🚨 SECURITY: {session.phone_number} intentó acceder "
-                  f"a la cita #{appointment_id} que pertenece a {apt.get('client_phone')}")
+                f"a la cita #{appointment_id} que pertenece a {apt.get('client_phone')}")
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return "⚠️ No podemos procesar esa solicitud.\n\nEscribí *menu* para volver al inicio."
-        # ── Fin validación ownership ─────────────────────────────────────────
 
         # ==========================================
         # VALIDAR ESTADO DE LA CITA
         # ==========================================
-        
-        # Validar que no esté ya cancelada
         if apt['status'] in ['cancelada_cliente', 'cancelada_profesional']:
             session.set_temp('cancel_error_shown', True)
             return appointment_messages.CLIENT_APPOINTMENT_ALREADY_CANCELLED + "\n\n_Escribe *0* para volver_"
 
-        # Validar que no esté completada
         if apt['status'] == 'completada':
             session.set_temp('cancel_error_shown', True)
             return appointment_messages.APPOINTMENT_FINISHED
 
         # ==========================================
-        # VALIDAR TIEMPO LÍMITE (24 HORAS)
+        # VALIDAR TIEMPO LÍMITE
+        # Bypass si viene desde recordatorio — el sistema le ofreció cancelar
+        # explícitamente, y la cita no está confirmada por el cliente aún.
         # ==========================================
-        
-        # Calcular horas hasta la cita
+        from_reminder = session.get_temp('from_reminder')
+        already_confirmed = apt.get('confirmed_by_client', 0)
+
         apt_datetime = datetime.strptime(
             f"{apt['appointment_date']} {apt['start']}",
             "%Y-%m-%d %H:%M"
@@ -1915,15 +1912,12 @@ class ClientHandler:
         now = datetime.now()
         hours_until = (apt_datetime - now).total_seconds() / 3600
 
-        # lee de DomainConfig:
         from src.config.domain_config import DomainConfig
         CANCELLATION_HOURS_LIMIT = getattr(DomainConfig, 'CANCELLATION_HOURS_LIMIT', 22)
 
-        if hours_until < CANCELLATION_HOURS_LIMIT:
-            # Muy tarde para cancelar
-            # ✅ Guardar flag para permitir volver
+        # Bloquear solo si: NO viene del recordatorio O ya fue confirmada por el cliente
+        if hours_until < CANCELLATION_HOURS_LIMIT and (not from_reminder or already_confirmed):
             session.set_temp('cancel_error_shown', True)
-            
             return appointment_messages.CLIENT_CANCEL_TOO_LATE.format(
                 hours_until=int(hours_until),
                 professional_phone=apt['professional_phone']
@@ -1931,27 +1925,35 @@ class ClientHandler:
 
         # ==========================================
         # MOSTRAR CONFIRMACIÓN
+        # '1' = confirmar cancelación
+        # '2' = "No, mantener turno" — volver a opciones del recordatorio
         # ==========================================
-        
-        # Si es primera vez (viene desde detalle), mostrar confirmación
+        if message == '2' and from_reminder:
+            try:
+                with db.get_connection() as conn:
+                    conn.execute("""
+                        UPDATE appointment_reminders 
+                        SET status = 'sent', response_received_at = NULL
+                        WHERE appointment_id = ? AND client_phone = ?
+                    """, (appointment_id, session.phone_number))
+            except Exception as e:
+                print(f"[CANCEL] No se pudo restaurar reminder: {e}")
+
+            session.transition_to(ConversationState.AWAITING_REMINDER_RESPONSE)
+            from src.messages.loader import get_msg
+            return get_msg('REMINDER_BACK_TO_OPTIONS')
+
         if message == '1':
-            # Limpiar flag de error (si existía)
             session.set_temp('cancel_error_shown', False)
-            
-            # Formatear fecha en español
             date_obj = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
             _dias  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
             _meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                      'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
             date_str = f"{_dias[date_obj.weekday()]} {date_obj.day} de {_meses[date_obj.month-1]} de {date_obj.year}"
-
-            # Mostrar política si existe
             policy_info = ""
             if hasattr(DomainConfig, 'CANCELLATION_POLICY') and DomainConfig.CANCELLATION_POLICY:
                 policy_info = appointment_messages.CLIENT_CANCEL_POLICY_INFO
-
             session.transition_to(ConversationState.CLIENT_CANCEL_REASON)
-
             return appointment_messages.CLIENT_CANCEL_APPOINTMENT_CONFIRM.format(
                 date=date_str,
                 time=apt['start'],
@@ -1959,11 +1961,10 @@ class ClientHandler:
                 policy_info=policy_info
             )
 
-        # Texto libre — resetear y reprocesar por NLU
-        session.clear_temp()
-        session.transition_to(ConversationState.START)
-        return None
-
+        # Texto no reconocido — pedir aclaración sin resetear el estado
+        from src.messages.loader import get_msg
+        return get_msg('CANCEL_CONFIRM_OR_KEEP')
+    
     def handle_client_cancel_reason(self, session: SessionData, message: str) -> str:
         """
         Maneja motivo de cancelación y ejecuta la cancelación.
@@ -2113,61 +2114,82 @@ class ClientHandler:
         """
         Inicio del flujo de reprogramación.
 
-        Valida que se pueda reprogramar (>24hs) y muestra fechas disponibles directamente.
+        Valida que se pueda reprogramar según RESCHEDULE_HOURS_LIMIT del .env:
+            - 0       → sin restricción de tiempo
+            - N > 0   → mínimo N horas de anticipación
+            - from_reminder=True en session → bypass siempre (el recordatorio
+            habilita reprogramar aunque sea tarde)
+
+        No permite reprogramar si el turno ya fue confirmado explícitamente
+        por el cliente (confirmed_by_client=1) fuera del flujo de recordatorio.
         """
-        from datetime import datetime, timedelta, date as date_type
+        from datetime import datetime
         import os
 
-        # Check for back command
+        # Back command
         if message == '0':
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return client_messages.CLIENT_MAIN_MENU
 
-        # Obtener appointment_id del temp_data
         appointment_id = session.get_temp('appointment_id')
-
         if not appointment_id:
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return "❌ Error: No hay cita seleccionada\n\n" + client_messages.CLIENT_MAIN_MENU
 
-        # Obtener datos de la cita
         apt = db.get_appointment(appointment_id)
-
         if not apt:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return appointment_messages.APPOINTMENT_LOAD_ERROR
 
-        # Validar que no esté cancelada o completada
+        # Validar estado de la cita
         if apt['status'] in ['cancelada_cliente', 'cancelada_profesional', 'completada']:
-            return fappointment_messages.APPOINTMENT_CANT_RESCHEDULE.format(status=apt["status"])
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            return appointment_messages.APPOINTMENT_CANT_RESCHEDULE.format(
+                status=apt['status']
+            )
 
         # Calcular horas hasta la cita
         apt_datetime = datetime.strptime(
             f"{apt['appointment_date']} {apt['start']}",
             "%Y-%m-%d %H:%M"
         )
-        now = datetime.now()
-        hours_until = (apt_datetime - now).total_seconds() / 3600
+        hours_until = (apt_datetime - datetime.now()).total_seconds() / 3600
 
-        # Validar tiempo mínimo (22 horas por defecto)
-        RESCHEDULE_HOURS_LIMIT = 22
+        # Leer límite desde .env — 0 = sin restricción
+        _raw = os.getenv('RESCHEDULE_HOURS_LIMIT', '22').strip()
+        try:
+            RESCHEDULE_HOURS_LIMIT = int(_raw)
+        except ValueError:
+            RESCHEDULE_HOURS_LIMIT = 22
 
-        # TESTING: Skip time validation if env var is set
+        # TESTING: skip time validation
         if os.getenv('TESTING_SKIP_TIME_VALIDATION', '').lower() == 'true':
-            print(
-                f"[TEST] ⚠️ Skipping time validation for reschedule - original hours_until: {hours_until:.1f}")
-            hours_until = 48  # Simular suficiente tiempo
+            print(f"[TEST] ⚠️ Skipping time validation — original hours_until: {hours_until:.1f}")
+            hours_until = 48
 
-        if hours_until < RESCHEDULE_HOURS_LIMIT:
-            # Muy tarde para reprogramar
+        # Bypass desde recordatorio — el paciente tiene derecho a reprogramar
+        # aunque el turno esté próximo, porque fue el sistema quien lo notificó
+        from_reminder = session.get_temp('from_reminder', False)
+
+        # Validar tiempo límite
+        # Condiciones para bloquear:
+        #   - NO viene del recordatorio
+        #   - El límite es > 0 (0 = sin restricción)
+        #   - Quedan menos horas que el límite
+        if not from_reminder and RESCHEDULE_HOURS_LIMIT > 0 and hours_until < RESCHEDULE_HOURS_LIMIT:
+            session.clear_temp()
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return appointment_messages.CLIENT_RESCHEDULE_TOO_LATE.format(
                 hours_until=int(hours_until),
                 limit=RESCHEDULE_HOURS_LIMIT,
                 professional_phone=apt['professional_phone']
             )
 
-        # Guardar datos originales de la cita
+        # Guardar datos originales
         session.set_temp('original_date', apt['appointment_date'])
         session.set_temp('original_start_time', apt['start'])
         session.set_temp('original_end_time', apt['end'])
@@ -2175,23 +2197,40 @@ class ClientHandler:
         session.set_temp('professional_name', apt['professional_name'])
         session.set_temp('duration', apt['duration_minutes'])
         session.set_temp('modality', apt['modality'])
-
-        # ✅ CAMBIO: Transicionar directamente a selección de fecha
         session.transition_to(ConversationState.CLIENT_RESCHEDULE_SELECT_DATE)
-
-        # ✅ CAMBIO: Llamar directamente al handler de selección de fecha
-        # Esto carga y muestra las fechas disponibles inmediatamente
         return self.handle_client_reschedule_select_date(session, 'start')
-
+    
     def handle_client_reschedule_select_date(self, session: SessionData, message: str) -> str:
         """
         Maneja selección de nueva fecha para reprogramación.
         """
         from datetime import datetime
         from src.services.professional_service import professional_service
+        import os
+
+        close_time = os.getenv('REMINDER_CLOSE_TIME', '20:30')
+        dates_shown = session.get_temp('reschedule_dates_shown', False)
+        print(f"[DEBUG RESCHEDULE] message='{message}' dates_shown={dates_shown} available_dates={bool(session.get_temp('available_dates'))}")
 
         # Check for back command
         if message == '0':
+            # si viene del recordatorio, volver a las opciones:
+            from_reminder = session.get_temp('from_reminder')
+            if from_reminder:
+                # Restaurar reminder a 'sent' para que pueda confirmar/cancelar
+                try:
+                    appointment_id = session.get_temp('appointment_id')
+                    with db.get_connection() as conn:
+                        conn.execute("""
+                            UPDATE appointment_reminders 
+                            SET status = 'sent', response_received_at = NULL
+                            WHERE appointment_id = ? AND client_phone = ?
+                        """, (appointment_id, session.phone_number))
+                except Exception as e:
+                    print(f"[RESCHEDULE] No se pudo restaurar reminder: {e}")
+                session.transition_to(ConversationState.AWAITING_REMINDER_RESPONSE)
+                from src.messages.loader import get_msg
+                return get_msg('REMINDER_BACK_TO_OPTIONS')
             # Volver al detalle de la cita
             session.transition_to(ConversationState.CLIENT_APPOINTMENT_DETAIL)
             appointment_id = session.get_temp('appointment_id')
@@ -2248,6 +2287,9 @@ class ClientHandler:
             # ✅ CAMBIO: Guardar fechas Y marcar que ya se mostraron
             session.set_temp('available_dates', dates)
             session.set_temp('reschedule_dates_shown', True)
+            # Persistir — el próximo mensaje necesita leer estos temps
+            from src.core.states import session_manager
+            session_manager.save_session(session)
 
             # Formatear fecha original
             original_time = session.get_temp('original_start_time')
@@ -2257,7 +2299,8 @@ class ClientHandler:
             return appointment_messages.CLIENT_RESCHEDULE_SELECT_DATE.format(
                 old_date=old_date_str,
                 old_time=original_time,
-                available_dates=formatted_dates
+                available_dates=formatted_dates,
+                close_time=close_time,
             )
 
         # ✅ Si llegó aquí, el usuario está seleccionando una fecha
@@ -2479,15 +2522,21 @@ class ClientHandler:
         """
         from datetime import datetime
 
-        # Check for back/cancel
+        # Normalizar texto libre → 1 o 0
+        _msg = message.strip().lower()
+        if _msg in ['1', 'si', 'sí', 'confirmar', 'confirmado', 'dale', 'ok', 'listo', 'va']:
+            message = '1'
+        elif _msg in ['0', 'no', 'volver', 'cancelar', 'no confirmar']:
+            message = '0'
+
+        # Volver a selección de horario
         if message == '0':
-            # Volver a selección de horario
-            session.transition_to(
-                ConversationState.CLIENT_RESCHEDULE_SELECT_TIME)
+            session.transition_to(ConversationState.CLIENT_RESCHEDULE_SELECT_TIME)
             return self.handle_client_reschedule_select_time(session, '')
 
+        # No reconocido — pedir de nuevo sin resetear estado
         if message != '1':
-            return "⚠️ Por favor, ingresa *1* para confirmar o *0* para cancelar."
+            return "⚠️ No entendí tu respuesta.\n\nRespondé con:\n1️⃣ *1* — Confirmar el cambio\n0️⃣ *0* — Volver a los horarios"
 
         # Obtener datos de temp
         appointment_id = session.get_temp('appointment_id')
@@ -2505,30 +2554,24 @@ class ClientHandler:
         # Actualizar cita en BD
         calendar_service = AppointmentCalendarService(db)
         success = calendar_service.reschedule_appointment(
-            appointment_id=appointment_id,
+            appointment_id=int(appointment_id),  # ← fix Pylance
             new_date=new_date,
             new_start_time=new_start_time,
             new_end_time=new_end_time
         )
 
         if not success:
-            return "❌ Error al reprogramar la cita. Intenta nuevamente.\n\n_Escribe *0* para volver_"
+            return "❌ Error al reprogramar la cita. Intentá nuevamente.\n\n_Escribí *0* para volver_"
 
-        # TODO: Crear notificación para el profesional
-        # db.create_notification(...)
-
-        # NO limpiar temp_data - se usará en el estado de éxito
-        # Transicionar a estado de éxito (reutilizamos CLIENT_CANCEL_SUCCESS)
         session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
 
-        # Retornar mensaje de éxito
         return appointment_messages.CLIENT_RESCHEDULE_SUCCESS.format(
             new_date=new_date_str,
             new_time=new_start_time,
             professional_name=professional_name
         )
     
-       # ========================================
+    # ========================================
     # MÉTODO PARA HANDLERS DE CONFIRMACIÓN
     # ========================================
 
@@ -2592,7 +2635,6 @@ class ClientHandler:
         
         Estado: CLIENT_SELECT_CANCEL
         """
-        from src.services.client_service import client_service
         
         appointments = session.get_temp('appointments_list')
         
@@ -2620,14 +2662,14 @@ class ClientHandler:
                 session.set_temp('appointment_to_cancel', appointment)
                 session.transition_to(ConversationState.CLIENT_CONFIRM_CANCEL)
                 
-                return (f"🗑️ Cancelación de turno:\n\n"
-                    f"👨‍⚕️ {appointment['professional_name']}\n"
-                    f"📅 {appointment['date_formatted']}\n"
-                    f"🕐 {appointment['time']}\n"
-                    f"📍 {appointment.get('modality', 'presencial').title()}\n\n"
-                    f"¿Confirmas la cancelación?\n"
-                    f"• Escribe 'sí' para confirmar\n"
-                    f"• Escribe 'no' para volver")
+                from src.messages.loader import get_msg
+
+                return get_msg('CLIENT_CONFIRM_CANCEL_SELECTION').format(
+                    professional_name=appointment['professional_name'],
+                    date_formatted=appointment['date_formatted'],
+                    time=appointment['time'],
+                    modality=appointment.get('modality', 'presencial').title()
+                )
             else:
                 return f"⚠️ Por favor ingresa un número entre 1 y {len(appointments)}, o '0' para volver."
                 
@@ -2662,8 +2704,10 @@ class ClientHandler:
         # Badge de estado
         if apt['status'] == 'pendiente_confirmacion':
             status_badge = "Estado: ⏳ *Pendiente*"
+        elif apt['status'] == 'confirmada' and apt.get('confirmed_by_client'):
+            status_badge = "Estado: ✅ *Confirmada*"
         elif apt['status'] == 'confirmada':
-            status_badge = "Estado: ✅ *Agendada*"
+            status_badge = "Estado: 📅 *Agendada*"
         elif apt['status'] == 'completada':
             status_badge = "Estado: ✔️ *Completada*"
         else:
@@ -2871,7 +2915,6 @@ class ClientHandler:
 
         # GAP 6 — Línea de paciente
         from src.config.filter_config import FeatureFlags
-        from src.database.database import db as _db
         booking_for_info = ""
         if FeatureFlags.THIRD_PARTY_BOOKING and session.get_temp('booking_for') == 'other':
             relation = session.get_temp('third_party_relation') or 'familiar'
@@ -2880,7 +2923,7 @@ class ClientHandler:
             booking_for_info = f"👤 Paciente: tu {relation}{name_str}\n"
         else:
             # Flujo normal — mostrar nombre del cliente si está registrado
-            client = _db.get_client(session.phone_number)
+            client = db.get_client(session.phone_number)
             client_name = client.get('name') if client else None
             if client_name:
                 booking_for_info = f"👤 Paciente: {client_name}\n"
@@ -2903,7 +2946,6 @@ class ClientHandler:
         """
         from datetime import datetime
         from src.services.appointment_service import appointment_service
-        from src.database.database import db
         from src.config.domain_config import DomainConfig
 
         # Check for cancellation
@@ -3289,7 +3331,6 @@ class ClientHandler:
                 → CLIENT_CONFIRM_BOOKING   (retoma con '1')
                 → CLIENT_BOOKING_CONFIRMED
         """
-        from src.database.database import db
 
         # Cancelar — volver al detalle del profesional
         if message == '0':
