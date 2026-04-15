@@ -664,6 +664,7 @@ class ClientService:
                         a.duration_minutes,
                         a.status,
                         a.modality,
+                        a.confirmed_by_client,
                         a.professional_phone,
                         p.name as professional_name
                     FROM appointments a
@@ -692,6 +693,7 @@ class ClientService:
                         'duration_minutes': row['duration_minutes'],
                         'status': row['status'],
                         'modality': row['modality'],
+                        'confirmed_by_client': row['confirmed_by_client'], 
                         'professional_phone': row['professional_phone'],
                         'professional_name': row['professional_name']
                     })
