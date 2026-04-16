@@ -85,11 +85,10 @@ def handle_slot_offer_response(session: SessionData, message: str) -> str:
     client_phone = session.phone_number
 
     # Normalizar texto libre → 1 o 2
-    _msg = message.strip().lower()
-    if _msg in ('1', 'si', 'sí', 's', 'dale', 'acepto', 'ok'):
-        message = '1'
-    elif _msg in ('2', 'no', 'n', 'nope', 'rechazar', 'mantener'):
-        message = '2'
+    from src.core.normalizers import normalize_yes_no
+    normalizado = normalize_yes_no(message)
+    if normalizado:
+        message = normalizado
 
     # Obtener oferta pendiente
     offer = waitlist_service._get_pending_offer(client_phone)

@@ -360,40 +360,19 @@ class BotController:
                 _ANY = {'cualquiera', 'no importa', 'da igual', 'indiferente',
                         'indistinto', 'no aplica', 'ambos', 'me da igual',
                         'con o sin', 'lo que sea'}
-                if any(kw in msg_norm_f for kw in _SI):
-                    print(f"[FILTER] 💳 Prepaga '{msg_stripped}' → Sí (1)")
-                    msg_stripped = '1'
-                    message = '1'
-                elif any(kw in msg_norm_f for kw in _NO):
-                    print(f"[FILTER] 💳 Prepaga '{msg_stripped}' → No (2)")
-                    msg_stripped = '2'
-                    message = '2'
-                elif any(kw in msg_norm_f for kw in _ANY):
-                    print(f"[FILTER] 💳 Prepaga '{msg_stripped}' → No importa (3)")
-                    msg_stripped = '3'
-                    message = '3'
+                from src.core.normalizers import normalize_yes_no_any
+                resultado = normalize_yes_no_any(message)
+                if resultado == '1': msg_stripped = '1'
+                elif resultado == '2': msg_stripped = '2'
+                elif resultado == '3': msg_stripped = '3'
 
             # ── Filtro de género: acepta texto natural ──────────────────────
             elif current_filter == 'gender':
-                _MASC = {'masculino', 'hombre', 'varon', 'male', 'doctor',
-                         'prefiero hombre', 'quiero hombre'}
-                _FEM  = {'femenino', 'mujer', 'female', 'doctora', 'medica',
-                         'prefiero mujer', 'quiero mujer'}
-                _ANY  = {'cualquiera', 'no importa', 'da igual', 'indiferente',
-                         'indistinto', 'no aplica', 'ambos', 'me da igual',
-                         'sin preferencia', 'lo que sea'}
-                if any(kw in msg_norm_f for kw in _MASC):
-                    print(f"[FILTER] 👤 Género '{msg_stripped}' → Masculino (1)")
-                    msg_stripped = '1'
-                    message = '1'
-                elif any(kw in msg_norm_f for kw in _FEM):
-                    print(f"[FILTER] 👤 Género '{msg_stripped}' → Femenino (2)")
-                    msg_stripped = '2'
-                    message = '2'
-                elif any(kw in msg_norm_f for kw in _ANY):
-                    print(f"[FILTER] 👤 Género '{msg_stripped}' → Indiferente (3)")
-                    msg_stripped = '3'
-                    message = '3'
+                from src.core.normalizers import normalize_gender
+                genero = normalize_gender(message)
+                if genero == 'm':   msg_stripped = '1'
+                elif genero == 'f': msg_stripped = '2'
+                elif genero == 'any': msg_stripped = '3'
 
         # Intentar NLU en estados donde tiene sentido
         # Expandido para incluir más estados donde el usuario puede dar comandos naturales

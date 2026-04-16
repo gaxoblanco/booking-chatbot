@@ -14,8 +14,6 @@ Responsabilidades:
 
 Este archivo contiene ~800 líneas de lógica específica del cliente.
 """
-
-from datetime import date
 from typing import Dict
 from venv import logger
 from requests import session
@@ -31,7 +29,7 @@ from src.core.validators import parse_date, validate_time
 from src.services.client_service import client_service
 from src.services.analytics_service import analytics_service
 from src.database.database import db
-
+from src.core.normalizers import normalize_confirm_single
 from src.filters.filter_manager import FilterManager
 from src.filters.filter_types import FilterType
 
@@ -1606,7 +1604,7 @@ class ClientHandler:
                     return f"⚠️ Número inválido. Elegí entre 1 y {len(active_appointments)} o *0* para volver."
 
             # B) dale/si/ese/esa → si hay una sola cita, seleccionarla
-            elif msg_lower in {'dale', 'si', 'sí', 'ok', 'ese', 'esa', 'esa cita', 'esa misma'}:
+            elif normalize_confirm_single(message):
                 if len(active_appointments) == 1:
                     matched_idx = 0
 
@@ -1838,19 +1836,10 @@ class ClientHandler:
         # ==========================================
         # NORMALIZAR TEXTO LIBRE → 1 o 2
         # ==========================================
-        _msg = message.strip().lower()
-        _NO  = {'2', 'no', 'no cancelar', 'mantener', 'no mantener', 'no, mantener',
-                'no quiero', 'no gracias', 'nop', 'nope', 'dejalo', 'dejá',
-                'mantene', 'mantené', 'quiero mantener', 'deseo mantener',
-                'no deseo cancelar', 'prefiero mantener'}
-        _SI  = {'1', 'si', 'sí', 's', 'dale', 'ok', 'confirmar', 'confirmo',
-                'si cancelar', 'sí cancelar', 'cancelar', 'quiero cancelar',
-                'deseo cancelar', 'sí quiero', 'si quiero', 'adelante',
-                'proceder', 'procedé'}
-        if _msg in _NO:
-            message = '2'
-        elif _msg in _SI:
-            message = '1'
+        from src.core.normalizers import normalize_yes_no
+        normalizado = normalize_yes_no(message)
+        if normalizado:
+            message = normalizado
 
         # ==========================================
         # VERIFICAR SI VENIMOS DE UN ERROR PREVIO
@@ -2627,8 +2616,8 @@ class ClientHandler:
         
         message_lower = message.lower().strip()
         
-        # Confirmación
-        if message_lower in ['si', 'sí', 'confirmo', 'ok', 'confirmar', 'yes']:
+        from src.core.normalizers import normalize_yes_no
+        if normalize_yes_no(message) == '1':
             appointment = session.get_temp('appointment_to_cancel')
             
             if not appointment:
