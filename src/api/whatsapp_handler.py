@@ -16,13 +16,14 @@ from twilio.twiml.messaging_response import MessagingResponse
 from src.config.config import Config
 from src.config.domain_config import DomainConfig, load_preset
 from src.core.rate_limiter import rate_limiter, RateLimiter
+from src.core.logger import _sanitize
 
 # S2 — Rate limiter específico para /google-calendar/webhook
 # Más permisivo que el de WhatsApp — Google puede enviar ráfagas legítimas
 # Usa una subclase para tener límites propios sin tocar RateLimiter
 class _CalendarRateLimiter(RateLimiter):
     """Rate limiter con parámetros fijos para el webhook de Google Calendar."""
-    MAX_MESSAGES   = 60   # máx 30 notificaciones por minuto
+    MAX_MESSAGES   = 1000   # máx 30 notificaciones por minuto
     WINDOW_SECONDS = 60
     BLOCK_MINUTES  = 5
 
@@ -158,7 +159,7 @@ def webhook():
     print(f"\n{'='*50}")
     print(f"📩 MESSAGE RECEIVED")
     print(f"{'='*50}")
-    print(f"From: {sender}")
+    print(f"From: {_sanitize(sender)}")
     print(f"Text: {incoming_msg}")
     print(f"Media files: {num_media}")
     print(f"{'='*50}\n")
