@@ -231,7 +231,7 @@ docker-compose logs | grep "CACHE"
 
 **Opción A: LocalTunnel**
 ```bash
-npm install -g localtunnel
+pnpm add -g localtunnel
 lt --port 5000
 ```
 

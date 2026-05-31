@@ -317,47 +317,34 @@ Cada archivo `conversations_YYYY-MM-DD.jsonl` contiene **una línea por mensaje*
 
 ```json
 {
-  // ==========================================
-  // METADATOS
-  // ==========================================
-  "timestamp": "2026-02-05T14:30:15.123456",
-  "user_id": "4debb560f3d844b2",
-  
-  // ==========================================
-  // DATOS DEL MENSAJE
-  // ==========================================
-  "message": "necesito psicólogo mañana por la tarde",
-  
-  // ==========================================
-  // DETECCIÓN AUTOMÁTICA (Sistema de Reglas)
-  // ==========================================
-  "detected_intent": "search_professional",
+  "timestamp":        "2026-05-13T14:30:15.123456",
+
+  "message":          "necesito psicólogo mañana por la tarde",
+  // ⚠️ v2.0: el mensaje se sanitiza antes de guardar.
+  // Teléfonos → [TEL], DNI → [DNI], nombre de profesional → [PROFESIONAL]
+
+  "detected_intent":  "search_professional",
   "entities": {
     "especialidad": "psicología",
-    "fecha": "mañana",
-    "horario": "tarde"
+    "fecha":        "mañana",
+    "horario":      "tarde"
+    // professional_name se reemplaza por "[PROFESIONAL]" si estaba presente
   },
-  "confidence": 0.90,
-  "shortcut_used": true,
-  
-  // ==========================================
-  // CONTEXTO DE LA CONVERSACIÓN
-  // ==========================================
-  "session_state": "CLIENT_MAIN_MENU",
-  "user_role": "client",
+  "confidence":       0.90,
+  "shortcut_used":    true,
+
+  "session_state":    "CLIENT_MAIN_MENU",
+  "user_role":        "client",
   "context": {
     "has_accumulated_entities": true,
     "conversation_turns": 3
   },
-  
-  // ==========================================
-  // CAMPOS PARA REVISIÓN MANUAL
-  // ==========================================
-  "human_reviewed": false,
-  "is_correct": null,
-  "correct_intent": null,
+
+  "human_reviewed":   false,
+  "is_correct":       null,
+  "correct_intent":   null,
   "correct_entities": null,
-  "review_notes": null
+  "review_notes":     null
 }
 ```
 
@@ -370,7 +357,7 @@ Cada archivo `conversations_YYYY-MM-DD.jsonl` contiene **una línea por mensaje*
 | Campo | Tipo | Descripción | Ejemplo |
 |-------|------|-------------|---------|
 | `timestamp` | string (ISO 8601) | Fecha y hora del mensaje | `"2026-02-05T14:30:15.123456"` |
-| `user_id` | string (hash) | ID anonimizado del usuario (SHA-256 truncado) | `"4debb560f3d844b2"` |
+El campo user_id fue eliminado en v2.0. Ver docs/PRIVACY.md para el detalle.
 
 #### **Campos del Mensaje**
 
