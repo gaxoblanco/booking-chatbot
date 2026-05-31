@@ -686,6 +686,7 @@ class ClientService:
                     
                     appointments.append({
                         'id': row['id'],
+                        'client_phone': row['client_phone'],
                         'google_event_id': row['google_event_id'],
                         'date': row['appointment_date'],  # YYYY-MM-DD
                         'date_formatted': date_formatted,  # DD/MM/YYYY
