@@ -1416,6 +1416,7 @@ class Database:
                     WHERE client_phone = ?
                     AND professional_phone = ?
                     AND status IN ('pendiente_confirmacion', 'confirmada')
+                    AND appointment_date >= DATE('now')
                 """, (client_phone, professional_phone))
 
                 row = cursor.fetchone()
@@ -1456,6 +1457,7 @@ class Database:
                     FROM appointments
                     WHERE client_phone = ?
                     AND status IN ('pendiente_confirmacion', 'confirmada')
+                    AND appointment_date >= DATE('now')
                 """, (client_phone,))
 
                 row = cursor.fetchone()
