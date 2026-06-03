@@ -571,6 +571,8 @@ class Database:
                 "ALTER TABLE appointments ADD COLUMN last_google_sync TIMESTAMP DEFAULT NULL",
                 # Issue 8
                 "ALTER TABLE appointments ADD COLUMN patient_phone TEXT DEFAULT NULL",
+                # Meet link — tono freelance
+                "ALTER TABLE appointments ADD COLUMN meet_link TEXT DEFAULT NULL",
             ]
             for migration_sql in _safe_migrations:
                 try:
@@ -1253,7 +1255,8 @@ class Database:
         modality: str = 'presencial',
         google_event_id: str = None,
         notes: str = None,
-        patient_phone: str = None      # ← Issue 8: teléfono del paciente real
+        patient_phone: str = None,     # ← Issue 8: teléfono del paciente real
+        meet_link: str = None          # ← Meet link generado por Google Calendar
     ) -> Optional[int]:
         """
         Create a new appointment.
@@ -1272,6 +1275,8 @@ class Database:
             patient_phone:      Teléfono del paciente real si se agendó para
                                 un tercero. Permite que el paciente cancele
                                 su propio turno desde su número.
+            meet_link:          Link de Google Meet generado al crear el evento.
+                                None si el tono no requiere videoconferencia.
 
         Returns:
             appointment_id si exitoso, None si falló
@@ -1284,17 +1289,16 @@ class Database:
                         client_phone, professional_phone, appointment_date,
                         start, end, duration_minutes,
                         session_type, modality, google_event_id, notes,
-                        patient_phone, status
+                        patient_phone, meet_link, status
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmada')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmada')
                 """, (client_phone, professional_phone, appointment_date,
                       start, end, duration_minutes,
                       session_type, modality, google_event_id, notes,
-                      patient_phone))
+                      patient_phone, meet_link))
                 
                 appointment_id = cursor.lastrowid
                 
-                # Crear registro en historial
                 cursor.execute("""
                     INSERT INTO appointment_history (
                         appointment_id, new_status, changed_by, change_reason
@@ -1302,21 +1306,20 @@ class Database:
                     VALUES (?, 'confirmada', 'system', 'Cita creada y confirmada automáticamente')
                 """, (appointment_id,))
             
-            print(f"[DB] ✅ Appointment created: #{appointment_id} (Google ID: {google_event_id})")
+            print(f"[DB] ✅ Appointment created: #{appointment_id} (Google ID: {google_event_id} | Meet: {meet_link or 'sin link'})")
             return appointment_id
         except Exception as e:
-            # Detectar UNIQUE constraint — slot ya tomado por otro usuario
             if 'UNIQUE constraint' in str(e):
                 print(
                     f"[DB] ⚠️ Slot ya tomado: "
                     f"{professional_phone} {appointment_date} {start}"
                 )
-                return -1   # Código especial: slot concurrente
+                return -1
             print(f"[DB] ❌ Error creating appointment: {e}")
             import traceback
             traceback.print_exc()
             return None
-
+        
     def get_appointment(self, appointment_id: int) -> Optional[Dict]:
         """
         Obtiene una cita por ID.
