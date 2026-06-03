@@ -66,6 +66,10 @@ print(f"🔄 Loading domain preset: {DOMAIN_PRESET}")
 load_preset(DOMAIN_PRESET)
 print(f"✅ Domain loaded: {DomainConfig.BUSINESS_NAME}")
 
+# Validar configuración — fail fast antes de levantar el bot
+from src.config.config_validator import validate_config
+validate_config()
+
 # Import bot AFTER loading preset
 bot_module = importlib.import_module('src.bot.bot_wrapper')
 bot = bot_module.bot
