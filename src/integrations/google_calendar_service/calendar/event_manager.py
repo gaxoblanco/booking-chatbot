@@ -59,17 +59,12 @@ class EventManager:
         appointment_type: str,
         notes: Optional[str] = None,
         reminders: Optional[List[Dict]] = None,
-        timezone_str: Optional[str] = None
+        timezone_str: Optional[str] = None,
+        conference_data_version: int = 0
     ) -> Dict:
         """
         Crea una nueva cita en el calendario.
-        
-        Esta función crea un evento con formato estándar que incluye:
-        - Título con nombre del cliente
-        - Descripción con información de contacto
-        - Tipo de consulta
-        - Recordatorios automáticos
-        
+
         Args:
             calendar_id: ID del calendario (email del profesional)
             start_datetime: Inicio de la cita (ISO format o 'YYYY-MM-DD HH:MM')
@@ -80,55 +75,35 @@ class EventManager:
             notes: Notas adicionales opcionales
             reminders: Lista de recordatorios personalizados (opcional)
             timezone_str: Zona horaria (default: Argentina)
-        
+            conference_data_version: 1 para generar Meet link, 0 sin Meet (default)
+
         Returns:
-            Dict: Evento creado con todos sus datos, incluye 'id' del evento
-        
-        Raises:
-            ValueError: Si los datos son inválidos
-            Exception: Si hay error al crear el evento
-        
-        Example:
-            event = event_manager.create_appointment(
-                calendar_id='profesional@gmail.com',
-                start_datetime='2026-01-17T14:00:00',
-                end_datetime='2026-01-17T15:00:00',
-                client_name='Juan Pérez',
-                client_phone='+5491112345678',
-                appointment_type='Consulta inicial',
-                notes='Primera consulta, derivado por Dr. García'
-            )
-            print(f"Cita creada con ID: {event['id']}")
+            Dict: Evento creado con todos sus datos, incluye 'id' y 'hangoutLink' si aplica
         """
         tz = timezone_str or DEFAULT_TIMEZONE
-        
+
         logger.info(
             f"Creando cita para {client_name} "
             f"en {calendar_id} desde {start_datetime}"
         )
-        
+
         try:
-            # Validar datos obligatorios
             self._validate_appointment_data(
                 client_name, client_phone, appointment_type
             )
-            
-            # Parsear y formatear datetimes
+
             if 'T' not in start_datetime:
-                # Formato simple 'YYYY-MM-DD HH:MM'
                 date_str = start_datetime.split()[0]
                 time_str = start_datetime.split()[1]
                 start_dt = combine_date_time(date_str, time_str, tz)
-                
+
                 date_str = end_datetime.split()[0]
                 time_str = end_datetime.split()[1]
                 end_dt = combine_date_time(date_str, time_str, tz)
             else:
-                # Formato ISO
                 start_dt = parse_google_datetime(start_datetime, tz)
                 end_dt = parse_google_datetime(end_datetime, tz)
-            
-            # Construir datos del evento con formato estándar
+
             event_data = self._build_event_data(
                 start_dt=start_dt,
                 end_dt=end_dt,
@@ -139,27 +114,30 @@ class EventManager:
                 reminders=reminders,
                 timezone_str=tz
             )
-            
-            # Crear evento en Google Calendar
+
+            # conference_data_version viene de MEET_LINK_MODE via appointment_service
             event = self.calendar_client.create_event(
                 calendar_id=calendar_id,
-                event_data=event_data
+                event_data=event_data,
+                conference_data_version=conference_data_version
             )
-            
+
             logger.info(
                 f"Cita creada exitosamente. "
-                f"ID: {event['id']}, Link: {event.get('htmlLink')}"
+                f"ID: {event['id']}, "
+                f"Meet: {event.get('hangoutLink', 'sin link')}, "
+                f"Link: {event.get('htmlLink')}"
             )
-            
+
             return event
-            
+
         except ValueError as e:
             logger.error(f"Datos de cita inválidos: {e}")
             raise
         except Exception as e:
             logger.error(f"Error al crear cita: {e}")
             raise
-    
+
     def cancel_appointment(
         self,
         calendar_id: str,
@@ -506,8 +484,14 @@ class EventManager:
                 'timeZone': timezone_str
             },
             'reminders': reminders_config,
-            # Color del evento (opcional, celeste para citas)
-            'colorId': '7'  # Celeste/Turquesa
+            'colorId': '7',
+            # Meet link — genera videoconferencia automáticamente
+            'conferenceData': {
+                'createRequest': {
+                    'requestId': f"{to_iso_format(start_dt)}-{client_phone[-4:]}",
+                    'conferenceSolutionKey': {'type': 'eventHangout'}
+                }
+            }
         }
         
         return event_data

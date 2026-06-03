@@ -244,11 +244,12 @@ class GoogleCalendarService:
         appointment_type: str,
         notes: Optional[str] = None,
         reminders: Optional[List[Dict]] = None,
-        timezone_str: Optional[str] = None
+        timezone_str: Optional[str] = None,
+        conference_data_version: int = 0
     ) -> Dict:
         """
         Crea una nueva cita en el calendario.
-        
+
         Args:
             calendar_id: Email del profesional
             start_datetime: Inicio de la cita
@@ -259,9 +260,10 @@ class GoogleCalendarService:
             notes: Notas adicionales (opcional)
             reminders: Recordatorios personalizados (opcional)
             timezone_str: Zona horaria
-        
+            conference_data_version: 1 para generar Meet link, 0 sin Meet (default)
+
         Returns:
-            Dict: Evento creado con 'id'
+            Dict: Evento creado con 'id' y 'hangoutLink' si conference_data_version=1
         """
         return self.event_manager.create_appointment(
             calendar_id=calendar_id,
@@ -272,7 +274,8 @@ class GoogleCalendarService:
             appointment_type=appointment_type,
             notes=notes,
             reminders=reminders,
-            timezone_str=timezone_str
+            timezone_str=timezone_str,
+            conference_data_version=conference_data_version
         )
     
     def cancel_appointment(

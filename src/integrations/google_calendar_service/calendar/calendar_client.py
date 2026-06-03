@@ -191,7 +191,12 @@ class CalendarClient:
             logger.error(f"Error al obtener eventos: {e}")
             raise
     
-    def create_event(self, calendar_id: str, event_data: Dict) -> Dict:
+    def create_event(
+        self,
+        calendar_id: str,
+        event_data: Dict,
+        conference_data_version: int = 0
+    ) -> Dict:
         """
         Crea un nuevo evento en un calendario.
         
@@ -199,22 +204,16 @@ class CalendarClient:
             calendar_id: ID del calendario donde crear el evento
             event_data: Datos del evento en formato de Google Calendar API
                 Debe contener al menos: summary, start, end
-                Ejemplo:
-                {
-                    'summary': 'Consulta - Juan Pérez',
-                    'description': 'Consulta inicial',
-                    'start': {'dateTime': '2024-12-15T14:00:00-03:00'},
-                    'end': {'dateTime': '2024-12-15T15:00:00-03:00'}
-                }
+            conference_data_version: 1 para generar Meet link automáticamente,
+                0 para evento sin videoconferencia (default)
         
         Returns:
-            Dict: Evento creado con todos sus datos (incluye 'id' generado)
+            Dict: Evento creado con todos sus datos (incluye 'id' y 'hangoutLink' si aplica)
         
         Raises:
             HttpError: Si hay un error en la llamada a la API
             ValueError: Si event_data no contiene los campos requeridos
         """
-        # Validar que el evento tenga los campos mínimos requeridos
         required_fields = ['summary', 'start', 'end']
         missing_fields = [field for field in required_fields if field not in event_data]
         
@@ -228,19 +227,37 @@ class CalendarClient:
                 f"Creando evento '{event_data.get('summary')}' "
                 f"en calendario {calendar_id}"
             )
-            
-            # Crear el evento
+
             event = self.service.events().insert(
                 calendarId=calendar_id,
-                body=event_data
+                body=event_data,
+                conferenceDataVersion=conference_data_version
             ).execute()
-            
+
             logger.info(f"Evento creado exitosamente. ID: {event.get('id')}")
             logger.debug(f"Link del evento: {event.get('htmlLink')}")
-            
+
             return event
-            
+
         except HttpError as e:
+            # Si Google rechaza el conferenceData (calendarios secundarios
+            # o Service Accounts sin permisos de Meet), reintentamos sin Meet.
+            # El booking no debe fallar por esto.
+            if e.resp.status == 400 and 'conference' in str(e).lower() and conference_data_version == 1:
+                logger.warning(
+                    "Google rechazó conferenceData (calendar secundario o sin permisos de Meet). "
+                    "Reintentando sin Meet link..."
+                )
+                # Quitar conferenceData del body y reintentar
+                event_data_no_meet = {k: v for k, v in event_data.items() if k != 'conferenceData'}
+                event = self.service.events().insert(
+                    calendarId=calendar_id,
+                    body=event_data_no_meet,
+                    conferenceDataVersion=0
+                ).execute()
+                logger.info(f"Evento creado sin Meet. ID: {event.get('id')}")
+                return event
+
             if e.resp.status == 403:
                 logger.error(
                     f"Sin permisos para crear eventos en {calendar_id}. "
