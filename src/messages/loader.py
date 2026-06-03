@@ -14,7 +14,7 @@ import importlib
 from types import ModuleType
 from typing import Any
 
-REGISTERED = {"demo", "coloquial"}
+REGISTERED = {"demo", "coloquial", "freelance"}
 
 _tone_module = None
 
