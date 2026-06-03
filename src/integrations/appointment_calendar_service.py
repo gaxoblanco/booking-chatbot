@@ -254,7 +254,14 @@ class AppointmentCalendarService:
             calendar_id = professional['calendar_id']
             
             # 2. Crear evento en Google Calendar
-            logger.info("Creando evento en Google Calendar...")
+            # conference_data_version depende de MEET_LINK_MODE:
+            #   'never'  → 0 (sin Meet)
+            #   'always' → 1 (siempre Meet)
+            from src.config.domain_config import DomainConfig
+            meet_mode = DomainConfig.MEET_LINK_MODE
+            conference_data_version = 1 if meet_mode == 'always' else 0
+
+            logger.info(f"Creando evento en Google Calendar (meet_mode={meet_mode})...")
             google_event = self.calendar_service.create_appointment(
                 calendar_id=calendar_id,
                 start_datetime=f"{date} {start_time}",
@@ -262,20 +269,23 @@ class AppointmentCalendarService:
                 client_name=client_name,
                 client_phone=client_phone,
                 appointment_type=appointment_type,
-                notes=notes
+                notes=notes,
+                conference_data_version=conference_data_version
             )
-            
+
             google_event_id = google_event['id']
-            logger.info(f"Evento creado en Google Calendar: {google_event_id}")
+            meet_link = google_event.get('hangoutLink') if meet_mode == 'always' else None
+            logger.info(
+                f"Evento creado en Google Calendar: {google_event_id} | "
+                f"Meet: {meet_link or 'sin link'}"
+            )
             
             # 3. Guardar en BD local con referencia a Google Calendar
             logger.info("Guardando cita en BD local...")
-            # Calculate duration
             from datetime import datetime as dt
             duration = int((dt.strptime(end_time, '%H:%M') - 
                           dt.strptime(start_time, '%H:%M')).seconds / 60)
             
-            # Map appointment_type to valid session_type
             session_type_map = {
                 'Consulta': 'primera_vez',
                 'primera_vez': 'primera_vez',
@@ -295,7 +305,8 @@ class AppointmentCalendarService:
                 modality='presencial',
                 google_event_id=google_event_id,
                 notes=notes,
-                patient_phone=patient_phone    # GAP 4
+                patient_phone=patient_phone,    # GAP 4
+                meet_link=meet_link             # Meet link generado por Google
             )
             
             logger.info(
@@ -303,7 +314,7 @@ class AppointmentCalendarService:
                 f"BD ID: {appointment_id}, Google ID: {google_event_id}"
             )
             
-            # 4. ⭐ NOTIFICAR AL PROFESIONAL por WhatsApp
+            # 4. Notificar al profesional por WhatsApp
             try:
                 self._notify_professional_new_appointment(
                     professional=professional,
@@ -316,13 +327,11 @@ class AppointmentCalendarService:
                 )
             except Exception as notify_error:
                 logger.error(f"Error al notificar al profesional: {notify_error}")
-                # No fallar la creación de cita si falla la notificación
             
             return appointment_id
             
         except Exception as e:
             logger.error(f"Error al crear cita: {e}")
-            # Si falló después de crear en Google, intentar limpiar
             if 'google_event_id' in locals():
                 try:
                     self.calendar_service.cancel_appointment(
