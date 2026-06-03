@@ -19,12 +19,13 @@ class Config:
     """
 
     # ==========================================
-    # TWILIO CREDENTIALS
+    # META CLOUD API
     # ==========================================
-    TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
-    TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-    TWILIO_WHATSAPP_NUMBER = os.getenv(
-        'TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+    META_PHONE_NUMBER_ID      = os.getenv('META_PHONE_NUMBER_ID')
+    META_WHATSAPP_TOKEN       = os.getenv('META_WHATSAPP_TOKEN')
+    META_APP_SECRET           = os.getenv('META_APP_SECRET')
+    META_WEBHOOK_VERIFY_TOKEN = os.getenv('META_WEBHOOK_VERIFY_TOKEN')
+    META_API_VERSION          = os.getenv('META_API_VERSION', 'v22.0')
 
     # ==========================================
     # FLASK SETTINGS
@@ -66,23 +67,25 @@ class Config:
     @staticmethod
     def validate():
         """
-        Validate that all required environment variables are set.
-        Raises ValueError if any required variable is missing.
+        Valida que todas las variables de entorno requeridas estén configuradas.
+        Lanza ValueError si falta alguna — el servidor no arranca sin ellas.
         """
         required_vars = {
-            'TWILIO_ACCOUNT_SID': Config.TWILIO_ACCOUNT_SID,
-            'TWILIO_AUTH_TOKEN': Config.TWILIO_AUTH_TOKEN,
+            'META_PHONE_NUMBER_ID':      Config.META_PHONE_NUMBER_ID,
+            'META_WHATSAPP_TOKEN':       Config.META_WHATSAPP_TOKEN,
+            'META_APP_SECRET':           Config.META_APP_SECRET,
+            'META_WEBHOOK_VERIFY_TOKEN': Config.META_WEBHOOK_VERIFY_TOKEN,
         }
 
         missing_vars = [
             var_name for var_name, var_value in required_vars.items()
-            if not var_value or var_value == 'your_account_sid_here' or var_value == 'your_auth_token_here'
+            if not var_value or var_value in ('XXXXXXX', '')
         ]
 
         if missing_vars:
             raise ValueError(
-                f"Missing required environment variables: {', '.join(missing_vars)}\n"
-                f"Please copy .env.example to .env and fill in your Twilio credentials."
+                f"Variables de entorno faltantes: {', '.join(missing_vars)}\n"
+                f"Copiá .env.example a .env y completá las credenciales de Meta."
             )
 
         return True
@@ -90,27 +93,31 @@ class Config:
     @staticmethod
     def print_config():
         """
-        Print current configuration (hiding sensitive data).
-        Useful for debugging.
+        Imprime la configuración activa al arrancar (ocultando datos sensibles).
         """
         print("=" * 50)
-        print("WHATSAPP BOT CONFIGURATION")
+        print("WHATSAPP BOT CONFIGURATION — Meta Cloud API")
         print("=" * 50)
-        print(f"Environment: {Config.FLASK_ENV}")
-        print(f"Debug Mode: {Config.FLASK_DEBUG}")
-        print(f"Port: {Config.FLASK_PORT}")
-        print(f"Webhook URL: {Config.WEBHOOK_URL}")
-        print(f"WhatsApp Number: {Config.TWILIO_WHATSAPP_NUMBER}")
+        print(f"Environment:      {Config.FLASK_ENV}")
+        print(f"Debug Mode:       {Config.FLASK_DEBUG}")
+        print(f"Port:             {Config.FLASK_PORT}")
+        print(f"Webhook URL:      {Config.WEBHOOK_URL}")
+        print(f"Meta API version: {Config.META_API_VERSION}")
         print(f"Certificates Dir: {Config.CERTIFICATES_DIR}")
 
-        # Hide sensitive data
-        if Config.TWILIO_ACCOUNT_SID:
-            masked_sid = Config.TWILIO_ACCOUNT_SID[:8] + \
-                "..." + Config.TWILIO_ACCOUNT_SID[-4:]
-            print(f"Account SID: {masked_sid}")
+        # Datos sensibles — mostrar solo los primeros/últimos caracteres
+        if Config.META_PHONE_NUMBER_ID:
+            print(f"Phone Number ID:  {Config.META_PHONE_NUMBER_ID[:6]}... (parcial)")
 
-        if Config.TWILIO_AUTH_TOKEN:
-            print(f"Auth Token: {'*' * 20} (hidden)")
+        if Config.META_WHATSAPP_TOKEN:
+            print(f"WhatsApp Token:   {'*' * 20} (hidden)")
+
+        if Config.META_APP_SECRET:
+            print(f"App Secret:       {'*' * 20} (hidden)")
+
+        if Config.META_WEBHOOK_VERIFY_TOKEN:
+            masked = Config.META_WEBHOOK_VERIFY_TOKEN[:4] + "..." 
+            print(f"Verify Token:     {masked} (parcial)")
 
         print("=" * 50)
 

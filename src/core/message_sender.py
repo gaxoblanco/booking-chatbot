@@ -4,6 +4,8 @@ MessageSender — Envíos WhatsApp centralizados con reintentos
 Ubicación: src/core/message_sender.py
 
 Centraliza TODOS los envíos salientes de WhatsApp del sistema.
+Usa Meta Cloud API (Graph API) directamente — sin Twilio.
+
 Reemplaza los bloques `client.messages.create()` dispersos en:
     - src/services/reminder_service.py      (_send_reminder)
     - src/services/waitlist_service.py      (_send_offer)
@@ -11,10 +13,15 @@ Reemplaza los bloques `client.messages.create()` dispersos en:
 
 Funcionalidades:
     1. Reintento automático hasta 3 veces con backoff (1, 5, 15 min)
-    2. Detección de error 63003 (número sin WhatsApp activo)
+    2. Detección de errores Meta: número inválido, no en WhatsApp, bloqueado
     3. Alerta al profesional después del tercer fallo
     4. Cola de reintentos persistida en BD (sobrevive reinicios)
     5. Procesamiento de cola desde el CRON diario
+
+Variables de entorno requeridas:
+    META_PHONE_NUMBER_ID  — ID del número en Meta (no el número en sí)
+    META_WHATSAPP_TOKEN   — Token permanente de la app
+    META_API_VERSION      — Versión de la API (ej: v22.0)
 
 Uso en servicios:
     from src.core.message_sender import message_sender
@@ -30,15 +37,22 @@ Uso en servicios:
 
 import os
 import logging
+import requests as http_requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 
-# Códigos de error de Twilio relevantes
-TWILIO_ERROR_NO_WHATSAPP   = 63003   # Número no tiene WhatsApp activo
-TWILIO_ERROR_INVALID_NUMBER = 21211  # Número inválido
-TWILIO_ERROR_UNSUBSCRIBED   = 21610  # Usuario bloqueó el número
+# Códigos de error de Meta Cloud API relevantes
+# Referencia: developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
+META_ERROR_NO_WHATSAPP    = 131026  # Número no tiene WhatsApp activo
+META_ERROR_INVALID_NUMBER = 131030  # Número de teléfono inválido
+META_ERROR_UNSUBSCRIBED   = 131047  # Usuario bloqueó o está en opt-out
+
+# Alias para compatibilidad con el resto del código que usa los nombres viejos
+TWILIO_ERROR_NO_WHATSAPP   = META_ERROR_NO_WHATSAPP
+TWILIO_ERROR_INVALID_NUMBER = META_ERROR_INVALID_NUMBER
+TWILIO_ERROR_UNSUBSCRIBED   = META_ERROR_UNSUBSCRIBED
 
 
 class MessageSender:
@@ -70,11 +84,11 @@ class MessageSender:
         """
         Envía un WhatsApp con reintento automático en caso de fallo.
 
-        En el primer intento, llama a Twilio directamente.
+        En el primer intento, llama a Meta Cloud API directamente.
         Si falla, encola en `message_retry_queue` para reintentos
         posteriores (procesados por el CRON via process_retry_queue()).
 
-        Si el error es 63003 (sin WhatsApp) o se agotan los 3 reintentos,
+        Si el error indica número sin WhatsApp o se agotan los 3 reintentos,
         envía una alerta al profesional.
 
         Args:
@@ -83,16 +97,16 @@ class MessageSender:
             professional_phone: Profesional a alertar si el envío falla
             patient_name:       Nombre del paciente (para el mensaje de alerta)
             appointment_id:     ID de la cita (para contexto en logs y BD)
-            content_sid:        SID de template aprobado de Twilio (opcional)
+            content_sid:        Nombre del template aprobado en Meta (opcional)
             content_variables:  JSON con variables del template (opcional)
 
         Returns:
-            True si el mensaje fue aceptado por Twilio
+            True si el mensaje fue aceptado por Meta
             False si falló (se habrá encolado para reintento)
         """
         logger.info(f"[MSG-SENDER] 📤 Enviando a {to_phone} (apt #{appointment_id})")
 
-        success, error_code = self._send_twilio(
+        success, error_code = self._send_meta(
             to_phone           = to_phone,
             message            = message,
             content_sid        = content_sid,
@@ -185,7 +199,7 @@ class MessageSender:
 
                     attempts = item['attempts'] + 1
 
-                    success, error_code = self._send_twilio(
+                    success, error_code = self._send_meta(
                         to_phone          = item['to_phone'],
                         message           = item['message'],
                         content_sid       = item.get('content_sid'),
@@ -241,10 +255,10 @@ class MessageSender:
         return stats
 
     # =========================================================================
-    # ENVÍO TWILIO
+    # ENVÍO META CLOUD API
     # =========================================================================
 
-    def _send_twilio(
+    def _send_meta(
         self,
         to_phone:          str,
         message:           str,
@@ -252,69 +266,129 @@ class MessageSender:
         content_variables: Optional[str] = None,
     ) -> tuple[bool, Optional[int]]:
         """
-        Llama directamente a Twilio API.
+        Llama directamente a Meta Cloud API (Graph API) para enviar el mensaje.
 
         Soporta dos modos:
-        - Template aprobado: content_sid + content_variables (recordatorios)
-        - Mensaje libre:     body directo (ofertas, notificaciones)
+        - Template aprobado: content_sid = nombre del template + content_variables
+                             (recordatorios, ofertas de waitlist)
+        - Mensaje libre:     body directo (notificaciones, alertas)
+                             Solo válido dentro de la ventana de 24hs de conversación.
+
+        Endpoint:
+            POST https://graph.facebook.com/{version}/{phone_number_id}/messages
 
         Returns:
-            (True, None)          si el mensaje fue aceptado
-            (False, error_code)   si Twilio retornó error
-            (False, None)         si hubo excepción inesperada
+            (True,  None)        si Meta aceptó el mensaje
+            (False, error_code)  si Meta retornó error con código conocido
+            (False, None)        si hubo excepción inesperada
         """
         try:
-            from twilio.rest import Client
-            from twilio.base.exceptions import TwilioRestException
+            token           = os.getenv('META_WHATSAPP_TOKEN', '').strip()
+            phone_number_id = os.getenv('META_PHONE_NUMBER_ID', '').strip()
+            api_version     = os.getenv('META_API_VERSION', 'v22.0').strip()
 
-            account_sid     = os.getenv('TWILIO_ACCOUNT_SID')
-            auth_token      = os.getenv('TWILIO_AUTH_TOKEN')
-            whatsapp_number = os.getenv('TWILIO_WHATSAPP_NUMBER')
-
-            if not all([account_sid, auth_token, whatsapp_number]):
-                logger.error("[MSG-SENDER] ❌ Variables de entorno de Twilio no configuradas")
+            if not all([token, phone_number_id]):
+                logger.error(
+                    "[MSG-SENDER] ❌ META_WHATSAPP_TOKEN o META_PHONE_NUMBER_ID "
+                    "no configurados en .env"
+                )
                 return False, None
 
-            clean_phone = to_phone.replace('whatsapp:', '').strip()
-            client      = Client(account_sid, auth_token)
+            # Meta espera el número sin '+' ni prefijos
+            clean_phone = to_phone.replace('whatsapp:', '').replace('+', '').strip()
 
-            # Modo template
+            url     = f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Content-Type':  'application/json',
+            }
+
+            # ── Modo template ─────────────────────────────────────────────────
             if content_sid:
-                result = client.messages.create(
-                    from_             = whatsapp_number,
-                    to                = f"whatsapp:{clean_phone}",
-                    content_sid       = content_sid,
-                    content_variables = content_variables or '{}',
-                )
-            # Modo mensaje libre
-            else:
-                result = client.messages.create(
-                    from_ = whatsapp_number,
-                    to    = f"whatsapp:{clean_phone}",
-                    body  = message,
-                )
+                # content_sid = nombre del template (ej: "recordatorio_turno")
+                # content_variables = JSON con los parámetros, ej: '{"1":"lunes","2":"10:00"}'
+                import json as _json
+                try:
+                    variables = _json.loads(content_variables or '{}')
+                except Exception:
+                    variables = {}
 
-            if result.sid:
-                logger.debug(f"[MSG-SENDER] SID: {result.sid}")
+                # Convertir variables a formato de componentes de Meta
+                # Meta espera una lista de parámetros, no un dict con keys "1", "2"...
+                parameters = [
+                    {'type': 'text', 'text': str(v)}
+                    for v in variables.values()
+                ]
+
+                payload = {
+                    'messaging_product': 'whatsapp',
+                    'to':                clean_phone,
+                    'type':              'template',
+                    'template': {
+                        'name':     content_sid,
+                        'language': {'code': os.getenv('META_REMINDER_TEMPLATE_LANG', 'es_AR')},
+                        'components': [{
+                            'type':       'body',
+                            'parameters': parameters,
+                        }] if parameters else [],
+                    }
+                }
+
+            # ── Modo mensaje libre ────────────────────────────────────────────
+            else:
+                payload = {
+                    'messaging_product': 'whatsapp',
+                    'to':                clean_phone,
+                    'type':              'text',
+                    'text':              {'body': message},
+                }
+
+            response = http_requests.post(url, headers=headers, json=payload, timeout=10)
+            data     = response.json()
+
+            # ── Interpretar respuesta ─────────────────────────────────────────
+            if response.status_code == 200 and data.get('messages'):
+                msg_id = data['messages'][0].get('id', '')
+                logger.debug(f"[MSG-SENDER] Meta message_id: {msg_id}")
                 return True, None
-            return False, None
+
+            # Error de Meta — extraer código para clasificar el fallo
+            error      = data.get('error', {})
+            error_code = error.get('code')
+            error_msg  = error.get('message', 'error desconocido')
+
+            logger.warning(
+                f"[MSG-SENDER] ⚠️ Meta error {error_code}: {error_msg} "
+                f"(HTTP {response.status_code}) → {to_phone}"
+            )
+            return False, error_code
 
         except Exception as e:
-            # Extraer código de error de Twilio si está disponible
-            error_code = None
-            try:
-                from twilio.base.exceptions import TwilioRestException
-                if isinstance(e, TwilioRestException):
-                    error_code = e.code
-                    logger.warning(
-                        f"[MSG-SENDER] Twilio error {error_code}: {e.msg}"
-                    )
-                else:
-                    logger.error(f"[MSG-SENDER] Error inesperado: {e}")
-            except Exception:
-                logger.error(f"[MSG-SENDER] Error: {e}")
+            logger.error(f"[MSG-SENDER] ❌ Error inesperado enviando a {to_phone}: {e}")
+            return False, None
 
-            return False, error_code
+    def send_message(self, phone: str, message: str) -> bool:
+        """
+        Envío simple sin reintento — para respuestas inmediatas del bot.
+
+        Usado por whatsapp_handler._send_reply() cuando el bot responde
+        a un mensaje entrante. No se encola porque la ventana de 24hs
+        garantiza que el mensaje libre es válido.
+
+        Args:
+            phone:   Número en formato E.164
+            message: Texto a enviar
+
+        Returns:
+            True si Meta aceptó el mensaje
+        """
+        success, error_code = self._send_meta(to_phone=phone, message=message)
+        if not success:
+            logger.warning(
+                f"[MSG-SENDER] ⚠️ send_message falló para {phone} "
+                f"(error {error_code}) — sin reintento"
+            )
+        return success
 
     # =========================================================================
     # ALERTA AL PROFESIONAL
@@ -371,7 +445,7 @@ class MessageSender:
         )
 
         # Envío directo sin reintento para evitar recursión
-        success, _ = self._send_twilio(
+        success, _ = self._send_meta(
             to_phone = professional_phone,
             message  = mensaje,
         )

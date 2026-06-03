@@ -1,22 +1,35 @@
 """
 WhatsApp Webhook Handler
 =========================
-Flask application that receives WhatsApp messages via Twilio webhook.
-Handles both text messages and media files (images/PDFs for certificates).
+Flask application que recibe mensajes de WhatsApp via Meta Cloud API (sin Twilio).
 
-For testing: Bot echoes back received messages.
-Production: Connect to bot.py for actual logic.
+Cambios respecto a la versión Twilio:
+  - GET  /webhook → verificación inicial del webhook por Meta (hub.challenge)
+  - POST /webhook → body JSON (no form-encoded), firma X-Hub-Signature-256
+  - Respuesta al POST → HTTP 200 vacío (no TwiML)
+                        el bot responde de forma proactiva via message_sender.py
+
+Endpoints:
+  GET  /webhook                  → verificación Meta (una sola vez al configurar)
+  POST /webhook                  → mensajes entrantes de usuarios
+  POST /google-calendar/webhook  → push notifications de Google Calendar
+  GET  /                         → health check
 """
 import os
 import importlib
 import threading
 import requests
-from flask import Flask, request
-from twilio.twiml.messaging_response import MessagingResponse
+from flask import Flask, request, jsonify
 from src.config.config import Config
 from src.config.domain_config import DomainConfig, load_preset
 from src.core.rate_limiter import rate_limiter, RateLimiter
 from src.core.logger import _sanitize
+
+# ── Validador Meta (reemplaza twilio_validator) ───────────────────────────────
+from src.security.meta_validator import (
+    verify_meta_webhook_get,
+    validate_meta_signature_safe,
+)
 
 # S2 — Rate limiter específico para /google-calendar/webhook
 # Más permisivo que el de WhatsApp — Google puede enviar ráfagas legítimas
@@ -103,83 +116,153 @@ def get_watch_manager():
 def home():
     """Health check endpoint."""
     return {
-        'status': 'running',
-        'service': 'WhatsApp Bot Webhook',
+        'status':    'running',
+        'service':   'WhatsApp Bot Webhook',
+        'provider':  'Meta Cloud API',
         'endpoints': {
-            'webhook': '/webhook (POST)',
-            'google_calendar': '/google-calendar/webhook (POST)',
-            'health': '/ (GET)'
+            'webhook_verify':  'GET  /webhook',
+            'webhook_msg':     'POST /webhook',
+            'google_calendar': 'POST /google-calendar/webhook',
+            'health':          'GET  /',
         }
     }, 200
 
 
 # ==========================================
-# WHATSAPP WEBHOOK
+# WHATSAPP WEBHOOK — GET (verificación Meta)
 # ==========================================
-from src.security.twilio_validator import validate_twilio_signature, validate_twilio_signature_safe
+
+@app.route('/webhook', methods=['GET'])
+def webhook_verify():
+    """
+    Verificación inicial del webhook por Meta.
+
+    Meta hace este GET una sola vez cuando guardás la URL en el panel:
+        developers.facebook.com → App → WhatsApp → Configuración → Webhooks
+
+    Parámetros que Meta envía:
+        hub.mode         = 'subscribe'
+        hub.verify_token = el token que pusiste en el panel (META_WEBHOOK_VERIFY_TOKEN)
+        hub.challenge    = string aleatorio que hay que devolver
+
+    Si el token coincide → retorna challenge con 200
+    Si no coincide → 403
+    """
+    body, status = verify_meta_webhook_get(request)
+    return body, status
+
+
+# ==========================================
+# WHATSAPP WEBHOOK — POST (mensajes entrantes)
+# ==========================================
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """
-    Main webhook endpoint for receiving WhatsApp messages.
-    Twilio sends POST requests here with message data.
+    Recibe mensajes de WhatsApp enviados por usuarios via Meta Cloud API.
 
-    Handles:
-    - Text messages
-    - Media files (images, PDFs)
+    Diferencias clave vs Twilio:
+    - Body JSON (no form-encoded)
+    - Firma: X-Hub-Signature-256 con HMAC-SHA256 (no X-Twilio-Signature)
+    - Respuesta: siempre HTTP 200 vacío (no TwiML)
+      El bot responde de forma proactiva via message_sender.py (Graph API)
+    - Meta reintenta si no recibe 200 en menos de 20 segundos
 
-    Returns:
-    - TwiML response with bot's reply
+    Tipos de mensaje manejados:
+    - text     → handle_text_message()
+    - image / document / video / audio → handle_media_upload_meta()
+    - statuses → ignorados (confirmaciones de entrega de Meta)
     """
+    # ── 1. Validar firma Meta ─────────────────────────────────────────────────
+    # CRÍTICO: get_data() debe leerse ANTES de request.get_json()
+    # Flask consume el body al parsear JSON → la firma se calcularía sobre bytes vacíos
     if os.getenv('ENVIRONMENT') == 'production':
-        if not validate_twilio_signature_safe(request):
+        if not validate_meta_signature_safe(request):
             return '', 403
-    # Extraer datos del request de Twilio
-    incoming_msg = request.values.get('Body', '').strip()
-    sender       = request.values.get('From', '')
-    num_media    = int(request.values.get('NumMedia', 0))
 
-    # ── Validación de formato E.164 ──────────────────────────────────────────
-    from src.core.validators import normalize_whatsapp_phone
-    sender_clean = normalize_whatsapp_phone(sender)
+    # ── 2. Parsear JSON de Meta ───────────────────────────────────────────────
+    # Estructura Meta Cloud API:
+    # {
+    #   "entry": [{
+    #     "changes": [{
+    #       "value": {
+    #         "messages": [{
+    #           "from": "5491112345678",   ← sin prefijo whatsapp:, sin +
+    #           "type": "text",
+    #           "text": { "body": "Hola" }
+    #         }],
+    #         "statuses": [...]            ← confirmaciones de entrega (ignorar)
+    #       }
+    #     }]
+    #   }]
+    # }
+    try:
+        data = request.get_json(force=True, silent=True)
+    except Exception:
+        data = None
 
-    if sender_clean is None:
-        print(f"[WEBHOOK] ⚠️ Mensaje ignorado: número inválido '{sender}'")
+    if not data:
+        print("[WEBHOOK] ⚠️ Body vacío o JSON inválido")
         return '', 400
-    # ── Fin validación E.164 ─────────────────────────────────────────────────
 
-    # ── Rate limiting ────────────────────────────────────────────────────────
-    if rate_limiter.is_blocked(sender_clean):
+    # ── 3. Extraer mensaje del payload ────────────────────────────────────────
+    try:
+        entry    = data.get('entry', [{}])[0]
+        change   = entry.get('changes', [{}])[0]
+        value    = change.get('value', {})
+        messages = value.get('messages', [])
+    except (IndexError, AttributeError, KeyError):
         return '', 200
 
-    if not rate_limiter.record(sender_clean):
+    # Sin mensajes en este evento (puede ser un status update de entrega)
+    if not messages:
         return '', 200
-    # ── Fin rate limiting ────────────────────────────────────────────────────
 
-    # Log del mensaje recibido
+    msg      = messages[0]
+    msg_type = msg.get('type', '')       # 'text', 'image', 'document', etc.
+    sender_raw = msg.get('from', '')     # '5491112345678' (sin + ni whatsapp:)
+
+    # Normalizar a E.164: Meta manda sin '+', hay que agregarlo
+    sender = f"+{sender_raw}" if sender_raw and not sender_raw.startswith('+') else sender_raw
+
+    # ── 4. Validación de formato E.164 ────────────────────────────────────────
+    from src.core.validators import validate_phone_e164
+    if not validate_phone_e164(sender):
+        print(f"[WEBHOOK] ⚠️ Mensaje ignorado: número inválido '{sender_raw}'")
+        return '', 200  # 200 para que Meta no reintente
+
+    # ── 5. Rate limiting ──────────────────────────────────────────────────────
+    if rate_limiter.is_blocked(sender):
+        return '', 200
+
+    if not rate_limiter.record(sender):
+        return '', 200
+
+    # ── 6. Log ───────────────────────────────────────────────────────────────
     print(f"\n{'='*50}")
-    print(f"📩 MESSAGE RECEIVED")
+    print(f"📩 MESSAGE RECEIVED (Meta Cloud API)")
     print(f"{'='*50}")
     print(f"From: {_sanitize(sender)}")
-    print(f"Text: {incoming_msg}")
-    print(f"Media files: {num_media}")
+    print(f"Type: {msg_type}")
     print(f"{'='*50}\n")
 
-    # Determinar tipo de respuesta
-    if num_media > 0:
-        reply = handle_media_upload(sender_clean, num_media)
+    # ── 7. Despachar según tipo ───────────────────────────────────────────────
+    if msg_type == 'text':
+        incoming_msg = msg.get('text', {}).get('body', '').strip()
+        print(f"Text: {incoming_msg}")
+        handle_text_message(sender, incoming_msg)
+
+    elif msg_type in ('image', 'document', 'video', 'audio'):
+        # Meta no incluye la URL directamente — hay que pedirla a la Graph API con el media_id
+        media_id = msg.get(msg_type, {}).get('id', '')
+        handle_media_upload_meta(sender, media_id, msg_type)
+
     else:
-        reply = handle_text_message(sender_clean, incoming_msg)
+        # Tipo no soportado (location, sticker, reaction, etc.)
+        print(f"[WEBHOOK] ℹ️ Tipo '{msg_type}' no manejado — ignorando")
 
-    # Crear respuesta TwiML
-    response = MessagingResponse()
-    response.message(reply)
-
-    twiml_response = str(response)
-    print(f"📤 TwiML XML:")
-    print(twiml_response)
-    print(f"📊 TwiML Length: {len(twiml_response)}\n")
-
-    return twiml_response
+    # Meta requiere 200 para no reintentar el envío
+    return '', 200
 
 
 # ==========================================
@@ -385,89 +468,134 @@ def _process_calendar_change(professional_phone: str):
 # HANDLERS DE TEXTO Y MEDIA
 # ==========================================
 
-def handle_text_message(sender, message):
+def handle_text_message(sender: str, message: str) -> None:
     """
-    Handle incoming text messages.
-    Routes message to bot for processing.
+    Procesa un mensaje de texto y envía la respuesta via message_sender.
+
+    A diferencia de Twilio (donde se devolvía TwiML en el response HTTP),
+    con Meta la respuesta se envía de forma proactiva con un POST separado
+    a la Graph API, manejado por message_sender.py.
 
     Args:
-        sender (str): Phone number without 'whatsapp:' prefix
-        message (str): Text content of the message
-
-    Returns:
-        str: Reply message to send back
+        sender:  Número en formato E.164 (ej: +5491112345678)
+        message: Texto del mensaje recibido
     """
     reply = bot.process_message(sender, message)
-    return reply
+    if reply:
+        _send_reply(sender, reply)
 
 
-def handle_media_upload(sender, num_media):
+def _send_reply(phone: str, message: str) -> None:
     """
-    Procesa archivos recibidos por WhatsApp.
-    Si el remitente es un profesional activo con Calendar configurado
-    y el archivo es CSV/Excel, analiza la agenda y presenta el menú
-    de confirmación.
+    Envía una respuesta al usuario via Meta Graph API.
+
+    Delega en message_sender para manejar reintentos y logging.
+
+    Args:
+        phone:   Número en formato E.164
+        message: Texto a enviar
+    """
+    from src.core.message_sender import message_sender
+    message_sender.send_message(phone, message)
+
+
+def handle_media_upload_meta(sender: str, media_id: str, media_type: str) -> None:
+    """
+    Procesa archivos recibidos por WhatsApp via Meta Cloud API.
+
+    Diferencia clave vs Twilio:
+    - Twilio incluía MediaUrl0 directamente en el POST del webhook
+    - Meta solo incluye un media_id; la URL real hay que pedirla
+      a la Graph API con ese ID y descargarla con el token Bearer
+
+    Flujo:
+        1. Resolver URL real del archivo (GET graph.facebook.com/<media_id>)
+        2. Verificar identidad del remitente ANTES de descargar
+        3. Descargar y parsear si es CSV/Excel
+        4. Analizar y presentar menú de confirmación al profesional
+
+    Args:
+        sender:     Número en formato E.164 (ej: +5491112345678)
+        media_id:   ID del archivo en los servidores de Meta
+        media_type: 'image', 'document', 'video', 'audio'
     """
     from src.services.user_service import user_service
-    from src.services.calendar_import_service import calendar_import_service  # ← src.
+    from src.services.calendar_import_service import calendar_import_service
     from src.core.states import ConversationState, session_manager
 
-    for i in range(num_media):
-        try:
-            media_url    = request.values.get(f'MediaUrl{i}', '')
-            content_type = request.values.get(f'MediaContentType{i}', '')
+    token       = os.getenv('META_WHATSAPP_TOKEN', '')
+    api_version = os.getenv('META_API_VERSION', 'v22.0')
 
-            print(f"[MEDIA] 📎 {content_type} — {media_url[:60]}...")
+    try:
+        # ── Paso 1: resolver la URL real del archivo ──────────────────────────
+        media_info_resp = requests.get(
+            f"https://graph.facebook.com/{api_version}/{media_id}",
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10,
+        )
+        media_info   = media_info_resp.json()
+        media_url    = media_info.get('url', '')
+        content_type = media_info.get('mime_type', '')
 
-            # ── Verificar identidad ANTES de descargar nada ───────────────
-            user_info = user_service.identify_user(sender)
-            profile   = user_info.get('profile', {}) or {}
+        print(f"[MEDIA] 📎 {content_type} — {media_url[:60]}...")
 
-            if not calendar_import_service.is_spreadsheet(content_type):
-                continue  # No es CSV/Excel — ignorar este archivo
+        if not media_url:
+            print(f"[MEDIA] ❌ No se pudo obtener URL para media_id={media_id}")
+            _send_reply(sender, "❌ No pude acceder al archivo. Intentá de nuevo.")
+            return
 
-            if user_info.get('user_type') != 'professional':
-                return "📎 Archivo recibido, pero no tenés permisos para cargar agendas."
+        # ── Paso 2: verificar identidad ANTES de descargar nada ──────────────
+        user_info = user_service.identify_user(sender)
+        profile   = user_info.get('profile', {}) or {}
 
-            if not profile.get('is_active'):
-                return "❌ Tu cuenta no está activa. Contactá al administrador."
+        if not calendar_import_service.is_spreadsheet(content_type):
+            # No es CSV/Excel — no hay nada que procesar por ahora
+            return
 
-            if not profile.get('calendar_id'):
-                return (
-                    "⚠️ Tu Google Calendar no está conectado todavía.\n\n"
-                    "Una vez que lo configures podrás cargar tu agenda desde aquí."
-                )
+        if user_info.get('user_type') != 'professional':
+            _send_reply(sender, "📎 Archivo recibido, pero no tenés permisos para cargar agendas.")
+            return
 
-            # ── Todas las validaciones pasaron — procesar ─────────────────
-            print(f"[MEDIA] 📋 Profesional activo {sender} envió agenda")
+        if not profile.get('is_active'):
+            _send_reply(sender, "❌ Tu cuenta no está activa. Contactá al administrador.")
+            return
 
-            rows, error = calendar_import_service.download_and_parse(
-                file_url     = media_url,
-                content_type = content_type,
-            )
-            if error:
-                return error
+        if not profile.get('calendar_id'):
+            _send_reply(sender, (
+                "⚠️ Tu Google Calendar no está conectado todavía.\n\n"
+                "Una vez que lo configures podrás cargar tu agenda desde aquí."
+            ))
+            return
 
-            analysis = calendar_import_service.analyze(
-                rows               = rows,
-                professional_phone = sender,
-            )
+        # ── Paso 3: descargar y parsear — con token Bearer de Meta ───────────
+        # Meta requiere Authorization header para descargar el archivo
+        print(f"[MEDIA] 📋 Profesional activo {sender} envió agenda")
 
-            session = session_manager.get_session(sender)
-            session.set_temp('agenda_analysis', analysis)
-            session.transition_to(ConversationState.PROF_AGENDA_IMPORT_REVIEW)
+        rows, error = calendar_import_service.download_and_parse(
+            file_url     = media_url,
+            content_type = content_type,
+            auth_headers = {'Authorization': f'Bearer {token}'},
+        )
+        if error:
+            _send_reply(sender, error)
+            return
 
-            return calendar_import_service.format_review_menu(analysis)
+        # ── Paso 4: analizar y presentar menú ────────────────────────────────
+        analysis = calendar_import_service.analyze(
+            rows               = rows,
+            professional_phone = sender,
+        )
 
-        except Exception as e:
-            print(f"[MEDIA] ❌ Error procesando media {i}: {e}")
-            import traceback
-            traceback.print_exc()
+        session = session_manager.get_session(sender)
+        session.set_temp('agenda_analysis', analysis)
+        session.transition_to(ConversationState.PROF_AGENDA_IMPORT_REVIEW)
 
-    return (
-        "📎 Archivo recibido. Solo proceso archivos CSV y Excel "
-        "para carga de agenda."
-    )
+        _send_reply(sender, calendar_import_service.format_review_menu(analysis))
+
+    except Exception as e:
+        print(f"[MEDIA] ❌ Error procesando media {media_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ==========================================
 # APPLICATION ENTRY POINT
@@ -486,12 +614,13 @@ if __name__ == '__main__':
         print(f"❌ Configuration error: {e}\n")
         print("⚠️  Running anyway for testing purposes...\n")
 
-    print(f"🚀 Starting WhatsApp webhook server...")
-    print(f"📍 Listening on: http://0.0.0.0:{Config.FLASK_PORT}")
-    print(f"📍 Webhook endpoint: http://0.0.0.0:{Config.FLASK_PORT}/webhook")
-    print(f"📍 Google Calendar webhook: http://0.0.0.0:{Config.FLASK_PORT}/google-calendar/webhook")
-    print(f"\n💡 Use ngrok to expose this server to the internet:")
-    print(f"   ngrok http {Config.FLASK_PORT}\n")
+    print(f"🚀 Starting WhatsApp webhook server (Meta Cloud API)...")
+    print(f"📍 Listening on:      http://0.0.0.0:{Config.FLASK_PORT}")
+    print(f"📍 Webhook verify:    GET  http://0.0.0.0:{Config.FLASK_PORT}/webhook")
+    print(f"📍 Webhook msgs:      POST http://0.0.0.0:{Config.FLASK_PORT}/webhook")
+    print(f"📍 Google Calendar:   POST http://0.0.0.0:{Config.FLASK_PORT}/google-calendar/webhook")
+    print(f"\n💡 Configurar en Meta: developers.facebook.com → App → WhatsApp → Webhooks")
+    print(f"   URL: {os.getenv('WEBHOOK_URL', 'https://gaxoblanco.com')}/webhook\n")
 
     # ── Scheduler ──────────────────────────────────────────────────────────
     # Corre en background thread. En development los jobs no se disparan solos

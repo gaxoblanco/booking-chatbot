@@ -1,11 +1,8 @@
 # WhatsApp Bot Dependencies
-# Minimal setup for webhook testing
+# Meta Cloud API — sin Twilio
 
 # Web framework for webhook endpoint
 flask==3.0.0
-
-# Twilio SDK for WhatsApp integration
-twilio==8.10.0
 
 # Environment variables management
 python-dotenv==1.0.0
