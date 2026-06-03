@@ -62,6 +62,12 @@ class Config:
     ALLOW_KEY_REUSE = os.getenv('ALLOW_KEY_REUSE', 'false').lower() == 'true'
 
     # ==========================================
+    # MEET LINK — Google Meet
+    # ==========================================
+    # 'never' | 'always' | 'virtual_only' (pendiente)
+    MEET_LINK_MODE = os.getenv("MEET_LINK_MODE", "never")
+
+    # ==========================================
     # VALIDATION
     # ==========================================
     @staticmethod
@@ -104,6 +110,7 @@ class Config:
         print(f"Webhook URL:      {Config.WEBHOOK_URL}")
         print(f"Meta API version: {Config.META_API_VERSION}")
         print(f"Certificates Dir: {Config.CERTIFICATES_DIR}")
+        print(f"Meet Link Mode:   {Config.MEET_LINK_MODE}")
 
         # Datos sensibles — mostrar solo los primeros/últimos caracteres
         if Config.META_PHONE_NUMBER_ID:

@@ -209,6 +209,17 @@ class DomainConfig:
     BOOKING_ATTEMPT_WINDOW_MINUTES  = 60  # ventana en minutos
     BOOKING_ATTEMPT_BLOCK_MINUTES   = 30  # bloqueo si supera el límite
 
+    # ----------------------------------------------------------
+    # MEET LINK — Google Meet en confirmación de turno
+    # ----------------------------------------------------------
+    # 'never'        → nunca genera Meet (centros presenciales)
+    # 'always'       → siempre genera Meet (freelance, remoto)
+    # 'virtual_only' → ⚠️ NO DISPONIBLE — ver docs/MEET_LINK_MODE.md
+    #
+    # Configurar via MEET_LINK_MODE en .env
+    from src.config.config import Config
+    MEET_LINK_MODE: str = Config.MEET_LINK_MODE
+
     # Agendamiento para terceros
     ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?
     REQUIRE_PATIENT_DATA = True  # Si es para terceros, ¿pedir datos del paciente?
