@@ -2767,6 +2767,11 @@ class ClientHandler:
         if apt.get('reason'):
             reason_display = f"\n📝 Motivo: {apt['reason']}"
 
+        # Meet link — solo si existe en la cita
+        meet_line = ""
+        if apt.get('meet_link'):
+            meet_line = f"\n🎥 {apt['meet_link']}"
+
         return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
             id=session.get_temp('selected_appointment_number', apt['id']),
             date=date_full,
@@ -2777,7 +2782,8 @@ class ClientHandler:
             duration=apt['duration_minutes'],
             reason_display=reason_display,
             status_badge=status_badge,
-            options=options
+            options=options,
+            meet_line=meet_line,
         )
 
     # ==========================================
@@ -3181,6 +3187,11 @@ class ClientHandler:
             name_str = f" — {tp_name}" if tp_name else ""
             booking_for_info = f"\n    👤 Paciente: tu {relation}{name_str}"
 
+        # Leer meet_link del appointment recién creado
+        apt_data = db.get_appointment(int(appointment_id)) if appointment_id else None
+        meet_link = apt_data.get('meet_link') if apt_data else None
+        meet_line = f"🎥 {meet_link}\n\n" if meet_link else ""
+
         return appointment_messages.BOOKING_SUCCESS.format(
             slot_name_upper=DomainConfig.APPOINTMENT_NAME_UPPER,
             slot_name_plural=DomainConfig.APPOINTMENT_NAME_PLURAL,
@@ -3190,7 +3201,9 @@ class ClientHandler:
             day=day_name,
             date=date_formatted,
             start=booking_start_time,
+            meet_line=meet_line,
         )
+    
     def _handle_third_party_escape(self, session: SessionData, message: str):
         """
         Helper compartido — detecta si el usuario quiere escapar del flujo de tercero.
