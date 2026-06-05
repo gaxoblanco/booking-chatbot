@@ -545,7 +545,7 @@ class BotController:
                             print(f"[CONTEXT] ⚠️ Falta información crítica")
                             missing = self._get_missing_required_entities(accumulated)
                             return self._ask_for_missing_entity(session, accumulated, missing)
-
+                        
             # Conversión de input natural (solo en CLIENT_FILTER_INPUT)
             if session.state == ConversationState.CLIENT_FILTER_INPUT:
                 converted_message = self._convert_natural_input(
@@ -1021,6 +1021,13 @@ class BotController:
         if professional_name_filter:
             filters['professional_name'] = professional_name_filter
             print(f"[NLU] 🎯 Agregando filtro de nombre a BD: '{professional_name_filter}'")
+
+        # Modo freelance — forzar filtro por el profesional único
+        if session.get_temp('flow_context') == 'freelance':
+            from src.config.config import Config
+            prof_phone = getattr(Config, 'SINGLE_PROFESSIONAL_PHONE', '').strip()
+            if prof_phone:
+                filters['professional_phone_filter'] = prof_phone
         
         # Guardar filtros en contexto (para refinamiento futuro)
         conv_context.save_search_filters(filters)
@@ -1036,6 +1043,22 @@ class BotController:
         session.set_temp('search_results', results)
         session.set_temp('search_date', date_str)
         session.set_temp('search_date_formatted', date_formatted)
+
+        # Modo freelance — ir directo al detalle sin pasar por lista de resultados
+        if session.get_temp('flow_context') == 'freelance' and results:
+            professional = results[0]
+            session.set_temp('selected_professional', professional)
+            session.transition_to(ConversationState.CLIENT_VIEW_DETAIL_WITH_BOOKING)
+            session_manager.save_session(session)
+            return client_service.format_professional_detail_with_slots(
+                professional=professional,
+                date_str=date_str,
+                time_preference=filters.get('time_preference'),
+            )
+
+        session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
+        session_manager.save_session(session)
+
         session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
         # Persistir inmediatamente — el siguiente mensaje debe leer este estado
         session_manager.save_session(session)
@@ -1050,6 +1073,7 @@ class BotController:
                 turno_alt = OPUESTO[time_pref]
                 filters_alt = {**filters, 'time_preference': turno_alt}
                 results_alt = client_service.search_professionals_by_filters(
+                    professional_phone_filter=filters.get('professional_phone_filter'),
                     date_str=date_str, **filters_alt, limit=10
                 )
                 if results_alt:
