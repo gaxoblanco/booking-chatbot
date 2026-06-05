@@ -2783,6 +2783,13 @@ class ClientHandler:
             message = '0'
 
         if message == '0':
+            # Modo freelance — volver a preguntar horario
+            if session.get_temp('flow_context') == 'freelance':
+                session.set_temp('freelance_filters_shown', False)
+                session.transition_to(ConversationState.CLIENT_FREELANCE_BOOK_TIME)
+                from src.messages.loader import get_msg
+                return get_msg('CLIENT_ASK_HORA')
+            
             results = session.get_temp('search_results', [])
             if results:
                 # Format results with available slots
