@@ -1,6 +1,6 @@
 # 🏗️ ARQUITECTURA DEL PROYECTO
 ## Sistema de Gestión de Turnos — WhatsApp Bot
-**Versión 6.2 — Abril 2026**
+**Versión 7.0 — Junio 2026**
 
 ---
 
@@ -8,29 +8,34 @@
 
 1. [Visión General](#visión-general)
 2. [Estructura del Proyecto](#estructura-del-proyecto)
-3. [Sistema de Mensajes y Tonos](#sistema-de-mensajes-y-tonos)
-4. [Sistema NLU/ML](#sistema-nluml)
-5. [Integraciones Externas](#integraciones-externas)
-6. [Seguridad](#seguridad)
-7. [Flujo de Datos](#flujo-de-datos)
-8. [Base de Datos](#base-de-datos)
-9. [CRON Jobs](#cron-jobs)
-10. [Setup y Deployment](#setup-y-deployment)
-11. [Testing](#testing)
-12. [Variables de Entorno](#variables-de-entorno)
+3. [Modos de Operación](#modos-de-operación)
+4. [Sistema de Mensajes y Tonos](#sistema-de-mensajes-y-tonos)
+5. [Sistema NLU/ML](#sistema-nluml)
+6. [Integraciones Externas](#integraciones-externas)
+7. [Seguridad](#seguridad)
+8. [Flujo de Datos](#flujo-de-datos)
+9. [Base de Datos](#base-de-datos)
+10. [CRON Jobs](#cron-jobs)
+11. [Setup y Deployment](#setup-y-deployment)
+12. [Testing](#testing)
+13. [Variables de Entorno](#variables-de-entorno)
 
 ---
 
 ## 📊 VISIÓN GENERAL
 
-Bot conversacional de WhatsApp para gestión completa de turnos médicos.
-Permite a clientes buscar y reservar turnos, y a profesionales gestionar
-su agenda — todo desde WhatsApp, sin apps adicionales.
+Bot conversacional de WhatsApp para gestión completa de turnos. Permite a clientes
+buscar y reservar turnos con profesionales, y a profesionales gestionar su agenda —
+todo desde WhatsApp, sin apps adicionales.
 
-### Stack Tecnológico v6.0
+Soporta dos modos de operación: **multi-profesional** (centro con N profesionales,
+búsqueda con filtros) y **profesional único** (freelancer o consultorio unipersonal,
+flujo directo sin filtros).
+
+### Stack Tecnológico v7.0
 
 ```
-WhatsApp (Twilio API)
+WhatsApp (Meta Cloud API)
         │
         ▼
 Flask Webhook (Python 3.10)
@@ -43,17 +48,23 @@ Flask Webhook (Python 3.10)
 │                                                     │
 │  ┌─────────────────────┐  ┌──────────────────────┐  │
 │  │  HybridIntentDetect │  │  SessionManager      │  │
-│  │  ML (spaCy) 99.2%  │  │  → Redis (TTL 30min) │  │
+│  │  ML (spaCy) 98.1%  │  │  → Redis (TTL 30min) │  │
 │  │  + Rules fallback  │  │  → Memory fallback   │  │
 │  └─────────────────────┘  └──────────────────────┘  │
 │                                                     │
 │  ┌─────────────────────┐  ┌──────────────────────┐  │
 │  │  ClientHandler      │  │  ProfessionalHandler │  │
-│  │  - Búsqueda         │  │  - Ver agenda        │  │
-│  │  - Reservas         │  │  - Editar perfil     │  │
-│  │  - Cancelaciones    │  │  - Cargar agenda     │  │
-│  │  - Reprogramación   │  │    (CSV/Excel)       │  │
+│  │  - Búsqueda multi   │  │  - Ver agenda        │  │
+│  │  - Flujo freelance  │  │  - Editar perfil     │  │
+│  │  - Reservas         │  │  - Cargar agenda     │  │
+│  │  - Cancelaciones    │  │    (CSV/Excel)       │  │
+│  │  - Reprogramación   │  │                      │  │
 │  └─────────────────────┘  └──────────────────────┘  │
+│                                                     │
+│  ┌─────────────────────┐                            │
+│  │  FreelanceHandler   │  ← sub-flujo profesional  │
+│  │  ReminderHandler    │    único + recordatorios  │
+│  └─────────────────────┘                            │
 └────────────────────────┬────────────────────────────┘
                          │
           ┌──────────────┼──────────────┐
@@ -83,13 +94,16 @@ Flask Webhook (Python 3.10)
 |---|---|
 | Backend | Python 3.10 |
 | Framework | Flask |
-| Mensajería | Twilio WhatsApp API |
+| Mensajería | Meta Cloud API (WhatsApp Business) |
 | Base de datos | SQLite |
 | Calendario | Google Calendar API (Service Account) |
-| NLP/ML | spaCy 3.7.2 + TextCatEnsemble (99.2% accuracy) |
+| NLP/ML | spaCy 3.7.2 + TextCatEnsemble (98.1% accuracy) |
 | Sesiones | Redis 7 (fallback: memoria) |
 | Container | Docker + Docker Compose |
 | Archivos | FileParser (CSV + Excel via openpyxl) |
+
+> **Migración Twilio → Meta:** A partir de v7.0 el bot usa Meta Cloud API directamente.
+> No hay intermediario. Ver sección [Meta Cloud API](#meta-cloud-api).
 
 ---
 
@@ -107,11 +121,13 @@ booking-chatbot/
 │   │   ├── bot_controller.py            # Orquestador principal, NLU dispatch
 │   │   ├── client_handler.py            # Flujo del cliente (búsqueda → reserva → gestión)
 │   │   ├── professional_handler.py      # Flujo del profesional + importación de agenda
+│   │   ├── freelance_handler.py         # Sub-flujo profesional único (SINGLE_PROFESSIONAL_MODE)
 │   │   └── reminder_handler.py          # Manejo de respuestas a recordatorios
 │   │
 │   ├── 📁 core/
 │   │   ├── states.py                    # ConversationState enum + SessionManager
-│   │   │                                #   estados: AWAITING_REMINDER_RESPONSE,
+│   │   │                                #   incluye: CLIENT_FREELANCE_BOOK_DATE/TIME
+│   │   │                                #            AWAITING_REMINDER_RESPONSE
 │   │   │                                #            AWAITING_SLOT_OFFER (waitlist)
 │   │   ├── session_backends.py          # RedisSessionBackend + MemorySessionBackend
 │   │   ├── conversation_context.py      # Acumulación de entidades entre mensajes
@@ -122,9 +138,12 @@ booking-chatbot/
 │   │
 │   ├── 📁 services/
 │   │   ├── user_service.py              # Identificación cliente/profesional/nuevo
+│   │   │                                #   generate_welcome_message() es modo-aware
 │   │   ├── client_service.py            # Búsqueda, cancel (is_owner OR is_patient)
+│   │   │                                #   search_professionals() acepta professional_phone_filter
 │   │   ├── professional_service.py      # Gestión profesionales, horarios, Calendar
 │   │   ├── appointment_service.py       # CRUD citas Google Calendar + BD
+│   │   │                                #   MEET_LINK_MODE controla conferenceDataVersion
 │   │   ├── reminder_service.py          # Recordatorios automáticos
 │   │   ├── waitlist_service.py          # Sistema waitlist + cascada de ofertas
 │   │   ├── cancellation_notifier.py     # Notifica paciente cuando prof cancela
@@ -149,8 +168,6 @@ booking-chatbot/
 │   │   ├── 📁 waitlist/                 # Flujo de adelantamiento de turnos
 │   │   │   ├── __init__.py
 │   │   │   └── slot_offer_handler.py    # Intercepta respuestas a ofertas de slot
-│   │   │                                #   should_handle_as_slot_offer()
-│   │   │                                #   handle_slot_offer_response()
 │   │   │
 │   │   ├── 📁 scheduler/
 │   │   │   └── engine.py                # APScheduler — 7 jobs registrados
@@ -169,11 +186,17 @@ booking-chatbot/
 │   │
 │   ├── 📁 database/
 │   │   └── database.py                  # SQLite, _init_db, migraciones defensivas
+│   │                                    #   search_professionals() acepta professional_phone_filter
 │   │
 │   ├── 📁 config/
 │   │   ├── domain_config.py             # Presets: SALUD, PSICOLOGIA, BELLEZA, etc.
+│   │   │                                #   MEET_LINK_MODE: never|always|virtual_only(⚠️pendiente)
 │   │   ├── domain_filters_config.py     # Filtros habilitados por dominio
-│   │   └── settings.py                  # Variables de entorno
+│   │   ├── filter_config.py             # FeatureFlags (ASK_MODALITY stub)
+│   │   └── config_validator.py          # Validación de config al boot (fail fast)
+│   │                                    #   _validate_meet_link_mode()
+│   │                                    #   _validate_single_professional_mode()
+│   │                                    #   _validate_demo_mode()
 │   │
 │   ├── 📁 messages/                     # ← Sistema de tonos multi-tenant
 │   │   ├── loader.py                    # Carga tono según TENANT_TONE (singleton)
@@ -182,8 +205,9 @@ booking-chatbot/
 │   │   ├── messages_appointments.py     # Wrapper @property + helpers estáticos
 │   │   ├── messages_professional.py     # Wrapper @property → loader.get_msg()
 │   │   └── 📁 tones/
-│   │       ├── demo.py                  # Tono aspiracional (número de demostración)
-│   │       └── coloquial.py             # Tono vecinal (centros locales, Formosa/NOA)
+│   │       ├── demo.py                  # Tono aspiracional (DOMAIN_PRESET=DEMO)
+│   │       ├── coloquial.py             # Tono vecinal (centros locales)
+│   │       └── freelance.py             # Tono profesional único (SINGLE_PROFESSIONAL_MODE)
 │   │
 │   ├── 📁 utils/
 │   │   └── validators.py                # Validación nombre, teléfono AR, edad
@@ -213,32 +237,39 @@ booking-chatbot/
 │       └── evaluate_spacy_model.py
 │
 ├── 📁 tests/
-│   ├── test_issue1_booking_limits.py
-│   ├── test_issue2_global_booking_limit.py
-│   ├── test_issue3_rate_limiter.py
-│   ├── test_issue4_expired_offers.py
-│   ├── test_issue5_data_isolation.py
-│   ├── test_issue6_phone_validation.py
-│   ├── test_issue7_cancellation_notifier.py
-│   ├── test_issue8_patient_phone.py
-│   ├── test_issue9_booking_spam.py
-│   ├── test_gap2_message_sender.py
-│   ├── test_gap4_file_parser.py
-│   ├── test_gap4_calendar_import.py
-│   ├── test_gap6_cancellation_policy.py
-│   ├── test_gap8_session_manager.py
-│   ├── test_gap9_concurrent_booking.py
-│   ├── preview_calendar_import_ux.py    # Preview mensajes WhatsApp en terminal
-│   ├── test_bot_interactive.py          # Test E2E interactivo
+│   ├── chat.py                           # ⭐ Terminal chat interactivo (desarrollo)
+│   ├── 📁 core/
+│   ├── 📁 features/
+│   │   ├── preview_calendar_import_ux.py
+│   │   ├── test_appointments_flow.py
+│   │   ├── test_bot_interactive.py        # ⭐ Terminal chat interactivo  - requiere webhook
+│   │   ├── test_calendar_import.py
+│   │   ├── test_e2e_reminder_flow.py
+│   │   ├── test_e2e_waitlist.py
+│   │   ├── test_integration.py
+│   │   ├── test_meet_link.py            # ⭐ NUEVO — 11 tests para MEET_LINK_MODE
+│   │   └── test_user_service_interactive.py
 │   ├── 📁 reminders/
-│   │   ├── test_reminder_responses.py   # Escenarios F-J: respuestas al recordatorio
-│   │   └── test_reminder_window.py      # Escenarios K-O: ventana horaria
+│   │   ├── run_all.py
+│   │   ├── test_reminder_failures.py
+│   │   ├── test_reminder_responses.py
+│   │   ├── test_reminder_window.py
+│   │   └── test_retry.py
+│   ├── 📁 security/
+│   │   ├── test_message_sanitizer.py
+│   │   ├── test_security_phase1.py
+│   │   ├── test_security_phase2.py
+│   │   └── test_security_phase3.py
+│   ├── 📁 smoke/
+│   │   ├── check_pii_logs.py
+│   │   └── test_smoke_production.py
 │   └── 📁 waitlist/
-│       └── test_waitlist_e2e.py         # E2E: cancelación → oferta → acepta/rechaza
+│       └── test_waitlist_e2e.py
 │
 ├── 📁 docker/
 │   ├── Dockerfile
 │   ├── docker-compose.yml               # whatsapp-demo + redis
+│   ├── .env.example                     # Template completo con todos los modos
 │   └── docker-entrypoint.sh
 │
 ├── 📁 data/
@@ -247,31 +278,101 @@ booking-chatbot/
 │   └── rechazados/                      # CSVs de pacientes no cargados
 │
 └── 📁 docs/
-    ├── ARCHITECTURE.md                  # Este archivo — índice del sistema
-    ├── TONE_SYSTEM.md                   # Sistema de tonos: cómo crear y registrar
+    ├── ARCHITECTURE.md                  # Este archivo
+    ├── TONE_SYSTEM.md                   # Sistema de tonos: crear, registrar y verificar
     ├── SECURITY.md                      # Plan y estado de seguridad completo
     ├── SETUP_INSTRUCTIONS.md            # Setup paso a paso
+    ├── SERVER_CONFIG.md                 # Configuración del VPS (Donweb)
     ├── GOOGLE_CALENDAR_SERVICE.md       # Integración Google Calendar
-    ├── INTENT_DETECTION_SYSTEM.md       # Sistema NLU/ML en detalle
+    ├── INTENT_DETECTION_SYSTEM.md       # Arquitectura del sistema NLU/ML
     ├── REMINDER_INTEGRATION.md          # Ciclo completo de recordatorios automáticos
     ├── WAITLIST_INTEGRATION.md          # Ciclo completo de adelantamiento de turnos
     ├── CONVERSATION_CONTEXT_SERVICE.md  # Sistema de contexto conversacional entre sesiones
+    ├── CONVERSATION_ROUTES.md           # Mapa de rutas conversacionales
+    ├── MEET_LINK_MODE.md                # Feature MEET_LINK_MODE (⚠️ parcialmente implementado)
     ├── ml_agenda_import_intents.md      # Spec intenciones importación agenda
     └── ml_book_for_third_party.md       # Spec intención agendar para terceros
 ```
 
 ---
 
-## 🎨 SISTEMA DE MENSAJES Y TONOS
+## 🔀 MODOS DE OPERACIÓN
 
-### Concepto
+El sistema soporta dos modos que se configuran íntegramente desde el `.env`.
+No hay cambios de código al cambiar de modo.
 
-Cada instancia del bot puede hablar con una personalidad distinta (tono)
-sin modificar el código. El tono se configura por variable de entorno.
+### Modo multi-profesional (default)
+
+Centro con N profesionales. El cliente busca con filtros (zona, fecha, especialidad, etc.),
+ve una lista de resultados y elige.
 
 ```env
-TENANT_TONE=coloquial   # o: demo
+SINGLE_PROFESSIONAL_MODE=false
+DOMAIN_PRESET=SALUD          # o PSICOLOGIA, BELLEZA, etc.
+TENANT_TONE=coloquial
+MEET_LINK_MODE=never
 ```
+
+### Modo profesional único (freelance)
+
+Freelancer o consultorio unipersonal. No hay búsqueda ni filtros de selección —
+el sistema va directo a fecha, horario y slots del profesional configurado.
+
+```env
+SINGLE_PROFESSIONAL_MODE=true
+SINGLE_PROFESSIONAL_PHONE=+5491112345678   # debe existir en BD
+DOMAIN_PRESET=SALUD
+TENANT_TONE=freelance
+MEET_LINK_MODE=always                       # típico para remoto
+```
+
+### Reglas de compatibilidad
+
+| Combinación | Válida | Motivo |
+|---|---|---|
+| `DOMAIN_PRESET=DEMO` + `TENANT_TONE=demo` | ✅ | Demo del producto |
+| `DOMAIN_PRESET=DEMO` + `TENANT_TONE=freelance` | ❌ | El validador lo bloquea |
+| `SINGLE_PROFESSIONAL_MODE=true` + `TENANT_TONE=coloquial` | ❌ | El validador lo bloquea |
+| `SINGLE_PROFESSIONAL_MODE=true` + `DOMAIN_PRESET=DEMO` | ❌ | El validador lo bloquea |
+| `MEET_LINK_MODE=virtual_only` | ❌ | Pendiente — requiere ASK_MODALITY |
+
+El `config_validator.py` valida estas reglas al arrancar — fail fast, el servidor
+no levanta si la configuración es incoherente.
+
+### Flujo del modo profesional único
+
+```
+Cliente: "hola"
+    │
+    ▼ handle_client_main_menu → switch SINGLE_PROFESSIONAL_MODE
+    │
+    ▼ handle_freelance_start()          [CLIENT_FREELANCE_BOOK_DATE]
+    │   "¿Qué fecha te viene bien?"
+    │
+    ▼ handle_freelance_book_date()
+    │   parse_date() → guardar en session.temp
+    │
+    ▼ handle_freelance_book_time()      [CLIENT_FREELANCE_BOOK_TIME]
+    │   "¿Mañana / tarde / me da igual?"
+    │
+    ▼ pantalla de filtros activos (vitrina del sistema)
+    │   muestra: fecha, horario, modalidad — solo informativos
+    │   1 sola opción: "Ver horarios disponibles"
+    │
+    ▼ _load_professional_and_show_detail()
+    │   search_professionals(professional_phone_filter=SINGLE_PROFESSIONAL_PHONE)
+    │
+    ▼ CLIENT_VIEW_DETAIL_WITH_BOOKING   ← punto de reunificación con flujo normal
+    │
+    ▼ ... booking, confirmación, recordatorios, cancelación (sin cambios)
+```
+
+---
+
+## 🎨 SISTEMA DE MENSAJES Y TONOS
+
+Cada instancia habla con una personalidad distinta sin modificar código.
+El tono se configura por variable de entorno y se valida al arrancar.
 
 ### Flujo de carga
 
@@ -285,17 +386,22 @@ src/messages/loader.py  ← singleton, carga una vez al arrancar
       │
       ▼
 src/messages/messages_*.py  ← wrappers con @property
-      │
-      ▼
-client_handler.py / bot_controller.py  ← usan appointment_messages.CLAVE
 ```
 
 ### Tonos disponibles
 
-| Tono | Uso | Personalidad |
-|---|---|---|
-| `demo` | Número de demostración | Aspiracional, muestra el valor del producto |
-| `coloquial` | Centros locales (Formosa/NOA) | Vecinal, directo, sin corporativismo |
+| Tono | Uso | Requiere | Personalidad |
+|---|---|---|---|
+| `coloquial` | Centros locales | `SINGLE_PROFESSIONAL_MODE=false` | Vecinal, directo |
+| `freelance` | Profesional único | `SINGLE_PROFESSIONAL_MODE=true` | Personal, técnico |
+| `demo` | Demostración del producto | `DOMAIN_PRESET=DEMO` | Aspiracional |
+
+### Constantes específicas del tono freelance
+
+```python
+CLIENT_FREELANCE_FILTERS_INFO      # Pantalla de filtros activos (vitrina)
+CLIENT_FREELANCE_FILTER_LINE_*     # Líneas individuales de filtros
+```
 
 ### Agregar un tono nuevo
 
@@ -303,6 +409,7 @@ client_handler.py / bot_controller.py  ← usan appointment_messages.CLAVE
 2. Editar los strings
 3. Registrar en `src/messages/loader.py`: agregar al set `REGISTERED`
 4. Configurar en `.env`: `TENANT_TONE=nuevo_tono`
+5. Si requiere validación cruzada con otros flags, agregar en `config_validator.py`
 
 **Documentación completa:** `docs/TONE_SYSTEM.md`
 
@@ -333,7 +440,7 @@ HybridIntentDetector
 | `view_my_appointments` | Ver mis citas |
 | `view_tomorrow` | Ver disponibles mañana |
 | `cancel_appointment` | Cancelar turno |
-| `info_center` | Información del centro |
+| `info_center` | Información del centro/servicio |
 | `greeting` | Saludo |
 | `unknown` | Fuera de alcance |
 | `agenda_view_ready` | Revisar agenda importada (sin errores) |
@@ -345,36 +452,40 @@ HybridIntentDetector
 
 ### Estados con NLU habilitado
 
-El NLU solo corre en estados donde el usuario puede escribir texto libre.
-En estados de selección numérica (resultados, horarios) se interceptan
-los números directamente para evitar clasificaciones erróneas.
-
 ```python
 nlu_enabled_states = [
     START, CLIENT_MAIN_MENU, CLIENT_NEW_USER_MENU,
     CLIENT_MULTIFILTER_MENU, CLIENT_FILTER_INPUT,
-    CLIENT_VIEW_APPOINTMENTS, CLIENT_APPOINTMENT_DETAIL,
-    CLIENT_BOOKING_CONFIRMED, PROF_MAIN_MENU, PROF_AGENDA_IMPORT_REVIEW,
+    CLIENT_VIEW_APPOINTMENTS, PROF_MAIN_MENU,
+    PROF_AGENDA_IMPORT_REVIEW,
+    CLIENT_FREELANCE_BOOK_DATE,  # acepta fecha en texto libre
+    # CLIENT_FREELANCE_BOOK_TIME excluido: solo acepta 1/2/3
 ]
 ```
-
-### Cambio de intención en estados numéricos
-
-Si el usuario escribe texto libre en un estado de selección numérica,
-el handler devuelve `None`. El `BotController` detecta el `None`,
-resetea el estado a `START` y reprocesa el mensaje por el NLU en el
-mismo turno — sin pedirle al usuario que repita.
 
 ---
 
 ## 🔗 INTEGRACIONES EXTERNAS
 
-### Twilio WhatsApp
+### Meta Cloud API
 
-- Recibe mensajes via webhook POST `/webhook`
-- Envía mensajes via TwiML XML
+A partir de v7.0 el bot usa Meta Cloud API directamente (sin Twilio).
+
+- Recibe mensajes via webhook `POST /webhook`
+- Verifica firma `X-Hub-Signature-256` (HMAC-SHA256 con APP_SECRET)
+- Envía mensajes via `POST https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages`
 - Usa templates aprobados para recordatorios y ofertas de waitlist
-- Valida firma HMAC en producción
+- Verificación del webhook via `GET /webhook` con `hub.verify_token`
+
+Credenciales requeridas:
+
+```env
+META_PHONE_NUMBER_ID=...
+META_WHATSAPP_TOKEN=...          # token permanente (no el temporal de 24hs)
+META_APP_SECRET=...
+META_WEBHOOK_VERIFY_TOKEN=...
+META_API_VERSION=v22.0
+```
 
 ### Google Calendar
 
@@ -382,53 +493,73 @@ mismo turno — sin pedirle al usuario que repita.
 - Push notifications via watch channels (renuevan cada 7 días)
 - Sync bidireccional: booking bot ↔ Google Calendar
 - Slot calculation: `working_hours - booked_events = available_slots`
+- `MEET_LINK_MODE` controla si se genera link de Meet (ver más abajo)
+
+### MEET_LINK_MODE ⚠️ Parcialmente implementado
+
+Controla si se genera link de Google Meet al crear la cita en Calendar.
+
+| Modo | Comportamiento | Estado |
+|---|---|---|
+| `never` | Sin Meet link | ✅ Funcional |
+| `always` | Siempre genera Meet | ✅ Funcional |
+| `virtual_only` | Solo turnos virtuales | ⚠️ Bloqueado — requiere `ASK_MODALITY` |
+
+El validador bloquea `virtual_only` hasta que el flujo de modalidad esté implementado.
+Ver `docs/MEET_LINK_MODE.md` para el plan completo de implementación.
 
 ### ml-intent-service
 
 - Container separado (puerto 8000, red Docker interna)
 - spaCy 3.7.2 + TextCatEnsemble
-- Accuracy: 99.2% (344 ejemplos base → 6964 con augmentation)
+- Accuracy: 98.1%
 - Autenticado via `ML_API_KEY`
 
 ---
 
 ## 🔒 SEGURIDAD
 
-Ver `docs/SECURITY.md` para el detalle completo.
+Ver `docs/SECURITY.md` y `docs/SERVER_CONFIG.md` para el detalle completo.
 
 ### Medidas activas
 
-- Validación de firma Twilio (HMAC) en producción
-- Rate limiting: 10 msgs/min por número, bloqueo 5 min
-- Anti-spam en booking: 5 intentos/hora por número
+- Validación de firma Meta (HMAC-SHA256) en producción
+- Rate limiting: ventana deslizante por número, bloqueo configurable
+- Anti-spam en booking: límite por hora por número
 - Límite de turnos activos: 2 por profesional, 5 global
 - Validación de ownership: cliente solo puede cancelar sus propias citas
-- Validación de inputs: nombre (max 60 chars, sin números), teléfono AR, edad
+- Validación de inputs: nombre, teléfono AR E.164, edad
+
+### Infraestructura (VPS Donweb)
+
+- Nginx como proxy inverso con SSL (Let's Encrypt)
+- UFW con política deny-by-default
+- SSH en puerto no estándar con clave pública
+- Fail2ban activo
+- ml-service solo accesible por red Docker interna
 
 ---
 
 ## 🔄 FLUJO DE DATOS
 
-### Búsqueda y reserva de turno
+### Búsqueda y reserva — modo multi-profesional
 
 ```
 Usuario: "turno con gaston el jueves"
     │
     ▼
-NLU → search_professional
-    │   entities: {fecha, professional_name}
+NLU → search_professional + entities: {fecha, professional_name}
+    │
     ▼
 ConversationContext.update_entities()
-    │   (reset si viene desde START/MAIN_MENU)
+    │
     ▼
 _execute_smart_search()
-    │
     ├── client_service.search_professionals_by_filters()
     │       └── professional_service.get_available_slots() [cache 15min]
-    │
     └── format_search_results_with_slots() → CLIENT_SHOW_RESULTS
             │
-            ▼ (usuario selecciona número o nombre)
+            ▼ (usuario selecciona número)
         CLIENT_VIEW_DETAIL_WITH_BOOKING
             │
             ▼ (usuario selecciona horario)
@@ -436,8 +567,23 @@ _execute_smart_search()
             │
             ▼ (usuario confirma)
         AppointmentCalendarService.create_appointment()
-            ├── GoogleCalendarService.create_event()
+            ├── GoogleCalendarService.create_event() [MEET_LINK_MODE]
             └── db.create_appointment()
+```
+
+### Búsqueda y reserva — modo profesional único
+
+```
+Cliente: "hola" → menú simplificado (sin "buscar", sin "mañana")
+    │
+    ▼ opción 1 → FreelanceHandler
+    ├── Paso 1: fecha libre (parse_date)
+    ├── Paso 2: horario preferido (mañana/tarde/cualquiera)
+    ├── Paso 3: vitrina de filtros activos + confirmar
+    └── search_professionals(professional_phone_filter=PHONE)
+            │
+            ▼ (1 resultado, directo al detalle)
+        CLIENT_VIEW_DETAIL_WITH_BOOKING  ← mismo flujo de booking que multi
 ```
 
 ### Importación de agenda (profesional)
@@ -451,9 +597,6 @@ FileParser → List[Dict] de pacientes
     ▼
 CalendarImportService.preview()
     │   analiza solapamientos, existentes, errores
-    ▼
-Profesional puede explorar subconjuntos
-    │
     ▼
 Profesional confirma → CalendarImportService.execute()
     ├── db.add_client() por cada paciente
@@ -470,7 +613,7 @@ Profesional confirma → CalendarImportService.execute()
 ```sql
 professionals           -- profesionales registrados + calendar_id
 clients                 -- pacientes registrados
-appointments            -- turnos (google_event_id, patient_phone,
+appointments            -- turnos (google_event_id, patient_phone, meet_link,
                         --  cancellation_notified, last_google_sync)
 appointment_history     -- historial de cambios de status
 appointment_reminders   -- recordatorios enviados
@@ -478,8 +621,8 @@ slot_offers             -- ofertas de waitlist
 calendar_watches        -- watch channels de Google Calendar
 message_retry_queue     -- cola de reintentos de mensajes fallidos
 notifications           -- notificaciones del sistema
-conversation_events     -- eventos de conversación por usuario (v6.2)
-                        --  event_type, intent, confidence, state_before
+conversation_events     -- eventos de conversación por usuario
+                        --  event_type, intent, confidence, state_before/after
                         --  retención: 7 días, purga automática
 ```
 
@@ -490,6 +633,7 @@ conversation_events     -- eventos de conversación por usuario (v6.2)
 patient_phone TEXT DEFAULT NULL          -- Issue 8: paciente real
 cancellation_notified BOOLEAN DEFAULT 0  -- Issue 7: evita doble notif
 last_google_sync TIMESTAMP               -- Issue 7: última sync
+meet_link TEXT DEFAULT NULL              -- MEET_LINK_MODE=always
 
 -- message_retry_queue (tabla nueva):
 to_phone, message, professional_phone, patient_name,
@@ -503,10 +647,8 @@ En `_init_db()`, al final del método, hay un bloque de `ALTER TABLE`
 con `try/except` silencioso para agregar columnas en BD existentes
 sin romper instalaciones previas.
 
-También incluye la migración del UNIQUE constraint de `appointments`:
-el índice original `UNIQUE(professional_phone, appointment_date, start)` no filtraba
-por status — impedía que el sistema de waitlist reutilizara slots cancelados.
-La migración lo reemplaza por un índice parcial:
+El índice parcial de appointments evita que el sistema de waitlist falle
+al reusar slots cancelados:
 
 ```sql
 CREATE UNIQUE INDEX idx_appointments_slot_active
@@ -514,50 +656,35 @@ ON appointments(professional_phone, appointment_date, start)
 WHERE status NOT IN ('cancelada_cliente', 'cancelada_profesional')
 ```
 
-La migración es idempotente: detecta si `sqlite_autoindex_appointments_1` sigue
-presente y solo actúa si es necesario.
-
 ---
 
 ## ⏰ CRON JOBS
 
-Los jobs corren via **APScheduler** dentro del proceso Flask — no hay crontab del sistema operativo activo. El scheduler arranca junto con la app y registra 6 jobs en background.
+Los jobs corren via **APScheduler** dentro del proceso Flask.
+En `FLASK_ENV=development` los jobs automáticos están pausados —
+se disparan manualmente via comando secreto del bot.
 
-Ver `docs/REMINDER_INTEGRATION.md` para el ciclo completo de recordatorios.
-
-### Jobs registrados
+### Jobs registrados (7)
 
 ```
 job_reminders     → cron 17:30  — ReminderIntegrationService.run_send_cycle()
-                                   recordatorios a pacientes con turno mañana
-
 job_auto_confirm  → cron 20:30  — ReminderIntegrationService.run_confirm_cycle()
-                                   auto-confirma reminders sin respuesta (+3h)
-
 job_retry_queue   → interval 1h — MessageSender.process_retry_queue()
-                                   reintenta mensajes fallidos
-
 job_calendar_sync → cron 17:31  — sync cancelaciones desde Google Calendar
-                                   fallback del webhook push
-
 job_watches       → cron 17:32  — WatchManager.renew_all_expiring()
-                                   renueva watch channels que vencen en 24h
-
 job_waitlist      → cron 17:33  — WaitlistService.process_expired_offers()
-                                   limpia ofertas expiradas y reintenta cascada
+job_purge_events  → cron diario — event_store.purge_old_events() (>7 días)
 ```
 
-### Configuración
+### Comandos secretos (solo development)
 
-```bash
-REMINDER_TIME=17:30    # horario base de los jobs diarios (HH:MM)
-FLASK_ENV=development  # en development los jobs no se disparan automáticamente
-                       # solo via comando secreto del bot
+```
+enviar recordatorio   → dispara job_reminders ahora
+enviar recordatorios  → idem
+scheduler status      → muestra estado y próxima ejecución de cada job
 ```
 
 ### Fallback CLI
-
-`src/cron/daily_reminder_job.py` sigue disponible para testing manual y emergencias:
 
 ```bash
 docker exec whatsapp-demo python -m src.cron.daily_reminder_job
@@ -570,10 +697,10 @@ docker exec whatsapp-demo python -m src.cron.daily_reminder_job
 ### Requisitos
 
 - Docker + Docker Compose
-- Cuenta Twilio con número WhatsApp Business
+- App de Meta con WhatsApp Business API habilitada
 - Proyecto Google Cloud con Calendar API habilitada
 - Service Account con acceso a calendarios de los profesionales
-- Dominio HTTPS público (para webhooks de Twilio y Google)
+- Dominio HTTPS público (para webhooks de Meta y Google)
 
 ### Primera vez
 
@@ -585,18 +712,16 @@ cp docker/.env.example docker/.env
 # 2. Levantar
 docker compose -f docker/docker-compose.yml up --build -d
 
-# 3. Cargar profesionales
+# 3. Verificar que arrancó correctamente
+docker compose logs whatsapp-demo | grep "\[CONFIG\]"
+# Esperado: [CONFIG] ✅ Configuración válida
+
+# 4. Cargar profesionales
 docker exec -it whatsapp-demo python scripts/csv/load_professionals_from_csv.py \
     /app/data/csv/profesionales.csv
 
-# 4. Registrar watches de Google Calendar
+# 5. Registrar watches de Google Calendar
 docker exec -it whatsapp-demo python scripts/setup_calendar_watches.py
-
-# 5. Verificar
-docker exec -it whatsapp-demo python -c "
-from src.core.states import session_manager
-print(session_manager.get_stats())
-"
 ```
 
 ### Agregar nuevo profesional
@@ -610,22 +735,48 @@ docker exec -it whatsapp-demo python scripts/csv/load_professionals_from_csv.py 
 docker exec -it whatsapp-demo python scripts/setup_calendar_watches.py
 ```
 
+### Modo profesional único — setup inicial
+
+```bash
+# En docker/.env:
+SINGLE_PROFESSIONAL_MODE=true
+SINGLE_PROFESSIONAL_PHONE=+5491112345678
+TENANT_TONE=freelance
+DOMAIN_PRESET=SALUD
+MEET_LINK_MODE=always  # si el profesional trabaja remoto
+
+# El validador verifica al arrancar que:
+# - SINGLE_PROFESSIONAL_PHONE esté configurado
+# - El teléfono exista en la BD
+# - TENANT_TONE=freelance
+# - DOMAIN_PRESET != DEMO
+```
+
 ---
 
 ## 🧪 TESTING
+
+### Terminal chat (principal para desarrollo)
+
+```bash
+docker exec -it whatsapp-demo python tests/chat.py
+```
+
+Comandos disponibles dentro del chat:
+
+| Comando | Acción |
+|---|---|
+| `/switch` | Alterna entre cliente y profesional |
+| `/new` | Reinicia la sesión del número activo |
+| `/info` | Muestra estado actual de la sesión |
+| `/phone XXXX` | Cambia el número manualmente |
+| `/exit` | Salir |
 
 ### Tests de seguridad (issues 1-9)
 
 ```bash
 docker exec -it whatsapp-demo python tests/test_issue1_booking_limits.py
-docker exec -it whatsapp-demo python tests/test_issue2_global_booking_limit.py
-docker exec -it whatsapp-demo python tests/test_issue3_rate_limiter.py
-docker exec -it whatsapp-demo python tests/test_issue4_expired_offers.py
-docker exec -it whatsapp-demo python tests/test_issue5_data_isolation.py
-docker exec -it whatsapp-demo python tests/test_issue6_phone_validation.py
-docker exec -it whatsapp-demo python tests/test_issue7_cancellation_notifier.py
-docker exec -it whatsapp-demo python tests/test_issue8_patient_phone.py
-docker exec -it whatsapp-demo python tests/test_issue9_booking_spam.py
+# ... test_issue2 a test_issue9
 ```
 
 ### Tests de funcionalidades (GAPs)
@@ -642,34 +793,34 @@ docker exec -it whatsapp-demo python tests/test_gap9_concurrent_booking.py
 ### Tests de waitlist y recordatorios
 
 ```bash
-# Waitlist E2E: cancelación → oferta → acepta / rechaza
+# Waitlist E2E
 docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py
-
-# Solo test de aceptación
 docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py --accept
-
-# Solo test de rechazo
 docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py --reject
 
-# Setup manual para probar desde WhatsApp real
-docker exec -it whatsapp-demo python tests/waitlist/test_waitlist_e2e.py --manual
-
-# Recordatorios: ventana horaria (escenarios K-O)
+# Recordatorios
 docker exec -it whatsapp-demo python tests/reminders/test_reminder_window.py
-
-# Recordatorios: respuestas (escenarios F-J)
 docker exec -it whatsapp-demo python tests/reminders/test_reminder_responses.py
 ```
 
 ### Verificar tono activo
 
 ```bash
-docker exec -it whatsapp-demo python -c "
-import os; os.environ['TENANT_TONE'] = 'coloquial'
+docker exec whatsapp-demo python -c "
+import os; os.environ['TENANT_TONE'] = 'freelance'
 from src.messages.loader import get_msg, reload_tone
 reload_tone()
-print(get_msg('CLIENT_MAIN_MENU'))
+print(get_msg('CLIENT_FREELANCE_FILTERS_INFO'))
 "
+```
+
+### Verificar modo activo al arrancar
+
+```bash
+docker compose logs whatsapp-demo | grep "\[CONFIG\]"
+# Modo multi:    [CONFIG] ✅ Configuración válida
+# Modo único:    [CONFIG] ✅ Modo profesional único — Gaston Blanco
+#                [CONFIG] ✅ Configuración válida
 ```
 
 ---
@@ -677,50 +828,66 @@ print(get_msg('CLIENT_MAIN_MENU'))
 ## 🔑 VARIABLES DE ENTORNO
 
 ```bash
-# ── Twilio ──────────────────────────────────────────────────────
-TWILIO_ACCOUNT_SID=ACxxxx
-TWILIO_AUTH_TOKEN=xxxx
-TWILIO_WHATSAPP_NUMBER=whatsapp:+549...
-TWILIO_REMINDER_TEMPLATE_SID=HXxxxx   # Template aprobado para recordatorios
-TWILIO_SLOT_OFFER_TEMPLATE_SID=HXxxxx # Template para ofertas de waitlist
+# ── Meta Cloud API ───────────────────────────────────────
+META_PHONE_NUMBER_ID=...          # ID del número (no el número en sí)
+META_WHATSAPP_TOKEN=...           # Token permanente de la app
+META_APP_SECRET=...               # App Secret (para validar firma HMAC)
+META_WEBHOOK_VERIFY_TOKEN=...     # Token de verificación del webhook
+META_API_VERSION=v22.0
 
-# ── Google Calendar ──────────────────────────────────────────────
+# Templates aprobados en Meta Business Suite
+META_REMINDER_TEMPLATE_NAME=recordatorio_turno
+META_REMINDER_TEMPLATE_LANG=es_AR
+META_SLOT_OFFER_TEMPLATE_NAME=oferta_turno_adelantado
+META_SLOT_OFFER_TEMPLATE_LANG=es_AR
+
+# ── Google Calendar ──────────────────────────────────────
 GOOGLE_CALENDAR_WEBHOOK_URL=https://tu-dominio.com/google-calendar/webhook
 
-# ── Dominio ─────────────────────────────────────────────────────
-DOMAIN_PRESET=SALUD   # SALUD | PSICOLOGIA | BELLEZA | LEGAL | FITNESS
-                      # Afecta: terminología, políticas de cancelación, filtros
+# ── Dominio y modo ───────────────────────────────────────
+DOMAIN_PRESET=SALUD               # SALUD|PSICOLOGIA|BELLEZA|LEGAL|FITNESS|DEMO
+TENANT_TONE=coloquial             # coloquial|freelance|demo
+MEET_LINK_MODE=never              # never|always  (virtual_only: pendiente)
 
-# ── Tono de mensajes ─────────────────────────────────────────────
-TENANT_TONE=coloquial # demo | coloquial
-                      # Ver docs/TONE_SYSTEM.md para crear tonos nuevos
+# Modo profesional único
+SINGLE_PROFESSIONAL_MODE=false
+SINGLE_PROFESSIONAL_PHONE=        # obligatorio si SINGLE_PROFESSIONAL_MODE=true
 
-# ── Redis ────────────────────────────────────────────────────────
+# ── Redis ────────────────────────────────────────────────
 REDIS_URL=redis://redis:6379/0
-# REDIS_URL=redis://:password@redis:6379/0   ← con auth (recomendado en prod)
 
-# ── ML ───────────────────────────────────────────────────────────
-ML_SERVICE_URL=http://ml-service:8000
-ML_API_KEY=xxxx
+# ── ML ───────────────────────────────────────────────────
+ML_SERVICE_URL=http://ml-intent-service:8000
+ML_API_KEY=...
 
-# ── Flask ────────────────────────────────────────────────────────
+# ── Flask ────────────────────────────────────────────────
 FLASK_ENV=development
 FLASK_PORT=5000
 ENVIRONMENT=development
+WEBHOOK_URL=https://tu-dominio.com
 
-# ── Recordatorios — ventana de respuesta ────────────────────────
-REMINDER_SEND_TIME=17:30    # hora de envío (también controla jobs diarios)
-REMINDER_CLOSE_TIME=20:30   # hora límite para aceptar respuestas del paciente
+# ── Recordatorios ────────────────────────────────────────
+REMINDER_SEND_TIME=17:30
+REMINDER_CLOSE_TIME=20:30
+RESCHEDULE_HOURS_LIMIT=22
 
-# ── Rate limiting (opcional, override del DomainConfig) ──────────
-RATE_LIMIT_MAX_MESSAGES_PER_WINDOW=100  # dev: subir límite para testing
-RATE_LIMIT_BLOCK_MINUTES=0              # dev: sin bloqueo
+# ── Notificaciones y contacto ────────────────────────────
+NOTIFY_PROFESSIONAL=true
+CENTER_EMAIL=contacto@tu-dominio.com
+CENTER_HOURS_WD=9:00 - 18:00
+CENTER_HOURS_SAT=9:00 - 13:00
+CENTER_PHONE=+54 11 0000-0000
 
-# ── Email / SMTP (para invitaciones a profesionales) ─────────────
-SMTP_HOST=mail.tudominio.com
-SMTP_PORT=587
-SMTP_USER=sistema@tudominio.com
-SMTP_PASSWORD=xxxx
+# ── Administración ───────────────────────────────────────
+MASTER_ACCESS_KEY=...             # obligatorio en production
+ALLOW_KEY_REUSE=false
+
+# ── SMTP ─────────────────────────────────────────────────
+SMTP_HOST=mail.tu-dominio.com
+SMTP_PORT=465
+SMTP_USER=sistema@tu-dominio.com
+SMTP_PASSWORD=...
+SMTP_FROM_NAME=Agenda Asistida
 ```
 
 ---
@@ -729,17 +896,19 @@ SMTP_PASSWORD=xxxx
 
 - `docs/TONE_SYSTEM.md` — sistema de tonos: crear, registrar y verificar
 - `docs/SECURITY.md` — detalles de cada medida de seguridad
+- `docs/SERVER_CONFIG.md` — configuración del VPS, Nginx, SSL, Fail2ban
 - `docs/SETUP_INSTRUCTIONS.md` — guía paso a paso
 - `docs/GOOGLE_CALENDAR_SERVICE.md` — integración con Google Calendar
 - `docs/INTENT_DETECTION_SYSTEM.md` — arquitectura del sistema NLU/ML
 - `docs/REMINDER_INTEGRATION.md` — ciclo completo de recordatorios automáticos
 - `docs/WAITLIST_INTEGRATION.md` — ciclo completo de adelantamiento de turnos
-- `docs/CONVERSATION_CONTEXT_SERVICE.md` — sistema de contexto conversacional entre sesiones (v6.2)
+- `docs/CONVERSATION_CONTEXT_SERVICE.md` — contexto conversacional entre sesiones
+- `docs/CONVERSATION_ROUTES.md` — mapa de rutas conversacionales
+- `docs/MEET_LINK_MODE.md` — feature Google Meet (⚠️ parcialmente implementado)
 - `docs/ml_agenda_import_intents.md` — spec intenciones importación agenda
 - `docs/ml_book_for_third_party.md` — spec intención agendar para terceros
-- `docs/gap4_agenda_import_spec.md` — spec flujo importación completo
 
 ---
 
-**Versión:** 6.3
-**Última actualización:** Abril 2026
+**Versión:** 7.0
+**Última actualización:** Junio 2026

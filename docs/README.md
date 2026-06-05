@@ -4,11 +4,11 @@ Sistema de gestión de citas y reservas para centros de salud, implementado como
 
 ---
 
-## 🧠 Stack Tecnológico (v4.0)
+## 🧠 Stack Tecnológico (v7.0)
 
 | Capa | Tecnología |
 |------|-----------|
-| Mensajería | Twilio WhatsApp API |
+| Mensajería | Meta Cloud API (WhatsApp Business) |
 | Backend | Python 3.10+ / Flask |
 | NLU/ML | spaCy 3.7.2 + `es_core_news_sm` — **98.1% accuracy** |
 | Intent Detection | Híbrido: ML primario + Reglas como fallback |
@@ -31,7 +31,8 @@ booking-chatbot/
 │   │   ├── bot_controller.py          # Orquestador principal
 │   │   ├── client_handler.py          # Flujo conversacional de clientes
 │   │   ├── professional_handler.py    # Flujo de profesionales
-│   │   └── admin_handler.py           # Administración
+│   │   ├── freelance_handler.py       # Sub-flujo modo profesional único
+│   │   └── reminder_handler.py        # Manejo de respuestas a recordatorios
 │   ├── services/
 │   │   ├── intent_detector.py         # Detección de intenciones (NLU híbrido)
 │   │   ├── user_service.py            # Identificación y contexto de usuarios
@@ -54,8 +55,13 @@ booking-chatbot/
 │   ├── integrations/
 │   │   └── google_calendar_service/   # Integración Google Calendar
 │   ├── messages/                      # Templates de mensajes del bot
+│   │   └── tones/
+│   │       ├── coloquial.py           # Tono para centros multi-profesional
+│   │       ├── freelance.py           # Tono para profesional único
+│   │       └── demo.py                # Tono para demostración del producto
 │   ├── database/                      # Modelos y acceso a SQLite
 │   └── config/                        # Feature flags y configuración de dominio
+│       └── config_validator.py        # Validación de config al boot (fail fast)
 ├── scripts/
 │   └── ml/
 │       ├── generate_training_dataset.py
@@ -133,10 +139,12 @@ cp .env.example .env
 Variables requeridas:
 
 ```env
-# Twilio
-TWILIO_ACCOUNT_SID=ACxxxx...
-TWILIO_AUTH_TOKEN=xxxx...
-TWILIO_PHONE_NUMBER=+14155238886
+# Meta Cloud API
+META_PHONE_NUMBER_ID=...
+META_WHATSAPP_TOKEN=...        # token permanente (no el de 24hs del panel)
+META_APP_SECRET=...
+META_WEBHOOK_VERIFY_TOKEN=...
+META_API_VERSION=v22.0
 
 # Google Calendar
 GOOGLE_CALENDAR_CREDENTIALS_PATH=./config/google/service-account.json
@@ -229,35 +237,38 @@ docker-compose logs | grep "CACHE"
 
 ### 6. Exponer con Túnel Público
 
-**Opción A: LocalTunnel**
+**Opción A: ngrok (recomendado)**
+```powershell
+ngrok http 5000
+```
+
+Te va a mostrar una URL tipo `https://xxxx-xxxx.ngrok-free.app`.
+Dejá el túnel corriendo en esa terminal y abrí otra para seguir trabajando.
+
+**Opción B: LocalTunnel**
 ```bash
 pnpm add -g localtunnel
 lt --port 5000
 ```
 
-**Opción B: CloudFlare (más estable)**
-```powershell
-.\cloudflared.exe tunnel --url http://localhost:5000
-```
-
 ---
 
-### 7. Configurar Twilio
+### 7. Configurar Meta
 
-1. Ir a [Twilio Console - WhatsApp Sandbox](https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn)
-2. En **Sandbox settings → When a message comes in**:
+1. Ir a [developers.facebook.com](https://developers.facebook.com) → Tu App → WhatsApp → Configuración de la API
+2. En **Webhooks → URL de devolución de llamada**:
    ```
    https://TU-URL-PUBLICA/webhook
    ```
-3. Método: **POST** → **Save**
+3. Token de verificación: el valor de `META_WEBHOOK_VERIFY_TOKEN` en `.env`
+4. Suscribir al campo `messages` → **Guardar**
 
 ---
 
 ### 8. Conectar WhatsApp
 
-1. Copiar el número de sandbox (ej: `+1 813 608 0792`)
-2. Enviar el código de unión al número (ej: `join happy-elephant`)
-3. Esperar confirmación
+El número de Meta Business ya está activo — no requiere sandbox ni código de unión.
+Enviá un mensaje al número configurado en `META_PHONE_NUMBER_ID` para probarlo.
 
 ---
 
@@ -461,8 +472,8 @@ docker-compose up --build
 1. `docker-compose ps` — verificar que el contenedor corre
 2. `docker-compose logs -f` — revisar errores
 3. Verificar que el túnel público está activo
-4. Verificar webhook en Twilio Console
-5. Revisar errores en [Twilio Monitor Logs](https://console.twilio.com/us1/monitor/logs/errors)
+4. Verificar webhook en [Meta Developer Console](https://developers.facebook.com)
+5. Revisar errores en Meta → Tu App → WhatsApp → Configuración → Webhooks
 
 ### "ML model not found"
 
@@ -496,7 +507,7 @@ python train_spacy_model.py \
 ### Túnel se cae (LocalTunnel)
 
 1. Ctrl+C y volver a ejecutar `lt --port 5000`
-2. Actualizar la nueva URL en Twilio Console
+2. Actualizar la nueva URL en Meta Developer Console
 3. Usar CloudFlare como alternativa más estable
 
 ### Puerto 5000 en uso
@@ -521,8 +532,8 @@ ports:
 
 ## 🔗 Links Útiles
 
-- [Twilio Console](https://console.twilio.com/)
-- [Twilio WhatsApp Docs](https://www.twilio.com/docs/whatsapp)
+- [Meta Developer Console](https://developers.facebook.com/)
+- [Meta WhatsApp Business API Docs](https://developers.facebook.com/docs/whatsapp)
 - [spaCy Documentation](https://spacy.io/)
 - [Google Calendar API](https://developers.google.com/calendar)
 - [LocalTunnel](https://localtunnel.me/)
@@ -533,22 +544,21 @@ ports:
 ## ✅ Checklist de Setup
 
 - [ ] Docker instalado y corriendo
-- [ ] Cuenta de Twilio creada y credenciales en `.env`
+- [ ] App de Meta configurada con WhatsApp Business API y credenciales en `.env`
 - [ ] `service-account.json` copiado a `config/google/`
 - [ ] Profesionales con `calendar_id` en `profesionales_demo.csv`
 - [ ] `docker-compose up --build` ejecutado exitosamente
 - [ ] Logs muestran `ML model loaded` y `CACHE Initialized`
 - [ ] Túnel público activo (LocalTunnel o CloudFlare)
-- [ ] Webhook configurado en Twilio Console
-- [ ] WhatsApp conectado al sandbox (`join <code>`)
+- [ ] Webhook configurado en Meta Developer Console
 - [ ] Mensaje de prueba enviado y respondido
 
 ---
 
 ## 📝 Notas
 
-- **Sandbox de Twilio**: Gratis, con limitaciones (sesión de 24h, números limitados)
+- **Meta Cloud API**: Integración directa sin intermediario, valida firma HMAC-SHA256
 - **Modelo ML**: Pre-entrenado incluido en el repo. Solo re-entrenar si se modifica el dataset base
-- **Túnel público**: Necesario para recibir webhooks de Twilio en desarrollo
+- **Túnel público**: Necesario para recibir webhooks de Meta en desarrollo
 - **Modo development**: Activa carga automática de CSV (`FLASK_ENV=development`)
 - **Certificados**: Se guardan en `./certificates/{phone}/`
