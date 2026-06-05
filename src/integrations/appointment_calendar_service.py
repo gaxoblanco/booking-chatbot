@@ -254,24 +254,43 @@ class AppointmentCalendarService:
             calendar_id = professional['calendar_id']
             
             # 2. Crear evento en Google Calendar
-            # conference_data_version depende de MEET_LINK_MODE:
-            #   'never'  → 0 (sin Meet)
-            #   'always' → 1 (siempre Meet)
+            # Si el profesional tiene OAuth2 configurado y MEET_LINK_MODE=always
+            # → usar credenciales OAuth2 del profesional (soporta Meet en Gmail gratuito)
+            # Si no → usar Service Account (comportamiento anterior)
             from src.config.domain_config import DomainConfig
             meet_mode = DomainConfig.MEET_LINK_MODE
             conference_data_version = 1 if meet_mode == 'always' else 0
 
             logger.info(f"Creando evento en Google Calendar (meet_mode={meet_mode})...")
-            google_event = self.calendar_service.create_appointment(
-                calendar_id=calendar_id,
-                start_datetime=f"{date} {start_time}",
-                end_datetime=f"{date} {end_time}",
-                client_name=client_name,
-                client_phone=client_phone,
-                appointment_type=appointment_type,
-                notes=notes,
-                conference_data_version=conference_data_version
-            )
+
+            oauth_tokens = self.db.get_professional_oauth_tokens(professional_phone)
+
+            if meet_mode == 'always' and oauth_tokens:
+                # Usar OAuth2 del profesional — soporta hangoutsMeet en Gmail gratuito
+                google_event = self._create_appointment_with_oauth(
+                    oauth_tokens=oauth_tokens,
+                    professional_phone=professional_phone,
+                    calendar_id=calendar_id,
+                    date=date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    client_name=client_name,
+                    client_phone=client_phone,
+                    appointment_type=appointment_type,
+                    notes=notes,
+                )
+            else:
+                # Service Account — comportamiento original
+                google_event = self.calendar_service.create_appointment(
+                    calendar_id=calendar_id,
+                    start_datetime=f"{date} {start_time}",
+                    end_datetime=f"{date} {end_time}",
+                    client_name=client_name,
+                    client_phone=client_phone,
+                    appointment_type=appointment_type,
+                    notes=notes,
+                    conference_data_version=conference_data_version
+                )
 
             google_event_id = google_event['id']
             meet_link = google_event.get('hangoutLink') if meet_mode == 'always' else None
@@ -341,6 +360,110 @@ class AppointmentCalendarService:
                 except:
                     pass
             raise
+    
+    def _create_appointment_with_oauth(
+        self,
+        oauth_tokens: dict,
+        professional_phone: str,
+        calendar_id: str,
+        date: str,
+        start_time: str,
+        end_time: str,
+        client_name: str,
+        client_phone: str,
+        appointment_type: str,
+        notes: str = None,
+    ) -> dict:
+        """
+        Crea un evento en Google Calendar usando las credenciales OAuth2
+        del profesional en lugar de la Service Account.
+
+        Permite generar Meet links en cuentas Gmail gratuitas, donde
+        la Service Account no tiene permisos para hacerlo.
+
+        Renueva el access_token automáticamente si expiró usando el refresh_token.
+
+        Args:
+            oauth_tokens: Dict con oauth_refresh_token, oauth_access_token,
+                          oauth_token_expiry — obtenido de db.get_professional_oauth_tokens()
+            professional_phone: Para guardar el access_token renovado en BD
+            calendar_id: Email del calendario del profesional
+            date, start_time, end_time: Fecha y horario del evento
+            client_name, client_phone: Datos del cliente
+            appointment_type: Tipo de consulta
+            notes: Notas opcionales
+
+        Returns:
+            dict: Evento creado por Google, incluye 'hangoutLink' si Meet fue generado
+        """
+        import os
+        from datetime import datetime
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+        from src.integrations.google_calendar_service.calendar.event_manager import EventManager
+
+        # Reconstruir credenciales desde los tokens guardados en BD
+        credentials = Credentials(
+            token         = oauth_tokens.get('oauth_access_token'),
+            refresh_token = oauth_tokens.get('oauth_refresh_token'),
+            token_uri     = "https://oauth2.googleapis.com/token",
+            client_id     = os.getenv('GOOGLE_OAUTH_CLIENT_ID'),
+            client_secret = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET'),
+            scopes        = ['https://www.googleapis.com/auth/calendar.events'],
+        )
+
+        # Renovar access_token si expiró
+        if credentials.expired or not credentials.valid:
+            logger.info(f"[OAUTH] Renovando access_token para {professional_phone}...")
+            credentials.refresh(Request())
+
+            # Persistir el nuevo access_token en BD
+            self.db.update_professional_oauth_tokens(
+                phone         = professional_phone,
+                refresh_token = credentials.refresh_token or oauth_tokens['oauth_refresh_token'],
+                access_token  = credentials.token,
+                token_expiry  = credentials.expiry.isoformat() if credentials.expiry else None
+            )
+            logger.info(f"[OAUTH] ✅ access_token renovado para {professional_phone}")
+
+        # Construir servicio de Calendar con las credenciales del profesional
+        service = build('calendar', 'v3', credentials=credentials)
+
+        # Construir el body del evento
+        import re
+        safe_id = re.sub(r'[^a-zA-Z0-9-]', '-', f"{calendar_id}-{date}-{start_time}")
+
+        event_body = {
+            'summary':     f"{appointment_type} - {client_name}",
+            'description': f"Cliente: {client_name}\nTeléfono: {client_phone}",
+            'start': {'dateTime': f"{date}T{start_time}:00-03:00", 'timeZone': 'America/Argentina/Buenos_Aires'},
+            'end':   {'dateTime': f"{date}T{end_time}:00-03:00",   'timeZone': 'America/Argentina/Buenos_Aires'},
+            'conferenceData': {
+                'createRequest': {
+                    'requestId': safe_id,
+                    'conferenceSolutionKey': {'type': 'hangoutsMeet'}
+                }
+            }
+        }
+
+        if notes:
+            event_body['description'] += f"\nNotas: {notes}"
+
+        logger.info(f"[OAUTH] Creando evento con Meet para {client_name} en {calendar_id}...")
+
+        event = service.events().insert(
+            calendarId=calendar_id,
+            body=event_body,
+            conferenceDataVersion=1
+        ).execute()
+
+        logger.info(
+            f"[OAUTH] ✅ Evento creado. ID: {event['id']} | "
+            f"Meet: {event.get('hangoutLink', 'sin link')}"
+        )
+
+        return event
     
     def sync_appointment_from_google(self, appointment_id: int) -> bool:
         """
