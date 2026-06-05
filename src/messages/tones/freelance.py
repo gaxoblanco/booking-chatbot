@@ -140,6 +140,32 @@ CLIENT_ASK_HORA = (
     "_Escribí *0* para cancelar_"
 )
 
+# ------------------------------------------------------------------
+# FLUJO FREELANCE — pantalla de filtros activos
+# Mensaje modificable para casos que no sea promocionar el proyecto
+# ------------------------------------------------------------------
+ 
+CLIENT_FREELANCE_FILTERS_INFO = (
+    "📅 *{date_label}* · 🕐 *{time_label}*\n\n"
+    "─────────────────────\n"
+    "ℹ️ *Cómo funcionan los filtros*\n\n"
+    "Este sistema permite configurar filtros dinámicos según el tipo de servicio: "
+    "zona, modalidad, especialidad, prepaga y más.\n\n"
+    "Para esta agenda los filtros activos son:\n\n"
+    "{filters_preview}\n\n"
+    "─────────────────────\n"
+    "1️⃣ Ver horarios disponibles\n"
+    "0️⃣ Cambiar fecha u horario"
+)
+ 
+# Líneas individuales del bloque {filters_preview}
+# El handler las une con \n
+CLIENT_FREELANCE_FILTER_LINE_ONLINE   = "✅ Modalidad: *online* (Google Meet)"
+CLIENT_FREELANCE_FILTER_LINE_PRESENCIAL = "✅ Modalidad: *presencial*"
+CLIENT_FREELANCE_FILTER_LINE_BOTH     = "✅ Modalidad: *online y presencial*"
+CLIENT_FREELANCE_FILTER_LINE_DATE     = "✅ Fecha: *{date_label}*"
+CLIENT_FREELANCE_FILTER_LINE_TIME     = "✅ Horario: *{time_label}*"
+
 # Zona y prepaga no aplican para freelance.
 # Se definen como strings vacíos para no romper el sistema
 # si algún handler los usa como fallback.
@@ -549,3 +575,4 @@ SLOT_OFFER_INVALID = (
     "2️⃣ No, mantengo\n\n"
     "_La oferta vence en {minutes_left} min._"
 )
+
