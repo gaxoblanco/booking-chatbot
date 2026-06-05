@@ -115,7 +115,22 @@ class EventManager:
                 timezone_str=tz
             )
 
-            # conference_data_version viene de MEET_LINK_MODE via appointment_service
+            # Agregar conferenceData al body si se requiere Meet link.
+            # Google necesita este objeto en el body además de
+            # conferenceDataVersion=1 en la query — sin él ignora el parámetro.
+            # requestId debe ser único por evento para evitar que Google
+            # devuelva un link en caché de una request anterior.
+            if conference_data_version == 1:
+                import re
+                safe_id = re.sub(r'[^a-zA-Z0-9-]', '-', f"{calendar_id}-{start_datetime}")
+                event_data['conferenceData'] = {
+                    'createRequest': {
+                        'requestId': safe_id,
+                        'conferenceSolutionKey': {'type': 'hangoutsMeet'}
+                    }
+                }
+
+            # Crear el evento en Google Calendar
             event = self.calendar_client.create_event(
                 calendar_id=calendar_id,
                 event_data=event_data,
