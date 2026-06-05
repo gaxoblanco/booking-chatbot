@@ -48,6 +48,7 @@ class ClientService:
         time_preference: str = None,
         specialty: str = None,
         professional_name: str = None,
+        professional_phone_filter: str = None,
         limit: int = 10
     ) -> List[Dict]:
         """
@@ -93,6 +94,24 @@ class ClientService:
             )
 
             print(f"[CLIENT] Found {len(professionals)} professionals in DB")
+
+            # Step 1.4 — Filtro exacto por teléfono (modo profesional único)
+            # Más rápido y confiable que el filtro por nombre.
+            if professional_phone_filter:
+                professionals = [
+                    p for p in professionals
+                    if p.get('phone') == professional_phone_filter
+                ]
+                print(
+                    f"[CLIENT] 📱 Filtro por teléfono '{professional_phone_filter}': "
+                    f"{len(professionals)} resultado(s)"
+                )
+                if not professionals:
+                    print(
+                        f"[CLIENT] ⚠️  Profesional {professional_phone_filter} "
+                        f"no encontrado en BD o no tiene disponibilidad"
+                    )
+                    return []
 
             # Validación: Si no hay profesionales en BD → Retornar vacío
             if not professionals:

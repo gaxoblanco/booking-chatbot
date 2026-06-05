@@ -198,30 +198,31 @@ class UserService:
     def generate_welcome_message(self, user_info: Dict) -> str:
         """
         Genera mensaje de bienvenida personalizado.
- 
+
         El encabezado viene del tono activo (common_messages.WELCOME_NEW_USER
         o WELCOME_RETURNING). El menú dinámico se construye acá con
         DomainConfig para adaptarse al dominio.
- 
+
         Args:
             user_info: debe incluir 'phone_number' para verificar citas activas.
- 
+
         Returns:
             Encabezado del tono + menú dinámico con las opciones disponibles.
         """
         from src.database.database import db
         from datetime import datetime
         from src.messages.messages_common import common_messages
- 
+        from src.config.config import Config
+
         user_type    = user_info.get('user_type', 'new')
-        name         = user_info.get('name')           # None si usuario nuevo
+        name         = user_info.get('name')
         phone_number = user_info.get('phone_number', '')
- 
+
         print(f"[USER_SERVICE] 🔍 generate_welcome_message()")
         print(f"[USER_SERVICE]    user_type: {user_type}")
         print(f"[USER_SERVICE]    name: {name!r}")
         print(f"[USER_SERVICE]    phone_number: {phone_number}")
- 
+
         # --------------------------------------------------
         # PROFESIONAL — menú propio, no pasa por este flujo
         # --------------------------------------------------
@@ -229,7 +230,7 @@ class UserService:
             print(f"[USER_SERVICE] ✅ Es profesional, mostrando menú profesional")
             greeting = f"¡Hola Dr/Dra. {name}! 👋" if name else "¡Hola! 👋"
             return f"{greeting}\n\n" + professional_messages.PROF_MAIN_MENU
- 
+
         # --------------------------------------------------
         # CLIENTE / NUEVO — verificar citas activas
         # --------------------------------------------------
@@ -244,15 +245,14 @@ class UserService:
         ]
         has_appointments = len(active_appointments) > 0
         count            = len(active_appointments)
- 
+
         if has_appointments:
             print(f"[USER_SERVICE] ✅ Menú CON citas ({count} activas)")
         else:
             print(f"[USER_SERVICE] ℹ️ Menú SIN citas")
- 
+
         # --------------------------------------------------
         # ENCABEZADO — viene del tono activo
-        # name debe ser un string no vacío para usar WELCOME_RETURNING
         # --------------------------------------------------
         if name and name.strip():
             header = common_messages.WELCOME_RETURNING.format(name=name.strip())
@@ -260,29 +260,40 @@ class UserService:
         else:
             header = common_messages.WELCOME_NEW_USER
             print(f"[USER_SERVICE] ✅ Bienvenida generada — usuario: nuevo")
- 
+
         # --------------------------------------------------
-        # MENÚ DINÁMICO — lógica de negocio, no texto del tono
+        # MENÚ DINÁMICO
         # --------------------------------------------------
-        menu  = "¿Qué querés hacer?\n\n"
-        menu += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
-        menu += f"   Búsqueda asistida paso a paso\n\n"
-        menu += f"2️⃣ Ver disponibles mañana\n"
-        menu += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
- 
-        if has_appointments:
-            menu += f"3️⃣ Ver mis citas programadas\n"
-            menu += f"   Gestionar tus {count} cita{'s' if count > 1 else ''}\n\n"
-            menu += f"4️⃣ Información del centro\n"
-            menu += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+        if getattr(Config, 'SINGLE_PROFESSIONAL_MODE', False):
+            # Modo profesional único — sin búsqueda, sin filtros
+            menu  = ""   # ← el encabezado lo pone el tono via WELCOME_RETURNING
+            menu += "1️⃣ Agendar reunión\n\n"
+            if has_appointments:
+                menu += f"2️⃣ Ver mis reuniones\n"
+                menu += f"   Gestionar tus {count} reunión{'es' if count > 1 else ''}\n\n"
+                menu += "3️⃣ Info del servicio\n\n"
+            else:
+                menu += "2️⃣ Info del servicio\n\n"
         else:
-            menu += f"3️⃣ Información del centro\n"
-            menu += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
- 
+            # Modo multi-profesional — búsqueda con filtros
+            menu  = "¿Qué querés hacer?\n\n"
+            menu += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
+            menu += f"   Búsqueda asistida paso a paso\n\n"
+            menu += f"2️⃣ Ver disponibles mañana\n"
+            menu += f"   {DomainConfig.PROFESSIONAL_TITLE_PLURAL} con horarios libres\n\n"
+            if has_appointments:
+                menu += f"3️⃣ Ver mis citas programadas\n"
+                menu += f"   Gestionar tus {count} cita{'s' if count > 1 else ''}\n\n"
+                menu += f"4️⃣ Información del centro\n"
+                menu += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+            else:
+                menu += f"3️⃣ Información del centro\n"
+                menu += f"   Conocer más sobre {DomainConfig.BUSINESS_NAME}\n\n"
+
         menu += "Respondé con el número de opción."
- 
+
         return f"{header}\n\n{menu}"
- 
+    
     def log_action(
         self,
         phone: str,
