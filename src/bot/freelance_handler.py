@@ -76,6 +76,7 @@ def handle_freelance_start(session: SessionData) -> str:
     Transiciona a CLIENT_FREELANCE_BOOK_DATE y muestra CLIENT_ASK_FECHA.
     """
     session.clear_temp()  # ← limpiar cualquier estado anterior
+    session.set_temp('flow_context', 'freelance')  # ← contexto centralizado
     session.transition_to(ConversationState.CLIENT_FREELANCE_BOOK_DATE)
     return get_msg('CLIENT_ASK_FECHA')
 
@@ -85,45 +86,61 @@ def handle_freelance_start(session: SessionData) -> str:
 # =========================================================================
 
 def handle_freelance_book_date(session: SessionData, message: str) -> str:
-    """
-    Recibe la fecha elegida por el cliente.
-    Valida y parsea con parse_date() (mismo parser que usa el flujo multi-prof).
-    Si es válida, guarda en session.temp y avanza a pregunta de horario.
+    import re
+    from datetime import datetime
 
-    Args:
-        session: Sesión del cliente.
-        message: Texto libre del cliente ("mañana", "el viernes", "15/07", etc.)
-
-    Returns:
-        Pregunta de horario (CLIENT_ASK_HORA) o mensaje de error (INVALID_DATE).
-    """
     # Cancelar → volver al menú
     if message.strip() == '0':
-        from src.core.states import ConversationState
         session.clear_temp()
         session.transition_to(ConversationState.CLIENT_MAIN_MENU)
         return get_msg('CLIENT_MAIN_MENU')
 
-    # Parsear fecha con el validador existente
+    msg = message.strip()
+
+    # Formato YYYY-MM-DD — viene del NLU cuando resuelve días de semana
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', msg):
+        date_obj = datetime.strptime(msg, '%Y-%m-%d')
+        session.set_temp('search_date',     msg)
+        session.set_temp('search_date_str', date_obj.strftime('%A %d/%m').capitalize())
+        logger.info(f"[FREELANCE] Fecha ISO aceptada: {msg}")
+        session.transition_to(ConversationState.CLIENT_FREELANCE_BOOK_TIME)
+        return get_msg('CLIENT_ASK_HORA')
+
+    # Formato DD/MM o DD/MM/YYYY — viene del NLU cuando el usuario escribe fecha completa
+    if re.match(r'^\d{1,2}/\d{2}(?:/\d{4})?$', msg):
+        try:
+            if len(msg) <= 5:  # DD/MM
+                date_obj = datetime.strptime(f"{msg}/{datetime.now().year}", '%d/%m/%Y')
+            else:              # DD/MM/YYYY
+                date_obj = datetime.strptime(msg, '%d/%m/%Y')
+            iso = date_obj.strftime('%Y-%m-%d')
+            session.set_temp('search_date',     iso)
+            session.set_temp('search_date_str', date_obj.strftime('%A %d/%m').capitalize())
+            logger.info(f"[FREELANCE] Fecha DD/MM aceptada: {msg} → {iso}")
+            session.transition_to(ConversationState.CLIENT_FREELANCE_BOOK_TIME)
+            return get_msg('CLIENT_ASK_HORA')
+        except ValueError:
+            pass  # cae al parse_date normal
+
+    # Parsear fecha con el validador existente (texto libre: "mañana", "el lunes", etc.)
     result = parse_date(message)
 
-    if not result.valid:
-        logger.debug(f"[FREELANCE] Fecha inválida: '{message}' — {result.error}")
+    if result is None or not result.valid:
+        error_detail = result.error if result else "parse_date retornó None"
+        logger.debug(f"[FREELANCE] Fecha inválida: '{message}' — {error_detail}")
         return (
             f"{get_msg('INVALID_DATE')}\n\n"
             "_Escribí *0* para cancelar_"
         )
 
     # Guardar fecha parseada en sesión
-    session.set_temp('search_date',     result.value)   # 'YYYY-MM-DD'
-    session.set_temp('search_date_str', result.display) # 'lunes 15 de julio'
+    session.set_temp('search_date',     result.value)
+    session.set_temp('search_date_str', result.display)
 
     logger.info(f"[FREELANCE] Fecha aceptada: {result.value} ({result.display})")
 
-    # Avanzar a pregunta de horario
     session.transition_to(ConversationState.CLIENT_FREELANCE_BOOK_TIME)
     return get_msg('CLIENT_ASK_HORA')
-
 
 # =========================================================================
 # PASO 3 — HORARIO: mostrar filtros activos + confirmar búsqueda
@@ -286,7 +303,6 @@ def _load_professional_and_show_detail(session: SessionData) -> str:
     from src.config.config import Config
     from src.database.database import db
     from src.services.client_service import client_service
-    from src.core.states import ConversationState
 
     prof_phone = getattr(Config, 'SINGLE_PROFESSIONAL_PHONE', '').strip()
 
@@ -300,7 +316,7 @@ def _load_professional_and_show_detail(session: SessionData) -> str:
 
     # Buscar profesional con slots para esa fecha
     # Reutiliza search_professionals() con el teléfono como filtro de nombre/phone
-    results = client_service.search_professionals(
+    results = client_service.search_professionals_by_filters(
         date_str=date_str,
         time_preference=time_preference,
         professional_phone_filter=prof_phone,   # ← parámetro nuevo, ver PATCH client_service
