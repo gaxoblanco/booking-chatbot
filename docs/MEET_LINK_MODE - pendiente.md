@@ -1,268 +1,167 @@
 # MEET_LINK_MODE — Google Meet como servicio configurable
-**Feature branch:** `feature/meet-link-mode`
-**Depende de:** `feature/meet-link` (ya mergeado)
-**Estado:** Pendiente
+**Feature branch:** `feature/meet-link`
+**Estado:** ✅ Implementado (Junio 2026)
 
 ---
 
 ## Contexto
 
-El link de Google Meet ya se genera y persiste en BD (`appointments.meet_link`).
-Esta feature lo convierte en un servicio configurable por tenant vía `DomainConfig`.
+El link de Google Meet se genera al crear el evento en Google Calendar y se persiste
+en BD (`appointments.meet_link`). La generación es configurable por tenant vía
+`MEET_LINK_MODE` en `.env`.
 
 ### Modos disponibles
 
-| Modo | Descripción | Caso de uso |
-|---|---|---|
-| `never` | Nunca genera Meet link | Centros presenciales (coloquial) |
-| `always` | Siempre genera Meet link | Freelance, consultores remotos |
-| `virtual_only` | Solo en turnos virtuales | **⚠️ PENDIENTE** — requiere flujo de modalidad |
+| Modo | Descripción | Caso de uso | Estado |
+|---|---|---|---|
+| `never` | Nunca genera Meet link | Centros presenciales | ✅ Funcional |
+| `always` | Siempre genera Meet link | Freelance, consultores remotos | ✅ Funcional |
+| `virtual_only` | Solo en turnos virtuales | **⚠️ PENDIENTE** — requiere flujo de modalidad | ❌ Bloqueado |
 
-### Estado actual post-`feature/meet-link`
+### Limitación con Gmail gratuito — resuelta via OAuth2
 
-- `conferenceDataVersion=1` hardcodeado → siempre genera Meet
-- No hay configuración por tenant
-- No hay validación al arrancar
+Google Calendar no permite crear Meet links cuando la operación se realiza mediante
+Service Account en calendarios de cuentas Gmail gratuitas. El error que devuelve es:
+
+```
+HttpError 400: Invalid conference type value
+```
+
+**Solución implementada:** OAuth2 por profesional. Cuando el profesional tiene
+`oauth_refresh_token` en BD y `MEET_LINK_MODE=always`, el sistema usa las credenciales
+OAuth2 del profesional en lugar de la Service Account para crear el evento.
+Esto permite generar Meet links en cuentas Gmail gratuitas.
+
+La Service Account sigue usándose para lectura de disponibilidad (slots). Solo la
+**creación de eventos** usa OAuth2 cuando está disponible.
 
 ---
 
-## Archivos a modificar — en orden de ejecución
+## Arquitectura implementada
+
+### Cadena de creación de eventos
 
 ```
-src/config/domain_config.py          ← Paso 1: agregar MEET_LINK_MODE
-src/config/filter_config.py          ← Paso 2: agregar ASK_MODALITY (stub)
-src/config/config_validator.py       ← Paso 3: CREAR — validador al boot
-app.py (o create_app())              ← Paso 4: llamar al validador
-src/services/appointment_service.py  ← Paso 5: lógica de decisión
+appointment_calendar_service.create_appointment()
+    │
+    ├── db.get_professional_oauth_tokens(professional_phone)
+    │
+    ├── Si tiene oauth_refresh_token Y meet_mode == 'always':
+    │       _create_appointment_with_oauth()
+    │           ├── Reconstruir Credentials desde refresh_token
+    │           ├── Renovar access_token si expiró (automático)
+    │           ├── Guardar nuevo access_token en BD
+    │           └── service.events().insert(conferenceDataVersion=1)
+    │                   └── hangoutLink en la respuesta ✅
+    │
+    └── Si no tiene oauth_refresh_token O meet_mode == 'never':
+            calendar_service.create_appointment() (Service Account)
+                └── event_manager.create_appointment(conference_data_version)
+                        └── calendar_client.create_event(conferenceDataVersion=N)
 ```
 
----
+### BD — columnas OAuth en `professionals`
 
-## Paso 1 — `src/config/domain_config.py`
-
-Agregar la constante `MEET_LINK_MODE` junto a las otras configuraciones de comportamiento
-(cerca de `CANCELLATION_HOURS_LIMIT` o `MAX_ACTIVE_APPOINTMENTS_GLOBAL_PER_CLIENT`).
-
-```python
-# ---------------------------------------------------------
-# MEET LINK — Google Meet en confirmación de turno
-# ---------------------------------------------------------
-# Controla si se genera un link de videoconferencia al crear el evento
-# en Google Calendar.
-#
-# Valores válidos:
-#   'never'        → nunca genera Meet (centros presenciales)
-#   'always'       → siempre genera Meet (freelance, remoto)
-#   'virtual_only' → ⚠️ NO DISPONIBLE — requiere FeatureFlags.ASK_MODALITY=True
-#                    Habilitarlo antes de implementar el flujo de modalidad
-#                    causa un error de configuración al arrancar.
-MEET_LINK_MODE: str = 'never'   # cambiar a 'always' para tono freelance
+```sql
+oauth_refresh_token TEXT DEFAULT NULL   -- token larga duración
+oauth_access_token  TEXT DEFAULT NULL   -- token corto (1 hora), se renueva auto
+oauth_token_expiry  TIMESTAMP DEFAULT NULL
 ```
 
----
+### Nuevos archivos
 
-## Paso 2 — `src/config/filter_config.py`
-
-Agregar el flag `ASK_MODALITY` en la clase `FeatureFlags`.
-Por ahora es `False` — es el stub que el validador del Paso 3 necesita leer.
-
-```python
-class FeatureFlags:
-    # ... flags existentes ...
-
-    # Flujo de selección de modalidad durante el booking
-    # (presencial / virtual). Requerido para MEET_LINK_MODE='virtual_only'.
-    # ⚠️ NO activar hasta implementar el estado CLIENT_ASK_MODALITY
-    # en client_handler.py y states.py.
-    ASK_MODALITY: bool = False
 ```
-
----
-
-## Paso 3 — CREAR `src/config/config_validator.py`
-
-Archivo nuevo. Contiene una función que valida la coherencia de la configuración
-antes de que la app levante. Si algo está mal, lanza `ValueError` con un mensaje claro.
-
-```python
-"""
-Config Validator
-================
-Valida la coherencia entre DomainConfig y FeatureFlags al arrancar.
-Se llama una sola vez desde create_app() o app.py.
-
-Si la configuración es inválida, lanza ValueError con un mensaje
-que explica exactamente qué falta y cómo corregirlo.
-Fail fast — mejor explotar en el boot que fallar en producción.
-"""
-
-from src.config.domain_config import DomainConfig
-from src.config.filter_config import FeatureFlags
-
-# Modos de Meet habilitados en esta versión.
-# 'virtual_only' se agrega acá cuando ASK_MODALITY esté implementado.
-_MEET_MODES_ENABLED = {'never', 'always'}
-
-
-def validate_config() -> None:
-    """
-    Valida la configuración al arrancar.
-    Lanza ValueError si encuentra una combinación inválida.
-
-    Checks:
-        1. MEET_LINK_MODE es un valor conocido
-        2. MEET_LINK_MODE='virtual_only' requiere ASK_MODALITY=True
-           (bloqueado hasta que el flujo esté implementado)
-    """
-    _validate_meet_link_mode()
-    print("[CONFIG] ✅ Configuración válida")
-
-
-def _validate_meet_link_mode() -> None:
-    mode = DomainConfig.MEET_LINK_MODE
-
-    # Check 1 — valor conocido (incluyendo los pendientes)
-    _ALL_KNOWN_MODES = {'never', 'always', 'virtual_only'}
-    if mode not in _ALL_KNOWN_MODES:
-        raise ValueError(
-            f"[CONFIG] ❌ MEET_LINK_MODE='{mode}' no es un valor válido.\n"
-            f"Valores permitidos: {_ALL_KNOWN_MODES}\n"
-            f"Revisar src/config/domain_config.py"
-        )
-
-    # Check 2 — virtual_only bloqueado hasta que el flujo esté listo
-    if mode == 'virtual_only':
-        if not FeatureFlags.ASK_MODALITY:
-            raise ValueError(
-                "[CONFIG] ❌ MEET_LINK_MODE='virtual_only' requiere "
-                "FeatureFlags.ASK_MODALITY=True.\n"
-                "El flujo de selección de modalidad no está implementado.\n"
-                "Opciones:\n"
-                "  - Usar MEET_LINK_MODE='always' o 'never' por ahora\n"
-                "  - Implementar CLIENT_ASK_MODALITY en client_handler.py "
-                "y states.py antes de habilitar este modo"
-            )
+src/integrations/google/oauth_state_store.py   -- state → phone durante flujo OAuth2
+src/api/whatsapp_handler.py GET /oauth/callback -- recibe código, guarda tokens en BD
+scripts/test_oauth_meet.py                      -- script de autorización inicial
 ```
 
 ---
 
-## Paso 4 — `app.py` (o `create_app()`)
+## Setup OAuth2 para profesional nuevo
 
-Llamar al validador **antes** de registrar rutas o inicializar servicios.
-Si falla, la app no arranca y el error aparece en los logs de Docker.
+### 1. Crear credenciales OAuth2 en Google Cloud Console
 
-Agregar al inicio del archivo, después de los imports:
+1. APIs & Services → Credenciales → Crear → ID de cliente OAuth 2.0
+2. Tipo: **Aplicación web**
+3. URIs de redirección autorizados:
+   ```
+   https://TU-DOMINIO/oauth/callback
+   ```
+4. Descargar JSON → extraer `client_id` y `client_secret`
 
-```python
-from src.config.config_validator import validate_config
+### 2. Configurar `.env`
 
-# Validar configuración al arrancar — fail fast
-validate_config()
+```env
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+GOOGLE_OAUTH_REDIRECT_URI=https://TU-DOMINIO/oauth/callback
 ```
 
-Si la app usa factory pattern (`create_app()`), ponerlo al inicio de esa función,
-antes del primer `app.register_blueprint(...)`.
+### 3. Autorizar al profesional
 
----
-
-## Paso 5 — `src/services/appointment_service.py`
-
-Función: `create_appointment()`
-
-Reemplazar el bloque `# 2. Crear evento en Google Calendar` completo:
-
-```python
-            # 2. Crear evento en Google Calendar
-            # conference_data_version depende de MEET_LINK_MODE:
-            #   'never'   → 0 (sin Meet)
-            #   'always'  → 1 (siempre Meet)
-            #   'virtual_only' → 1 solo si modality='virtual' (requiere ASK_MODALITY)
-            from src.config.domain_config import DomainConfig
-
-            meet_mode = DomainConfig.MEET_LINK_MODE
-            if meet_mode == 'always':
-                conference_data_version = 1
-            else:
-                # 'never' — 'virtual_only' está bloqueado por el validador
-                # si llega acá con virtual_only es porque ASK_MODALITY=True
-                # y el flujo pasó la modalidad en kwargs (implementación futura)
-                conference_data_version = 0
-
-            logger.info(f"Creando evento en Google Calendar (meet_mode={meet_mode})...")
-            google_event = self.calendar_service.create_appointment(
-                calendar_id=calendar_id,
-                start_datetime=f"{date} {start_time}",
-                end_datetime=f"{date} {end_time}",
-                client_name=client_name,
-                client_phone=client_phone,
-                appointment_type=appointment_type,
-                notes=notes,
-                conference_data_version=conference_data_version
-            )
-
-            google_event_id = google_event['id']
-            # meet_link presente solo si conference_data_version=1
-            # y Google tiene permisos de Meet en el calendario
-            meet_link = google_event.get('hangoutLink') if meet_mode != 'never' else None
-            logger.info(
-                f"Evento creado en Google Calendar: {google_event_id} | "
-                f"Meet: {meet_link or 'sin link'}"
-            )
+```bash
+# Correr fuera del Docker (necesita browser)
+python scripts/test_oauth_meet.py
 ```
 
-Para que `conference_data_version` llegue al `event_manager`, también hay que
-actualizarlo en la cadena de fachadas.
+El script genera una URL de autorización, el profesional la abre, aprueba,
+y el script guarda el `refresh_token` directamente en la BD del Docker.
 
-### Cadena completa del parámetro
+### 4. Verificar
 
-El parámetro `conference_data_version` tiene que propagarse por estas funciones
-(ya preparadas con `default=0` en la feature anterior):
-
-```
-appointment_service.create_appointment()      ← Paso 5 (acá)
-    └── calendar_service.create_appointment() ← google_calendar_service.py (fachada)
-            └── event_manager.create_appointment()  ← ya preparado
-                    └── calendar_client.create_event(conferenceDataVersion=N)  ← ya preparado
-```
-
-Las dos fachadas intermedias necesitan recibir y pasar el parámetro:
-
-**`src/integrations/google_calendar_service/google_calendar_service.py`**
-`create_appointment()` — agregar en firma y en el `return self.event_manager.create_appointment(...)`:
-```python
-conference_data_version: int = 0,   # ← agregar en firma
-# ...
-conference_data_version=conference_data_version  # ← agregar en el call
-```
-
-**`src/integrations/google_calendar_service/calendar/event_manager.py`**
-`create_appointment()` — ya tiene `conferenceDataVersion` hardcodeado en `1`.
-Reemplazar por el parámetro recibido:
-```python
-conference_data_version: int = 0,   # ← agregar en firma
-# ...
-# En el call a calendar_client.create_event():
-conference_data_version=conference_data_version  # ← reemplazar el 1 hardcodeado
+```bash
+docker exec whatsapp-demo python -c "
+from src.database.database import db
+tokens = db.get_professional_oauth_tokens('+549XXXXXXXXXX')
+print('OAuth configurado:', tokens is not None)
+"
 ```
 
 ---
 
-## Verificación post-deploy
+## Archivos implementados — resumen de cambios
+
+| Archivo | Cambio |
+|---|---|
+| `src/config/domain_config.py` | `MEET_LINK_MODE` configurable |
+| `src/config/filter_config.py` | `ASK_MODALITY = False` (stub) |
+| `src/config/config_validator.py` | Validador al boot |
+| `src/integrations/appointment_calendar_service.py` | Lógica OAuth2 vs Service Account |
+| `src/integrations/google_calendar_service/calendar/event_manager.py` | `conference_data_version` + `conferenceData` en body |
+| `src/integrations/google_calendar_service/calendar/calendar_client.py` | Fallback silencioso si Google rechaza Meet |
+| `src/integrations/google/oauth_state_store.py` | **Nuevo** — state store en memoria |
+| `src/api/whatsapp_handler.py` | **Nuevo** endpoint `GET /oauth/callback` |
+| `src/database/database.py` | Columnas OAuth en `professionals` |
+| `scripts/test_oauth_meet.py` | **Nuevo** — script de autorización |
+
+---
+
+## Verificación
 
 ```bash
 # 1. Verificar que el validador corre al arrancar
 docker compose logs whatsapp-demo | grep "\[CONFIG\]"
 # Esperado: [CONFIG] ✅ Configuración válida
 
-# 2. Probar configuración inválida (smoke test)
-# Cambiar temporalmente MEET_LINK_MODE = 'virtual_only' en domain_config.py
-# con ASK_MODALITY = False → la app NO debe arrancar
-
-# 3. Verificar meet_link en BD después de un booking con mode='always'
-docker exec -it whatsapp-demo python -c "
+# 2. Verificar OAuth configurado para un profesional
+docker exec whatsapp-demo python -c "
 from src.database.database import db
-apt = db.get_appointment(1)  # reemplazar con ID real
-print('meet_link:', apt.get('meet_link'))
+tokens = db.get_professional_oauth_tokens('+549XXXXXXXXXX')
+print('OAuth:', 'configurado' if tokens else 'NO configurado')
+"
+
+# 3. Verificar meet_link guardado después de un booking
+docker exec whatsapp-demo python -c "
+from src.database.database import db
+with db.get_connection() as conn:
+    rows = conn.execute('''
+        SELECT id, appointment_date, start, meet_link
+        FROM appointments
+        WHERE google_event_id IS NOT NULL
+        ORDER BY created_at DESC LIMIT 3
+    ''').fetchall()
+    for r in rows: print(dict(r))
 "
 ```
 
@@ -270,30 +169,15 @@ print('meet_link:', apt.get('meet_link'))
 
 ## Pendiente — `virtual_only`
 
-Para habilitar este modo en el futuro, los pasos son:
+Para habilitar este modo en el futuro:
 
 1. Implementar estado `CLIENT_ASK_MODALITY` en `src/core/states.py`
 2. Agregar handler en `client_handler.py` que pregunte presencial/virtual
-   y guarde `modality` en `session.temp_data`
 3. Pasar `modality` a `appointment_service.create_appointment()`
-4. En el Paso 5 de este doc, agregar el caso:
+4. Agregar lógica en `appointment_calendar_service`:
    ```python
    elif meet_mode == 'virtual_only':
-       conference_data_version = 1 if modality == 'virtual' else 0
+       usar_oauth = modality == 'virtual' and oauth_tokens
    ```
 5. Setear `FeatureFlags.ASK_MODALITY = True`
 6. Mover `'virtual_only'` a `_MEET_MODES_ENABLED` en `config_validator.py`
-
----
-
-## Resumen de cambios
-
-| Archivo | Tipo | Qué |
-|---|---|---|
-| `domain_config.py` | Modificar | Agregar `MEET_LINK_MODE = 'never'` |
-| `filter_config.py` | Modificar | Agregar `ASK_MODALITY = False` |
-| `config_validator.py` | **Crear** | Validador al boot |
-| `app.py` | Modificar | Llamar `validate_config()` al arrancar |
-| `appointment_service.py` | Modificar | Lógica `conference_data_version` según modo |
-| `google_calendar_service.py` | Modificar | Propagar `conference_data_version` (fachada) |
-| `event_manager.py` | Modificar | Recibir y usar `conference_data_version` |

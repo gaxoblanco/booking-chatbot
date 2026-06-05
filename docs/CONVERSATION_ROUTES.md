@@ -1,25 +1,46 @@
-# 🗺️ MAPA COMPLETO DE RUTAS CONVERSACIONALES v3.2
+# 🗺️ MAPA COMPLETO DE RUTAS CONVERSACIONALES v4.0
 ## Sistema de Agenda - WhatsApp Bot con NLU
 
 ---
 
 ## 📋 ÍNDICE
 
-1. [Cambios Importantes - v3.2](#cambios-importantes---v32)
-2. [Arquitectura de Conversación con NLU](#arquitectura-de-conversación-con-nlu)
-3. [Flujos Inteligentes con Shortcuts](#flujos-inteligentes-con-shortcuts)
-4. [Rutas del Cliente](#rutas-del-cliente)
-5. [Sistema de Cancelación](#sistema-de-cancelación)
-6. [Validaciones Implementadas](#validaciones-implementadas)
-7. [Ejemplos de Conversación](#ejemplos-de-conversación)
+1. [Cambios Importantes - v4.0](#cambios-importantes---v40)
+2. [Modos de Operación](#modos-de-operación)
+3. [Mecanismo flow_context](#mecanismo-flow_context)
+4. [Navegación hacia atrás](#navegación-hacia-atrás)
+5. [Arquitectura de Conversación con NLU](#arquitectura-de-conversación-con-nlu)
+6. [Flujos Inteligentes con Shortcuts](#flujos-inteligentes-con-shortcuts)
+7. [Rutas del Cliente](#rutas-del-cliente)
+8. [Sistema de Cancelación](#sistema-de-cancelación)
+9. [Validaciones Implementadas](#validaciones-implementadas)
+10. [Ejemplos de Conversación](#ejemplos-de-conversación)
 
 ---
 
-## 🆕 CAMBIOS IMPORTANTES - v3.2
+## 🆕 CAMBIOS IMPORTANTES - v4.0
 
-### **Sistema NLU (Natural Language Understanding)**
+### Modo profesional único (SINGLE_PROFESSIONAL_MODE)
 
-El bot ahora entiende **lenguaje natural** y puede:
+Se agrega soporte para freelancers y consultorios unipersonales. El flujo de búsqueda
+se reemplaza por un flujo corto de 3 pasos sin filtros.
+
+### Mecanismo `flow_context`
+
+Se introduce `session.temp_data['flow_context']` como flag centralizado que determina
+el comportamiento de estados compartidos. Reemplaza las consultas a `Config` dispersas
+en múltiples handlers.
+
+### Google Meet via OAuth2
+
+Los links de Meet ahora se generan correctamente en cuentas Gmail gratuitas usando
+OAuth2 del profesional. Ver `docs/MEET_LINK_MODE.md`.
+
+---
+
+### Sistema NLU (Natural Language Understanding)
+
+El bot entiende **lenguaje natural** y puede:
 - ✅ Detectar intenciones del usuario automáticamente
 - ✅ Extraer múltiples entidades de un mensaje
 - ✅ Acumular información entre mensajes
@@ -28,6 +49,134 @@ El bot ahora entiende **lenguaje natural** y puede:
 - ✅ Cancelar turnos con lenguaje natural
 
 ---
+
+## 🔀 MODOS DE OPERACIÓN
+
+El sistema soporta dos modos configurados desde `.env`. No hay cambios de código al cambiar de modo.
+
+### Modo multi-profesional (`SINGLE_PROFESSIONAL_MODE=false`)
+
+```
+Cliente: "hola"
+    │
+    ▼ Menú con: Buscar / Ver mañana / Mis citas / Info
+    │
+    ▼ Opción 1 → Filtros (zona, fecha, especialidad...)
+    │              ↓
+    │           Lista de N profesionales
+    │              ↓
+    │           Detalle con slots
+    │              ↓
+    │           Confirmación → Booking
+    │
+    ▼ flow_context = 'multi'
+```
+
+### Modo profesional único (`SINGLE_PROFESSIONAL_MODE=true`)
+
+```
+Cliente: "hola"
+    │
+    ▼ Menú con: Agendar reunión / Ver mis reuniones / Info
+    │
+    ▼ Opción 1 → Paso 1: ¿Qué fecha?        [CLIENT_FREELANCE_BOOK_DATE]
+    │              ↓
+    │            Paso 2: ¿Qué horario?       [CLIENT_FREELANCE_BOOK_TIME]
+    │              ↓
+    │            Paso 3: Filtros activos (vitrina) → confirmar
+    │              ↓
+    │            Detalle con slots del único profesional
+    │              ↓
+    │            Confirmación → Booking
+    │
+    ▼ flow_context = 'freelance'
+```
+
+El punto de reunificación es `CLIENT_VIEW_DETAIL_WITH_BOOKING` — a partir de ahí
+booking, confirmación, cancelación y reprogramación funcionan igual en ambos modos.
+
+---
+
+## 🎯 MECANISMO `flow_context`
+
+`flow_context` es un flag en `session.temp_data` que se setea al inicio del flujo
+y persiste hasta que el booking se completa o el usuario vuelve al menú.
+
+### Dónde se setea
+
+| Lugar | Valor | Cuándo |
+|---|---|---|
+| `freelance_handler.handle_freelance_start()` | `'freelance'` | Usuario elige "Agendar reunión" en modo único |
+| `client_handler.handle_client_main_menu()` opción 1 | `'multi'` | Usuario elige "Buscar" en modo multi |
+
+### Dónde se consulta
+
+| Lugar | Comportamiento según valor |
+|---|---|
+| `handle_client_view_detail_with_booking()` al recibir `'0'` | `'freelance'` → volver a preguntar horario / `'multi'` → volver a resultados |
+| `_execute_smart_search()` | `'freelance'` → aplicar `professional_phone_filter` + ir directo al detalle |
+
+### Ciclo de vida
+
+```
+handle_freelance_start()
+    └── set_temp('flow_context', 'freelance')
+            │
+            ▼ persiste en Redis durante toda la conversación
+            │
+    CLIENT_VIEW_DETAIL_WITH_BOOKING
+            │ (usuario presiona '0')
+            ▼
+    flow_context == 'freelance' → CLIENT_FREELANCE_BOOK_TIME
+    flow_context == 'multi'     → CLIENT_SHOW_RESULTS
+            │
+            ▼ booking confirmado
+    session.clear_temp()  ← flow_context se limpia aquí
+```
+
+---
+
+## ↩️ NAVEGACIÓN HACIA ATRÁS
+
+### Modo multi-profesional
+
+```
+CLIENT_VIEW_DETAIL_WITH_BOOKING
+    │ '0'
+    ▼
+CLIENT_SHOW_RESULTS  (lista de N profesionales)
+    │ '0'
+    ▼
+CLIENT_MULTIFILTER_MENU  (filtros)
+    │ '0'
+    ▼
+CLIENT_MAIN_MENU
+```
+
+### Modo profesional único
+
+```
+CLIENT_VIEW_DETAIL_WITH_BOOKING
+    │ '0'
+    ▼
+CLIENT_FREELANCE_BOOK_TIME  (¿qué horario?)
+    │ '0'
+    ▼
+CLIENT_FREELANCE_BOOK_DATE  (¿qué fecha?)
+    │ '0'
+    ▼
+CLIENT_MAIN_MENU
+```
+
+### Estados compartidos con comportamiento diferenciado
+
+| Estado | Mensaje `'0'` en modo `'multi'` | Mensaje `'0'` en modo `'freelance'` |
+|---|---|---|
+| `CLIENT_VIEW_DETAIL_WITH_BOOKING` | → `CLIENT_SHOW_RESULTS` | → `CLIENT_FREELANCE_BOOK_TIME` |
+| `CLIENT_CONFIRM_BOOKING` | → `CLIENT_VIEW_DETAIL_WITH_BOOKING` | → `CLIENT_VIEW_DETAIL_WITH_BOOKING` |
+
+---
+
 
 ### **Antes vs Después:**
 
@@ -593,7 +742,7 @@ CLIENT_MAIN_MENU ← NLU activo
   ↓
 CLIENT_MULTIFILTER_MENU ← NLU activo (acumula entidades)
   ↓
-CLIENT_SHOW_RESULTS ← NLU activo (refinamiento)
+CLIENT_SHOW_RESULTS ← NLU desactivado.  (refinamiento)
   ↓
 CLIENT_SELECT_PROFESSIONAL
   ↓

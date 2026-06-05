@@ -23,8 +23,8 @@ stays lightweight. New clients onboard without touching the ML infrastructure.
 
 ## Stack
 
-Python 3.10 · Flask · spaCy 3.7.2 · Twilio WhatsApp API  
-Google Calendar API (Service Account) · Redis · SQLite · Docker
+Python 3.10 · Flask · spaCy 3.7.2 · Meta Cloud API (WhatsApp Business)  
+Google Calendar API (Service Account + OAuth2) · Redis · SQLite · Docker
 
 ## Key features
 
@@ -34,6 +34,8 @@ Google Calendar API (Service Account) · Redis · SQLite · Docker
 - Tone system — same codebase, different voice per tenant via environment variable
 - Session state via Redis (TTL 30 min) with in-memory fallback
 - Sliding-window rate limiter and anti-spam controls
+- Single-professional mode — stripped-down flow for freelancers and solo practitioners, no search or filters
+- Google Meet links generated automatically via OAuth2 per professional (works with free Gmail accounts)
 
 ## ML details
 
