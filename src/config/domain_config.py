@@ -220,6 +220,13 @@ class DomainConfig:
     from src.config.config import Config
     MEET_LINK_MODE: str = Config.MEET_LINK_MODE
 
+    # ----------------------------------------------------------
+    # Single Professional Mode — ver docs/MEET_LINK_MODE.md
+    # ----------------------------------------------------------
+    from src.config.config import Config
+    SINGLE_PROFESSIONAL_MODE: bool = Config.SINGLE_PROFESSIONAL_MODE
+    SINGLE_PROFESSIONAL_PHONE: str = Config.SINGLE_PROFESSIONAL_PHONE
+
     # Agendamiento para terceros
     ALLOW_BOOKING_FOR_OTHERS = True  # ¿Permitir agendar para otra persona?
     REQUIRE_PATIENT_DATA = True  # Si es para terceros, ¿pedir datos del paciente?
