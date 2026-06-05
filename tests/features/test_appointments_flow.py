@@ -18,6 +18,7 @@ Usage:
     python test_appointments_flow.py --scenario booking # Client booking
     python test_appointments_flow.py --scenario manage  # Client management
     python test_appointments_flow.py --scenario prof    # Professional view
+    docker exec -it whatsapp-demo python tests/features/test_appointments_flow.py
 """
 import os
 import sys
