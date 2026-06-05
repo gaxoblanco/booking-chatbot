@@ -39,6 +39,10 @@ _ACTIVE_FLOW_STATES = {
     "client_view_detail",
     "client_view_detail_with_booking",
 
+    # Búsqueda - Flujo freelance
+    "client_freelance_book_date",
+    "client_freelance_book_time",
+
     # Reserva
     "client_confirm_booking",
     "client_collect_own_name",
@@ -294,6 +298,8 @@ class ContextService:
             if 'reschedule' in state:
                 return 'reschedule'
             if any(k in state for k in ['search', 'multifilter', 'filter', 'results', 'detail']):
+                return 'search'
+            if 'freelance' in state:
                 return 'search'
             if 'reminder' in state:
                 return 'reminder'
