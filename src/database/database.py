@@ -573,6 +573,10 @@ class Database:
                 "ALTER TABLE appointments ADD COLUMN patient_phone TEXT DEFAULT NULL",
                 # Meet link — tono freelance
                 "ALTER TABLE appointments ADD COLUMN meet_link TEXT DEFAULT NULL",
+                # OAuth2 tokens por profesional (MEET_LINK_MODE=always con Gmail gratuito)
+                "ALTER TABLE professionals ADD COLUMN oauth_refresh_token TEXT DEFAULT NULL",
+                "ALTER TABLE professionals ADD COLUMN oauth_access_token TEXT DEFAULT NULL",
+                "ALTER TABLE professionals ADD COLUMN oauth_token_expiry TIMESTAMP DEFAULT NULL",
             ]
             for migration_sql in _safe_migrations:
                 try:
@@ -803,6 +807,70 @@ class Database:
         except Exception as e:
             print(f"[DB] ❌ Error updating fee range: {e}")
             return False
+        
+    def update_professional_oauth_tokens(
+        self,
+        phone: str,
+        refresh_token: str,
+        access_token: str = None,
+        token_expiry: str = None
+    ) -> bool:
+        """
+        Guarda o actualiza los tokens OAuth2 de un profesional.
+        Se llama desde el endpoint /oauth/callback después de la autorización.
+
+        Args:
+            phone: Teléfono del profesional (PK)
+            refresh_token: Token de larga duración para renovar access_token
+            access_token: Token de acceso (expira en 1 hora, opcional)
+            token_expiry: ISO timestamp de expiración del access_token (opcional)
+
+        Returns:
+            bool: True si se actualizó correctamente
+        """
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    UPDATE professionals
+                    SET oauth_refresh_token = ?,
+                        oauth_access_token  = ?,
+                        oauth_token_expiry  = ?
+                    WHERE phone = ?
+                """, (refresh_token, access_token, token_expiry, phone))
+                print(f"[DB] ✅ OAuth tokens actualizados para {phone}")
+                return True
+        except Exception as e:
+            print(f"[DB] ❌ Error guardando OAuth tokens: {e}")
+            return False
+
+
+    def get_professional_oauth_tokens(self, phone: str) -> dict | None:
+        """
+        Retorna los tokens OAuth2 de un profesional.
+        Retorna None si el profesional no tiene OAuth configurado.
+
+        Args:
+            phone: Teléfono del profesional
+
+        Returns:
+            dict con oauth_refresh_token, oauth_access_token, oauth_token_expiry
+            o None si no tiene tokens
+        """
+        try:
+            with self.get_connection() as conn:
+                row = conn.execute("""
+                    SELECT oauth_refresh_token, oauth_access_token, oauth_token_expiry
+                    FROM professionals
+                    WHERE phone = ?
+                """, (phone,)).fetchone()
+
+                if not row or not row['oauth_refresh_token']:
+                    return None
+
+                return dict(row)
+        except Exception as e:
+            print(f"[DB] ❌ Error obteniendo OAuth tokens: {e}")
+            return None
 
     def get_professional(self, phone: str) -> Optional[Dict]:
         """
