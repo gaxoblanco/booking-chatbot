@@ -34,6 +34,7 @@ Ejemplos de uso:
 from src.integrations.reminder import reminder_integration_service
 from src.bot.professional_handler import ProfessionalHandler
 from src.bot.client_handler import ClientHandler
+from src.bot import freelance_handler
 from src.config.filter_config import FeatureFlags
 from src.services.user_service import user_service
 from src.services.intent_detector import intent_detector, Intent
@@ -252,25 +253,26 @@ class BotController:
         # Interceptar confirmaciones y números en CLIENT_SHOW_RESULTS antes del NLU
         # "si", "dale", "1", "2" → el NLU los confunde con unknown/agenda_confirm/greeting
         if session.state == ConversationState.CLIENT_SHOW_RESULTS:
-            _CONFIRM_SHOW = {
-                'si', 'sí', 'dale', 'ok', 'bueno', 'va', 'perfecto',
-                'ese', 'esa', 'ese mismo', 'esa misma', 'ese profesional',
-            }
-            msg_lower_show = msg_stripped.lower()
             results = session.get_temp('search_results', [])
 
-            # Sin resultados + texto libre → resetear y dejar pasar al NLU
-            # para que procese como nueva búsqueda
+            # Sin resultados → sesión vieja o corrupta, limpiar y dejar pasar al NLU
             if not results and not msg_stripped.isdigit():
                 session.clear_temp()
                 session.transition_to(ConversationState.START)
-                # No retornamos — dejamos que el NLU procese el mensaje
+                # No retornamos — el NLU procesa el mensaje como nueva búsqueda
 
             else:
+                _CONFIRM_SHOW = {
+                    'si', 'sí', 'dale', 'ok', 'bueno', 'va', 'perfecto',
+                    'ese', 'esa', 'ese mismo', 'esa misma', 'ese profesional',
+                }
+                msg_lower_show = msg_stripped.lower()
+
                 # Número directo → pasar al handler
                 if msg_stripped.isdigit():
                     handler = self.get_handler_for_state(session.state)
                     return handler(session, msg_stripped)
+
                 # Confirmación corta con un solo resultado → seleccionar automáticamente
                 if msg_lower_show in _CONFIRM_SHOW and len(results) == 1:
                     handler = self.get_handler_for_state(session.state)
@@ -389,6 +391,7 @@ class BotController:
             # CLIENT_BOOKING_CONFIRMED excluido: solo números 1/2/0 — NLU confunde con unknown
             ConversationState.PROF_MAIN_MENU,
             ConversationState.PROF_AGENDA_IMPORT_REVIEW,    
+            ConversationState.CLIENT_FREELANCE_BOOK_DATE, # flujo freelance
         ]
         
         if session.state in nlu_enabled_states:
@@ -1202,6 +1205,8 @@ class BotController:
             ConversationState.CLIENT_RESCHEDULE_CONFIRM: self.client_handler.handle_client_reschedule_confirm,
             ConversationState.CLIENT_CONFIRM_CANCEL: self.client_handler.handle_confirm_cancel,
             ConversationState.CLIENT_SELECT_CANCEL: self.client_handler.handle_select_cancel,
+            ConversationState.CLIENT_FREELANCE_BOOK_DATE: lambda s, m: freelance_handler.handle_freelance_book_date(s, m),
+            ConversationState.CLIENT_FREELANCE_BOOK_TIME: lambda s, m: _route_freelance_time(s, m),
             ConversationState.AWAITING_REMINDER_RESPONSE: lambda s, m: handle_reminder_response(s, m),
             ConversationState.AWAITING_SLOT_OFFER: lambda s, m: handle_slot_offer_response(s, m),
         }
@@ -1365,7 +1370,19 @@ class BotController:
         return " con:\n• " + "\n• ".join(filters_used)
     
     
-
+def _route_freelance_time(session, message):
+    """
+    CLIENT_FREELANCE_BOOK_TIME tiene 2 sub-pasos en el mismo estado:
+      - Primer mensaje: elegir horario (1/2/3) → mostrar pantalla de filtros
+      - Segundo mensaje: confirmar búsqueda (1) o volver (0)
+    Se distinguen con session.get_temp('freelance_filters_shown').
+    """
+    if not session.get_temp('freelance_filters_shown', False):
+        response = freelance_handler.handle_freelance_book_time(session, message)
+        session.set_temp('freelance_filters_shown', True)
+        return response
+    else:
+        return freelance_handler.handle_freelance_confirm_search(session, message)
 
 # ==========================================
 # INSTANCIA GLOBAL

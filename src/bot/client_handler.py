@@ -14,6 +14,7 @@ Responsabilidades:
 
 Este archivo contiene ~800 líneas de lógica específica del cliente.
 """
+from email.mime import message
 from typing import Dict
 from venv import logger
 from requests import session
@@ -65,104 +66,101 @@ class ClientHandler:
     def handle_client_main_menu(self, session: SessionData, message: str) -> str:
         """
         Maneja menú principal del cliente.
-        
-        Opciones DINÁMICAS según si tiene citas:
-        - CON citas: 1=Buscar, 2=Mañana, 3=Mis citas, 4=Info
-        - SIN citas: 1=Buscar, 2=Mañana, 3=Info
+
+        Modo multi-profesional:
+            CON citas: 1=Buscar, 2=Mañana, 3=Mis citas, 4=Info
+            SIN citas: 1=Buscar, 2=Mañana, 3=Info
+
+        Modo profesional único (SINGLE_PROFESSIONAL_MODE=true):
+            CON citas: 1=Agendar, 2=Ver reuniones, 3=Info
+            SIN citas: 1=Agendar, 2=Info
         """
         from src.services.user_service import user_service
+        from src.config.config import Config
         from datetime import datetime, date, timedelta
-        
-        # Validar comandos especiales
-        message_lower = message.lower().strip()
 
-        # '0' en el menú principal no tiene sentido — repetir el menú
+        message_lower = message.lower().strip()
+        single_mode   = getattr(Config, 'SINGLE_PROFESSIONAL_MODE', False)
+
+        # --------------------------------------------------
+        # COMANDOS ESPECIALES
+        # --------------------------------------------------
         if message_lower == '0':
             return user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None,
+                'user_type': 'new', 'name': None,
+                'is_registered': False, 'has_pending_appointments': False,
+                'pending_appointments': [], 'profile': None,
                 'phone_number': session.phone_number
             })
 
-        if message_lower in ['hola', 'hello', 'hi', 'hey', 'buenos días', 'buenas tardes', 'buenas noches']:
+        if message_lower in ['hola', 'hello', 'hi', 'hey',
+                            'buenos días', 'buenas tardes', 'buenas noches']:
             session.reset()
             session.set_role(UserRole.CLIENT)
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
-
-            client = db.get_client(session.phone_number)
-
-            if client and client.get('name'):
-                greeting = f"¡Hola {client['name']}! 👋\n\n"
-            else:
-                greeting = "¡Hola! 👋\n\n"
-
+            client   = db.get_client(session.phone_number)
+            greeting = f"¡Hola {client['name']}! 👋\n\n" if (
+                client and client.get('name')) else "¡Hola! 👋\n\n"
             welcome_msg = user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None,
-                'phone_number': session.phone_number  # ⭐ IMPORTANTE
+                'user_type': 'new', 'name': None,
+                'is_registered': False, 'has_pending_appointments': False,
+                'pending_appointments': [], 'profile': None,
+                'phone_number': session.phone_number
             })
-            
             return greeting + welcome_msg
 
         if message_lower in ['menu', 'menú', 'volver']:
-            welcome_msg = user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None,
-                'phone_number': session.phone_number  # ⭐ IMPORTANTE
+            return user_service.generate_welcome_message({
+                'user_type': 'new', 'name': None,
+                'is_registered': False, 'has_pending_appointments': False,
+                'pending_appointments': [], 'profile': None,
+                'phone_number': session.phone_number
             })
-            return welcome_msg
 
-        # ==========================================
-        # VERIFICAR SI TIENE CITAS (para manejar opciones 3 y 4)
-        # ==========================================
+        # --------------------------------------------------
+        # VERIFICAR CITAS ACTIVAS (necesario para opciones dinámicas)
+        # --------------------------------------------------
         today = datetime.now().strftime("%Y-%m-%d")
         appointments = db.get_appointments_by_client(
             client_phone=session.phone_number,
             from_date=today
         )
-        
-        # Filtrar solo citas activas
         active_appointments = [
             apt for apt in appointments
             if apt['status'] in ['pendiente_confirmacion', 'confirmada']
         ]
-        
         has_appointments = len(active_appointments) > 0
-        
-        print(f"[CLIENT_MENU] Usuario tiene citas: {has_appointments} ({len(active_appointments)} activas)")
 
-        # ==========================================
-        # OPCIÓN 1: Búsqueda asistida
-        # ==========================================
+        print(f"[CLIENT_MENU] Usuario tiene citas: {has_appointments} "
+            f"({len(active_appointments)} activas)")
+
+        # --------------------------------------------------
+        # OPCIÓN 1 — Agendar
+        # --------------------------------------------------
         if message == '1':
-            print(f"[CLIENT] Búsqueda asistida: {session.phone_number}")
-            
-            session.clear_temp()
-            session.set_temp('filters', {})
+            if single_mode:
+                from src.bot.freelance_handler import handle_freelance_start
+                return handle_freelance_start(session)
             session.transition_to(ConversationState.CLIENT_MULTIFILTER_MENU)
-            return self.format_multifilter_menu(session)
+            return self.handle_client_multifilter_menu(session, 'start')
 
-        # ==========================================
-        # OPCIÓN 2: Ver disponibles mañana
-        # ==========================================
+        # --------------------------------------------------
+        # OPCIÓN 2
+        #   Modo único:  Ver mis reuniones (siempre)
+        #   Modo multi:  Ver disponibles mañana
+        # --------------------------------------------------
         elif message == '2':
+            if single_mode:
+                print(f"[CLIENT] Ver mis reuniones (modo único): {session.phone_number}")
+                session.clear_temp()
+                session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
+                return self.handle_client_view_appointments(session, '')
+
+            # Modo multi — ver disponibles mañana
             print(f"[CLIENT] Disponibles mañana: {session.phone_number}")
-            
-            tomorrow = date.today() + timedelta(days=1)
-            tomorrow_str = tomorrow.strftime("%Y-%m-%d")
-            tomorrow_formatted = tomorrow.strftime("%d/%m/%Y")
+            tomorrow            = date.today() + timedelta(days=1)
+            tomorrow_str        = tomorrow.strftime("%Y-%m-%d")
+            tomorrow_formatted  = tomorrow.strftime("%d/%m/%Y")
 
             session.set_temp('search_date', tomorrow_str)
             session.set_temp('search_date_formatted', tomorrow_formatted)
@@ -171,8 +169,6 @@ class ClientHandler:
                 date_str=tomorrow_str,
                 limit=10
             )
-
-            # Log search
             search_id = analytics_service.log_search(
                 client_phone=session.phone_number,
                 search_type='tomorrow',
@@ -182,90 +178,74 @@ class ClientHandler:
             )
             session.set_temp('current_search_id', search_id)
             session.set_temp('search_results', results)
-
             session.transition_to(ConversationState.CLIENT_SHOW_RESULTS)
 
             if len(results) == 0:
                 return client_messages.CLIENT_NO_RESULTS
 
-            search_date = session.get_temp('search_date')
-            formatted = client_service.format_search_results_with_slots(
+            return client_service.format_search_results_with_slots(
                 professionals=results,
-                date_str=search_date,
+                date_str=tomorrow_str,
                 show_max_slots=3
             )
-            return formatted
-        
-        # ==========================================
-        # OPCIÓN 3: DINÁMICA (Ver citas O Info)
-        # ==========================================
+
+        # --------------------------------------------------
+        # OPCIÓN 3
+        #   Modo único:  Info del servicio (siempre)
+        #   Modo multi:  Ver mis citas (si tiene) | Info (si no tiene)
+        # --------------------------------------------------
         elif message == '3':
+            if single_mode:
+                print(f"[CLIENT] Info del servicio (modo único): {session.phone_number}")
+                return user_service.get_center_info()
+
+            # Modo multi — dinámica
             if has_appointments:
-                # TIENE CITAS → Opción 3 = Ver mis citas
                 print(f"[CLIENT] Ver mis citas: {session.phone_number}")
                 session.clear_temp()
                 session.transition_to(ConversationState.CLIENT_VIEW_APPOINTMENTS)
                 return self.handle_client_view_appointments(session, '')
             else:
-                # NO TIENE CITAS → Opción 3 = Información del centro
                 print(f"[CLIENT] Info del centro: {session.phone_number}")
-                info_message = user_service.get_center_info()
-                return info_message
+                return user_service.get_center_info()
 
-        # ==========================================
-        # OPCIÓN 4: SOLO SI TIENE CITAS
-        # ==========================================
+        # --------------------------------------------------
+        # OPCIÓN 4 — solo modo multi con citas activas
+        # --------------------------------------------------
         elif message == '4':
+            if single_mode:
+                # En modo único no existe opción 4
+                return common_messages.INVALID_OPTION + "\n\n" + \
+                    user_service.generate_welcome_message({
+                        'user_type': 'new', 'name': None,
+                        'is_registered': False, 'has_pending_appointments': False,
+                        'pending_appointments': [], 'profile': None,
+                        'phone_number': session.phone_number
+                    })
+
             if has_appointments:
-                # TIENE CITAS → Opción 4 = Información del centro
                 print(f"[CLIENT] Info del centro: {session.phone_number}")
-                info_message = user_service.get_center_info()
-                return info_message
+                return user_service.get_center_info()
             else:
-                # NO TIENE CITAS → Opción 4 no existe, es inválida
-                invalid_msg = common_messages.INVALID_OPTION + "\n\n"
-                welcome_msg = user_service.generate_welcome_message({
-                    'user_type': 'new',
-                    'name': None,
-                    'is_registered': False,
-                    'has_pending_appointments': False,
-                    'pending_appointments': [],
-                    'profile': None,
-                    'phone_number': session.phone_number  # ⭐ IMPORTANTE
-                })
-                return invalid_msg + welcome_msg
+                return common_messages.INVALID_OPTION + "\n\n" + \
+                    user_service.generate_welcome_message({
+                        'user_type': 'new', 'name': None,
+                        'is_registered': False, 'has_pending_appointments': False,
+                        'pending_appointments': [], 'profile': None,
+                        'phone_number': session.phone_number
+                    })
 
-        # ==========================================
-        # OPCIÓN 0: Volver al inicio
-        # ==========================================
-        elif message == '0':
-            welcome_msg = user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None,
-                'phone_number': session.phone_number  # ⭐ IMPORTANTE
-            })
-            return welcome_msg
-
-        # ==========================================
+        # --------------------------------------------------
         # OPCIÓN INVÁLIDA
-        # ==========================================
+        # --------------------------------------------------
         else:
-            invalid_msg = common_messages.INVALID_OPTION + "\n\n"
-            welcome_msg = user_service.generate_welcome_message({
-                'user_type': 'new',
-                'name': None,
-                'is_registered': False,
-                'has_pending_appointments': False,
-                'pending_appointments': [],
-                'profile': None,
-                'phone_number': session.phone_number  # ⭐ IMPORTANTE
-            })
-            return invalid_msg + welcome_msg
-
+            return common_messages.INVALID_OPTION + "\n\n" + \
+                user_service.generate_welcome_message({
+                    'user_type': 'new', 'name': None,
+                    'is_registered': False, 'has_pending_appointments': False,
+                    'pending_appointments': [], 'profile': None,
+                    'phone_number': session.phone_number
+                })
 
     def generate_welcome_message(self, user_info: Dict) -> str:
         """
