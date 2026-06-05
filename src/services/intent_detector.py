@@ -523,6 +523,7 @@ class IntentDetector:
                 f'próximo {dia_nombre}',
                 f'proximo {dia_nombre}',
                 f'este {dia_nombre}',
+                f'{dia_nombre}',
             ]
             
             # Verificar si algún patrón está en el mensaje
