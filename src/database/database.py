@@ -851,7 +851,8 @@ class Database:
         gender: str = None,
         accept_prepaga: bool = None,
         online_sessions: bool = None,
-        specialty: str = None,  # ← NUEVO
+        specialty: str = None,
+        professional_phone_filter: str = None,   # ← nuevo
         limit: int = 50
     ) -> List[Dict]:
         """
@@ -862,6 +863,9 @@ class Database:
             gender: Filter by gender ('m', 'f', 'otro')
             accept_prepaga: Filter by prepaga acceptance
             online_sessions: Filter by online sessions availability
+            specialty: Filter by specialty/category
+            professional_phone_filter: Teléfono exacto — modo profesional único
+            limit: Max results
 
         Returns:
             List of matching professionals
@@ -872,6 +876,12 @@ class Database:
 
                 query = "SELECT * FROM professionals WHERE 1=1"
                 params = []
+
+                # Filtro por teléfono exacto — modo profesional único
+                # Va primero: si está, los demás filtros son innecesarios
+                if professional_phone_filter:
+                    query += " AND phone = ?"
+                    params.append(professional_phone_filter)
 
                 if zone:
                     query += " AND zone = ?"
@@ -888,12 +898,8 @@ class Database:
                 if online_sessions is not None:
                     query += " AND online_sessions = ?"
                     params.append(online_sessions)
-                
+
                 if specialty:
-                    # Mapeo NLU → categorías en BD
-                    # El extractor devuelve la especialidad como sustantivo
-                    # (psicología, nutrición) pero la BD guarda el título
-                    # profesional (Psicólogo, Nutricionista)
                     SPECIALTY_MAP = {
                         'psicología':     'Psicólogo',
                         'nutrición':      'Nutricionista',
@@ -911,8 +917,6 @@ class Database:
                     )
                     query += " AND category LIKE ?"
                     params.append(f"%{db_specialty}%")
-
-                # Only verified professionals (with certificate)
 
                 query += " ORDER BY total_contacts DESC, name ASC"
 
