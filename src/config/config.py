@@ -68,6 +68,14 @@ class Config:
     MEET_LINK_MODE = os.getenv("MEET_LINK_MODE", "never")
 
     # ==========================================
+    # SINGLE PROFESSIONAL MODE
+    # ==========================================
+    # True: saltea filtros, muestra directo al profesional configurado
+    # Usar en tono freelance — un solo profesional, sin búsqueda
+    SINGLE_PROFESSIONAL_MODE: bool = os.getenv("SINGLE_PROFESSIONAL_MODE", "false").lower() == "true"
+    SINGLE_PROFESSIONAL_PHONE: str = os.getenv("SINGLE_PROFESSIONAL_PHONE", "")
+
+    # ==========================================
     # VALIDATION
     # ==========================================
     @staticmethod
@@ -111,6 +119,9 @@ class Config:
         print(f"Meta API version: {Config.META_API_VERSION}")
         print(f"Certificates Dir: {Config.CERTIFICATES_DIR}")
         print(f"Meet Link Mode:   {Config.MEET_LINK_MODE}")
+        print(f"Single Prof Mode: {Config.SINGLE_PROFESSIONAL_MODE}")
+        if Config.SINGLE_PROFESSIONAL_MODE:
+            print(f"Single Prof Phone: {Config.SINGLE_PROFESSIONAL_PHONE}")
 
         # Datos sensibles — mostrar solo los primeros/últimos caracteres
         if Config.META_PHONE_NUMBER_ID:
