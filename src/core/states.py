@@ -64,6 +64,16 @@ class ConversationState(Enum):
     # ESTADOS DE CLIENTE - BÚSQUEDA Y FILTROS
     # ==========================================
 
+    # Flujo corto para modo profesional único (SINGLE_PROFESSIONAL_MODE)
+    CLIENT_FREELANCE_BOOK_DATE = "client_freelance_book_date"
+    CLIENT_FREELANCE_BOOK_TIME = "client_freelance_book_time"
+    # CONTEXTO:
+        # - CLIENT_FREELANCE_BOOK_DATE: el bot pregunta la fecha, el cliente responde
+        # - CLIENT_FREELANCE_BOOK_TIME: el bot pregunta preferencia de horario (mañana/tarde/any)
+        # - Después de CLIENT_FREELANCE_BOOK_TIME se transiciona a CLIENT_VIEW_DETAIL_WITH_BOOKING
+        #   con el profesional ya cargado en session.temp — reutiliza todo el flujo de booking
+        #   existente sin cambios.
+
     # Menú principal
     CLIENT_MAIN_MENU = "client_main_menu"
     CLIENT_NEW_USER_MENU = "client_new_user_menu"
@@ -72,10 +82,10 @@ class ConversationState(Enum):
     CLIENT_MULTIFILTER_MENU = "client_multifilter_menu"
     CLIENT_FILTER_INPUT = "client_filter_input"
     CLIENT_SEARCH_QUICK = "client_search_quick"
-    
+
     # Mostrar resultados
     CLIENT_SHOW_RESULTS = "client_show_results"
-    CLIENT_VIEW_DETAIL = "client_view_detail"
+    CLIENT_VIEW_DETAIL  = "client_view_detail"
 
     # ==========================================
     # ESTADOS DE CLIENTE - RESERVA DE CITAS
