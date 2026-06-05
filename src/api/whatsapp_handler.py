@@ -268,6 +268,88 @@ def webhook():
     # Meta requiere 200 para no reintentar el envío
     return '', 200
 
+@app.route('/oauth/callback')
+def oauth_callback():
+    """
+    Endpoint que recibe el código de autorización OAuth2 de Google.
+    Google redirige acá después de que el profesional aprueba los permisos.
+    
+    Flujo:
+        1. Recibe code + state de Google
+        2. Intercambia code por access_token + refresh_token
+        3. Identifica al profesional por el state (phone guardado en sesión)
+        4. Guarda los tokens en BD
+        5. Retorna página de éxito
+    """
+    import os
+    from google_auth_oauthlib.flow import Flow
+
+    code  = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+
+    # Usuario rechazó la autorización
+    if error:
+        return f"<h2>❌ Autorización rechazada</h2><p>{error}</p>", 400
+
+    if not code:
+        return "<h2>❌ Código de autorización faltante</h2>", 400
+
+    try:
+        # Reconstruir el flow con el mismo state
+        flow = Flow.from_client_config(
+            client_config={
+                "web": {
+                    "client_id":     os.getenv('GOOGLE_OAUTH_CLIENT_ID'),
+                    "client_secret": os.getenv('GOOGLE_OAUTH_CLIENT_SECRET'),
+                    "redirect_uris": [os.getenv('GOOGLE_OAUTH_REDIRECT_URI')],
+                    "auth_uri":      "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri":     "https://oauth2.googleapis.com/token",
+                }
+            },
+            scopes=['https://www.googleapis.com/auth/calendar.events'],
+            redirect_uri=os.getenv('GOOGLE_OAUTH_REDIRECT_URI'),
+            state=state
+        )
+
+        # Intercambiar código por tokens
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+
+        # Recuperar el teléfono del profesional desde el state
+        # El state lo generamos nosotros al crear la URL — contiene el phone
+        from src.integrations.google.oauth_state_store import oauth_state_store
+        phone = oauth_state_store.get_phone(state)
+
+        if not phone:
+            return "<h2>❌ Estado inválido o expirado</h2><p>El link de autorización expiró. Solicitá uno nuevo.</p>", 400
+
+        # Guardar tokens en BD
+        from src.database.database import db
+        from datetime import datetime
+        expiry = credentials.expiry.isoformat() if credentials.expiry else None
+
+        db.update_professional_oauth_tokens(
+            phone=phone,
+            refresh_token=credentials.refresh_token,
+            access_token=credentials.token,
+            token_expiry=expiry
+        )
+
+        oauth_state_store.delete(state)
+
+        print(f"[OAUTH] ✅ Tokens guardados para {phone}")
+
+        return """
+            <h2>✅ Autorización completada</h2>
+            <p>Tu agenda está conectada correctamente.</p>
+            <p>Ya podés cerrar esta ventana.</p>
+        """, 200
+
+    except Exception as e:
+        print(f"[OAUTH] ❌ Error en callback: {e}")
+        return f"<h2>❌ Error procesando autorización</h2><p>{e}</p>", 500
+
 
 # ==========================================
 # GOOGLE CALENDAR PUSH WEBHOOK
