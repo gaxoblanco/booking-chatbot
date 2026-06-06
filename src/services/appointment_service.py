@@ -1,6 +1,11 @@
 """
 Appointment Service - Wrapper
 Delegates to AppointmentCalendarService for full integration
+
+Changelog:
+    - create_appointment() acepta modality='presencial'|'virtual'|None.
+      El parámetro se propaga a AppointmentCalendarService para que
+      decida si generar Meet link cuando MEET_LINK_MODE='auto'.
 """
 
 from src.integrations.appointment_calendar_service import AppointmentCalendarService
@@ -27,7 +32,8 @@ class AppointmentService:
         end_time: str,
         appointment_type: str = "Consulta",
         notes: str = None,
-        patient_phone: str = None      # GAP 4 — teléfono del paciente real si es tercero
+        patient_phone: str = None,     # GAP 4 — teléfono del paciente real si es tercero
+        modality: str = None           # 'presencial' | 'virtual' | None
     ) -> str:
         """
         Create appointment in Google Calendar AND database.
@@ -42,12 +48,15 @@ class AppointmentService:
             appointment_type: Type of appointment (default: "Consulta")
             notes: Optional notes
             patient_phone: Phone of the actual patient if booked for a third party
+            modality: Modalidad elegida por el cliente ('presencial', 'virtual' o None).
+                      Se pasa a AppointmentCalendarService para la decisión de Meet.
+                      Si es None, el calendario usa DEFAULT_MODALITY como fallback.
         
         Returns:
             str: appointment ID
         """
-        # Delegate to AppointmentCalendarService which handles both
-        # Google Calendar creation AND database storage
+        # Delegar a AppointmentCalendarService, que maneja tanto la creación
+        # en Google Calendar como el almacenamiento en BD.
         appointment_id = self.calendar_service.create_appointment(
             professional_phone=professional_phone,
             client_phone=client_phone,
@@ -57,7 +66,8 @@ class AppointmentService:
             end_time=end_time,
             appointment_type=appointment_type,
             notes=notes,
-            patient_phone=patient_phone    # GAP 4
+            patient_phone=patient_phone,   # GAP 4
+            modality=modality,             # nuevo — para decisión de Meet
         )
         
         # Return appointment_id (database ID)
