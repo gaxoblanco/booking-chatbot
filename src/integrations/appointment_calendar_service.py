@@ -210,7 +210,7 @@ class AppointmentCalendarService:
     # ========================================================================
     # CREACIÓN DE CITAS
     # ========================================================================
-    
+
     def create_appointment(
         self,
         professional_phone: str,
@@ -221,7 +221,8 @@ class AppointmentCalendarService:
         end_time: str,
         appointment_type: str,
         notes: Optional[str] = None,
-        patient_phone: Optional[str] = None    # GAP 4 — teléfono del paciente real
+        patient_phone: Optional[str] = None,    # GAP 4 — teléfono del paciente real
+        modality: Optional[str] = None          # 'presencial' | 'virtual' | None
     ) -> int:
         """
         Crea una cita en Google Calendar y en la BD local.
@@ -236,6 +237,10 @@ class AppointmentCalendarService:
             appointment_type: Tipo de consulta
             notes: Notas adicionales (opcional)
             patient_phone: Teléfono del paciente real si se agendó para un tercero (opcional)
+            modality: Modalidad elegida por el cliente ('presencial', 'virtual' o None).
+                      Usada por la lógica de Meet cuando MEET_LINK_MODE='auto':
+                      solo genera Meet link si modality=='virtual' y el profesional
+                      tiene OAuth2 configurado.
         
         Returns:
             int: ID de la cita en BD local
@@ -253,20 +258,49 @@ class AppointmentCalendarService:
             professional = self.db.get_professional(professional_phone)
             calendar_id = professional['calendar_id']
             
-            # 2. Crear evento en Google Calendar
-            # Si el profesional tiene OAuth2 configurado y MEET_LINK_MODE=always
-            # → usar credenciales OAuth2 del profesional (soporta Meet en Gmail gratuito)
-            # Si no → usar Service Account (comportamiento anterior)
+            # ── Decisión de Meet ────────────────────────────────────────────
+            # La lógica depende de MEET_LINK_MODE y, en el caso auto,
+            # también de la modality elegida por el cliente.
+            #
+            # Tabla de comportamiento:
+            #   never        → siempre False, sin OAuth
+            #   always       → True si el profesional tiene OAuth2
+            #   auto → True solo si modality=='virtual' Y tiene OAuth2;
+            #                  si modality=='virtual' pero sin OAuth2 → WARNING + sin Meet
+            #                  si modality=='presencial' o None       → sin Meet
             from src.config.domain_config import DomainConfig
             meet_mode = DomainConfig.MEET_LINK_MODE
-            conference_data_version = 1 if meet_mode == 'always' else 0
 
-            logger.info(f"Creando evento en Google Calendar (meet_mode={meet_mode})...")
+            # conference_data_version: 1 activa la API de conferencias en Google,
+            # 0 la desactiva. Solo se necesita en el path de Service Account.
+            conference_data_version = 1 if meet_mode == 'always' else 0
 
             oauth_tokens = self.db.get_professional_oauth_tokens(professional_phone)
 
+            usar_meet = False
             if meet_mode == 'always' and oauth_tokens:
-                # Usar OAuth2 del profesional — soporta hangoutsMeet en Gmail gratuito
+                # Modo siempre-Meet: usar OAuth2 del profesional
+                usar_meet = True
+            elif meet_mode == 'auto' and modality == 'virtual':
+                if oauth_tokens:
+                    usar_meet = True
+                else:
+                    # Sin OAuth2 no se puede generar Meet en Gmail gratuito.
+                    # Fallback silencioso: crear evento sin Meet.
+                    logger.warning(
+                        f"[MEET] MEET_LINK_MODE=auto y modality=virtual "
+                        f"pero {professional_phone} no tiene OAuth2 configurado. "
+                        f"Creando evento sin Meet link."
+                    )
+
+            logger.info(
+                f"Creando evento en Google Calendar "
+                f"(meet_mode={meet_mode}, modality={modality}, usar_meet={usar_meet})..."
+            )
+
+            if usar_meet:
+                # Path OAuth2: el profesional es quien autoriza → Meet funciona
+                # incluso en cuentas Gmail gratuitas.
                 google_event = self._create_appointment_with_oauth(
                     oauth_tokens=oauth_tokens,
                     professional_phone=professional_phone,
@@ -280,7 +314,7 @@ class AppointmentCalendarService:
                     notes=notes,
                 )
             else:
-                # Service Account — comportamiento original
+                # Path Service Account: comportamiento original, sin Meet link.
                 google_event = self.calendar_service.create_appointment(
                     calendar_id=calendar_id,
                     start_datetime=f"{date} {start_time}",
@@ -289,11 +323,12 @@ class AppointmentCalendarService:
                     client_phone=client_phone,
                     appointment_type=appointment_type,
                     notes=notes,
-                    conference_data_version=conference_data_version
+                    conference_data_version=conference_data_version,
                 )
 
             google_event_id = google_event['id']
-            meet_link = google_event.get('hangoutLink') if meet_mode == 'always' else None
+            # meet_link solo existe si efectivamente se generó Meet (usar_meet=True)
+            meet_link = google_event.get('hangoutLink') if usar_meet else None
             logger.info(
                 f"Evento creado en Google Calendar: {google_event_id} | "
                 f"Meet: {meet_link or 'sin link'}"
@@ -312,6 +347,11 @@ class AppointmentCalendarService:
                 'evaluacion': 'evaluacion'
             }
             session_type = session_type_map.get(appointment_type, 'primera_vez')
+
+            # Determinar la modalidad a guardar en BD:
+            # usar la elegida por el cliente o el fallback del dominio.
+            from src.config.domain_config import DomainConfig as _DC
+            modality_to_save = modality or getattr(_DC, 'DEFAULT_MODALITY', 'presencial')
             
             appointment_id = self.db.create_appointment(
                 client_phone=client_phone,
@@ -321,7 +361,7 @@ class AppointmentCalendarService:
                 end=end_time,
                 duration_minutes=duration,
                 session_type=session_type,
-                modality='presencial',
+                modality=modality_to_save,   # modalidad real, no hardcodeado
                 google_event_id=google_event_id,
                 notes=notes,
                 patient_phone=patient_phone,    # GAP 4
