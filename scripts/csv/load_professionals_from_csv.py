@@ -105,8 +105,20 @@ def load_professionals_from_csv(csv_path: str):
         'sin_calendar': 0,
         'errores': 0
     }
-    
-    profesionales_sin_acceso = []
+
+    # Valido si MEET_LINK_MODE=always para saber si debo marcar profesionales como "needs_oauth" aunque tengan calendar_email válido pero no tengan tokens OAuth2 configurados.
+    meet_mode = False
+    try:
+        from src.config.domain_config import DomainConfig
+        meet_mode = getattr(DomainConfig, 'MEET_LINK_MODE', 'never') == 'always'
+    except Exception:
+        pass
+
+    # Lista unificada de emails pendientes.
+    # Cada entry: { name, email, phone, needs_calendar, needs_oauth }
+    # needs_calendar: True si el profesional no pudo validar el Calendar
+    # needs_oauth:    True si MEET_LINK_MODE=always y no tiene refresh_token en BD
+    pendientes_email = []
     
     # Leer CSV
     try:
@@ -272,19 +284,47 @@ def load_professionals_from_csv(csv_path: str):
                         print(f"      ✅ Calendario secundario: {result['calendar_id']}")
                         print(f"      ⏱️  Slot duration: {slot_duration} min")
                         print(f"      📅 Días: {', '.join(dias_configurados) if dias_configurados else 'ninguno'}")
+
+                        # ── Chequear si necesita OAuth2 para Meet ────────────
+                        needs_oauth = False
+                        if meet_mode:
+                            existing_tokens = db.get_professional_oauth_tokens(phone)
+                            if not existing_tokens:
+                                needs_oauth = True
+                                print(f"      📧 Meet habilitado y sin token OAuth2 → se enviará email")
+                            else:
+                                print(f"      ✅ OAuth2 ya configurado — Meet listo")
+
+                        # Agregar a pendientes si necesita algún email
+                        if needs_oauth:
+                            pendientes_email.append({
+                                'name':             name,
+                                'email':            email,
+                                'phone':            phone,
+                                'calendar_email':   calendar_email,
+                                'needs_calendar':   False,
+                                'needs_oauth':      True,
+                            })
                     else:
                         print(f"      ❌ Error creando calendario secundario: {result['message']}")
                         stats['errores'] += 1
                 else:
-                    # Agoté los reintentos → guardar para enviar email
+                    # Agoté los reintentos → necesita email de Calendar
+                    # Y si MEET_LINK_MODE=always, también necesita OAuth2
                     stats['sin_calendar'] += 1
-                    profesionales_sin_acceso.append({
+                    needs_oauth = meet_mode and not db.get_professional_oauth_tokens(phone)
+                    pendientes_email.append({
                         'name':           name,
-                        'email':          calendar_email, # email instructivo va a la cuenta de Google
+                        'email':          email,
                         'phone':          phone,
                         'calendar_email': calendar_email,
+                        'needs_calendar': True,
+                        'needs_oauth':    needs_oauth,
                     })
-                    print(f"      📧 Se enviará email de solicitud a {email}")
+                    motivos = []
+                    if True: motivos.append("Calendar")
+                    if needs_oauth: motivos.append("Meet OAuth2")
+                    print(f"      📧 Se enviará email ({' + '.join(motivos)}) a {email}")
         
         # Resumen final
         print("\n" + "="*70)
@@ -300,27 +340,28 @@ def load_professionals_from_csv(csv_path: str):
         print(f"   ✅ Con acceso: {stats['con_calendar']}")
         print(f"   ❌ Sin acceso: {stats['sin_calendar']}")
         
-        # ── Profesionales sin acceso → enviar email ──────────────────────────
-        if profesionales_sin_acceso:
+        # ── Emails pendientes (un solo email por profesional) ────────────────
+        if pendientes_email:
             print(f"\n{'='*70}")
-            print(f"⚠️  PROFESIONALES SIN ACCESO A GOOGLE CALENDAR")
+            print(f"📧 EMAILS PENDIENTES")
             print(f"{'='*70}")
-            print(f"\n   {len(profesionales_sin_acceso)} profesional(es) no pudieron validar el calendario")
-            print(f"   después de 4 intentos. Se les enviará email con instrucciones.\n")
+            print(f"\n   {len(pendientes_email)} profesional(es) requieren configuración adicional:\n")
 
-            for i, prof in enumerate(profesionales_sin_acceso, 1):
-                print(f"   {i}. {prof['name']} ({prof['phone']})")
-                print(f"      📧 {prof['email']}  |  📅 {prof['calendar_email']}")
+            for i, prof in enumerate(pendientes_email, 1):
+                motivos = []
+                if prof['needs_calendar']: motivos.append("Calendar")
+                if prof['needs_oauth']:    motivos.append("Meet OAuth2")
+                print(f"   {i}. {prof['name']} ({prof['phone']}) — {' + '.join(motivos)}")
+                print(f"      📧 {prof['email']}")
 
-            # Enviar emails si SMTP está configurado
             try:
                 from src.integrations.email.email_service import is_configured
-                from src.integrations.email.calendar_invitation import send_calendar_invitations
+                from src.integrations.email.professional_onboarding import send_onboarding_emails
 
                 if is_configured():
                     print(f"\n   📤 Enviando emails...")
-                    email_stats = send_calendar_invitations(
-                        profesionales_sin_acceso,
+                    email_stats = send_onboarding_emails(
+                        pendientes_email,
                         service_account_email,
                     )
                     print(f"\n   ✅ Enviados  : {email_stats['enviados']}")
@@ -329,11 +370,9 @@ def load_professionals_from_csv(csv_path: str):
                 else:
                     print(f"\n   💡 SMTP no configurado — emails no enviados.")
                     print(f"      Agregá SMTP_HOST, SMTP_USER y SMTP_PASSWORD al .env")
-                    print(f"      o ejecutá manualmente:")
-                    print(f"      docker exec -it whatsapp-demo python scripts/send_calendar_invitations.py")
 
-            except ImportError:
-                print(f"\n   ⚠️  Módulo de email no instalado — emails no enviados.")
+            except ImportError as e:
+                print(f"\n   ⚠️  Error importando módulo de email: {e}")
                 print(f"      Revisá src/integrations/email/")
 
         else:
