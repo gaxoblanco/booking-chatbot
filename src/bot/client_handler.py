@@ -3119,6 +3119,17 @@ class ClientHandler:
                     patient_phone = session.get_temp('third_party_phone')
                     print(f"[CLIENT] 📋 Tercero: {notes} | patient_phone: {patient_phone}")
 
+            # Leer la modalidad elegida por el cliente en el flujo de filtros.
+            # FilterManager guarda el resultado de ModalityFilter bajo la key
+            # filters['modality']['modality'] dentro de session.temp_data.
+            # Si el cliente no usó el filtro de modalidad, se usa DEFAULT_MODALITY.
+            _active_filters = session.get_temp('filters', {})
+            _modality_filter_data = _active_filters.get('modality', {})
+            modality = _modality_filter_data.get('modality')  # 'presencial'|'virtual'|None
+            if not modality:
+                from src.config.domain_config import DomainConfig as _DC
+                modality = getattr(_DC, 'DEFAULT_MODALITY', 'presencial')
+
             # Crear en Google Calendar
             google_event_id = appointment_service.create_appointment(
                 client_phone=session.phone_number,
@@ -3129,7 +3140,8 @@ class ClientHandler:
                 end_time=booking_end_time,
                 appointment_type="Consulta",
                 notes=notes,
-                patient_phone=patient_phone
+                patient_phone=patient_phone,
+                modality=modality,   # para decisión de Meet en auto
             )
             appointment_id = google_event_id
 
