@@ -21,7 +21,7 @@ class OAuthStateStore:
     Thread-safe via Lock.
     """
 
-    def __init__(self, ttl_minutes: int = 10):
+    def __init__(self, ttl_minutes: int = 1440):  # 24 horas 
         self._store: dict[str, dict] = {}
         self._lock  = threading.Lock()
         self._ttl   = timedelta(minutes=ttl_minutes)
