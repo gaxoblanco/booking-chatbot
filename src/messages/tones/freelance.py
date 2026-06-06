@@ -239,7 +239,7 @@ CLIENT_APPOINTMENT_DETAIL = (
     "📋 *{professional_name}*\n"
     "📅 {date}\n"
     "🕐 {time}"
-    "{meet_line}\n"
+    "{meet_line}" # Salto de linea dentro del meet_line para que solo aparezca si hay link
     "📞 {professional_phone}\n"
     "{reason_display}\n"
     "{status_badge}\n\n"
