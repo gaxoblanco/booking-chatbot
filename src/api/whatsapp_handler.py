@@ -350,6 +350,85 @@ def oauth_callback():
         print(f"[OAUTH] ❌ Error en callback: {e}")
         return f"<h2>❌ Error procesando autorización</h2><p>{e}</p>", 500
 
+@app.route('/oauth/start', methods=['GET'])
+def oauth_start():
+    """
+    Inicia el flujo OAuth2 para un profesional.
+ 
+    Crea el state en el proceso Flask (mismo proceso que maneja /oauth/callback),
+    y redirige al browser directamente a la URL de autorización de Google.
+ 
+    Seguridad:
+        - Requiere OAUTH_SETUP_KEY en query param ?key=...
+        - La clave se valida por comparación constante (anti timing-attack)
+        - Si OAUTH_SETUP_KEY no está configurada en .env, el endpoint devuelve 404
+        - Solo disponible via HTTPS en producción (ngrok o dominio real)
+ 
+    Uso desde el script de setup:
+        El script abre en el browser:
+        https://TU-DOMINIO/oauth/start?key=OAUTH_SETUP_KEY&phone=+549...
+        → el bot crea el state, redirige a Google
+        → Google redirige a /oauth/callback con el code
+        → /oauth/callback intercambia el code y guarda el token en BD
+ 
+    Query params:
+        key:   OAUTH_SETUP_KEY del .env
+        phone: Teléfono del profesional en formato E.164 (+549...)
+    """
+    import hmac as _hmac
+    from flask import redirect as _redirect
+    import urllib.parse as _urlparse
+ 
+    # ── 1. Verificar que la feature está habilitada ───────────────────────────
+    setup_key = os.getenv('OAUTH_SETUP_KEY', '').strip()
+    if not setup_key:
+        # No configurada → endpoint inexistente para el exterior
+        return '', 404
+ 
+    # ── 2. Validar la key con comparación constante ───────────────────────────
+    provided_key = request.args.get('key', '')
+    if not _hmac.compare_digest(setup_key.encode(), provided_key.encode()):
+        print(f"[OAUTH-START] 🚨 Key inválida desde {request.remote_addr}")
+        return 'Unauthorized', 403
+ 
+    # ── 3. Resolver teléfono del profesional ─────────────────────────────────
+    phone = request.args.get('phone', '').strip()
+    if not phone:
+        # Si no se pasa ?phone=, usar SINGLE_PROFESSIONAL_PHONE como fallback
+        phone = os.getenv('SINGLE_PROFESSIONAL_PHONE', '').strip()
+    if not phone:
+        return 'Falta parámetro phone', 400
+ 
+    # ── 4. Crear state en el proceso Flask ───────────────────────────────────
+    # CRÍTICO: oauth_state_store.create() debe correr en ESTE proceso,
+    # no en un `docker exec` separado. El mismo proceso que atiende
+    # /oauth/callback es quien tiene que haber creado el state.
+    from src.integrations.google.oauth_state_store import oauth_state_store
+    state = oauth_state_store.create(phone)
+ 
+    print(f"[OAUTH-START] ✅ State creado para {phone[:4]}****{phone[-4:]} | state={state[:8]}...")
+ 
+    # ── 5. Construir URL de autorización Google ───────────────────────────────
+    client_id    = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '').strip()
+    redirect_uri = os.getenv('WEBHOOK_URL', '').rstrip('/') + '/oauth/callback'
+ 
+    if not client_id:
+        return 'GOOGLE_OAUTH_CLIENT_ID no configurado en .env', 500
+ 
+    params = {
+        'response_type':          'code',
+        'client_id':              client_id,
+        'redirect_uri':           redirect_uri,
+        'scope':                  'https://www.googleapis.com/auth/calendar.events',
+        'state':                  state,
+        'access_type':            'offline',
+        'include_granted_scopes': 'true',
+        'prompt':                 'consent',  # Fuerza refresh_token en cada autorización
+    }
+    auth_url = 'https://accounts.google.com/o/oauth2/auth?' + _urlparse.urlencode(params)
+ 
+    # ── 6. Redirigir al browser ───────────────────────────────────────────────
+    return _redirect(auth_url)
 
 # ==========================================
 # GOOGLE CALENDAR PUSH WEBHOOK
