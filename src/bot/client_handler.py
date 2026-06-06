@@ -2749,8 +2749,14 @@ class ClientHandler:
 
         # Meet link — solo si existe en la cita
         meet_line = ""
+        # Refrescar meet_link desde BD — el dict en session.temp puede estar desactualizado
+        if not apt.get('meet_link') and apt.get('id'):
+            fresh = db.get_appointment(apt['id'])
+            if fresh and fresh.get('meet_link'):
+                apt['meet_link'] = fresh['meet_link']
         if apt.get('meet_link'):
-            meet_line = f"\n🎥 {apt['meet_link']}"
+            # Como puede o no existir, el salto de linea lo manejo aca.
+            meet_line = f"\n🎥 {apt['meet_link']}\n" if apt.get('meet_link') else ""
 
         return appointment_messages.CLIENT_APPOINTMENT_DETAIL.format(
             id=session.get_temp('selected_appointment_number', apt['id']),
