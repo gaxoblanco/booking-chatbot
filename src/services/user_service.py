@@ -276,7 +276,7 @@ class UserService:
                 menu += "2️⃣ Info del servicio\n\n"
         else:
             # Modo multi-profesional — búsqueda con filtros
-            menu  = "¿Qué querés hacer?\n\n"
+            menu  = ""
             menu += f"1️⃣ Buscar {DomainConfig.PROFESSIONAL_TITLE_LOWER}\n"
             menu += f"   Búsqueda asistida paso a paso\n\n"
             menu += f"2️⃣ Ver disponibles mañana\n"
