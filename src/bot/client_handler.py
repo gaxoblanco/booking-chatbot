@@ -236,16 +236,25 @@ class ClientHandler:
                     })
 
         # --------------------------------------------------
-        # OPCIÓN INVÁLIDA
+        # TEXTO LIBRE — afirmativos directos o delegar al NLU
         # --------------------------------------------------
+        # Si el usuario responde con un afirmativo (dale, sí, ok, etc.)
+        # en modo freelance, interpretar como "quiero agendar" y lanzar
+        # el flujo directamente sin pasar por el NLU.
+        # Para cualquier otro texto libre, resetear a START para NLU.
         else:
-            return common_messages.INVALID_OPTION + "\n\n" + \
-                user_service.generate_welcome_message({
-                    'user_type': 'new', 'name': None,
-                    'is_registered': False, 'has_pending_appointments': False,
-                    'pending_appointments': [], 'profile': None,
-                    'phone_number': session.phone_number
-                })
+            _AFIRMATIVOS_MENU = {
+                'si', 'sí', 'dale', 'ok', 'va', 'listo', 'bueno',
+                'claro', 'vamos', 'perfecto', 'de una', 'obvio',
+                'quiero', 'agendar', 'agendemos',
+            }
+            if single_mode and message_lower in _AFIRMATIVOS_MENU:
+                # Modo freelance + afirmativo → ir directo a agendar
+                from src.bot.freelance_handler import handle_freelance_start
+                return handle_freelance_start(session)
+            # Cualquier otro texto → NLU
+            session.transition_to(ConversationState.START)
+            return None  # None → bot_controller reprocesa con NLU
 
     def generate_welcome_message(self, user_info: Dict) -> str:
         """

@@ -214,13 +214,20 @@ def handle_freelance_confirm_search(session: SessionData, message: str) -> str:
     CLIENT_FREELANCE_BOOK_TIME para no necesitar un cuarto estado.
     Se distinguen por session.get_temp('freelance_filters_shown').
     """
-    if message.strip() == '0':
+    # Normalizar afirmativos y negativos en lenguaje natural
+    _msg = message.strip().lower()
+    _AFIRMATIVOS = {'1', 'si', 'sí', 'dale', 'ok', 'va', 'listo', 'bueno',
+                    'claro', 'vamos', 'perfecto', 'de una', 'obvio', 'veamos',
+                    'quiero', 'agendar', 'agendemos', 'sí quiero', 'si quiero'}
+    _NEGATIVOS   = {'0', 'no', 'volver', 'cancelar', 'cambiar', 'nope'}
+
+    if _msg in _NEGATIVOS:
         # Volver a fecha
         session.set_temp('freelance_filters_shown', False)
         session.transition_to(ConversationState.CLIENT_FREELANCE_BOOK_DATE)
         return get_msg('CLIENT_ASK_FECHA')
 
-    if message.strip() != '1':
+    if _msg not in _AFIRMATIVOS:
         # No entendió — repetir opciones
         return (
             "Respondé *1* para ver los horarios disponibles "
