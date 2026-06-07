@@ -35,6 +35,7 @@ def validate_config() -> None:
         5. TENANT_TONE / DOMAIN_PRESET coherentes
     """
     _validate_meet_link_mode()
+    _validate_oauth_redirect_uri()
     _validate_single_professional_mode()
     _validate_demo_mode()
     print("[CONFIG] ✅ Configuración válida")
@@ -139,6 +140,55 @@ def _validate_meet_link_mode() -> None:
         pass
 
     print("[CONFIG] ✅ MEET_LINK_MODE=auto — filtro de modalidad activo")
+
+
+
+
+def _validate_oauth_redirect_uri() -> None:
+    """
+    Valida que GOOGLE_OAUTH_REDIRECT_URI sea coherente con WEBHOOK_URL.
+
+    GOOGLE_OAUTH_REDIRECT_URI debe empezar con el mismo dominio base que
+    WEBHOOK_URL. Si difieren, el flujo OAuth2 falla con redirect_uri_mismatch
+    en Google — un error difícil de diagnosticar en producción.
+
+    Check solo corre si MEET_LINK_MODE es 'always' o 'auto'.
+
+    Dónde corregirlo:
+      Archivo  : .env
+      Variable : GOOGLE_OAUTH_REDIRECT_URI
+      Valor    : <WEBHOOK_URL>/oauth/callback
+    """
+    mode = DomainConfig.MEET_LINK_MODE
+    if mode not in ('always', 'auto'):
+        return
+
+    webhook_url    = os.getenv('WEBHOOK_URL', '').strip().rstrip('/')
+    redirect_uri   = os.getenv('GOOGLE_OAUTH_REDIRECT_URI', '').strip().rstrip('/')
+
+    if not webhook_url or not redirect_uri:
+        return  # Otros checks ya cubren variables vacías
+
+    # Extraer dominio base de cada URL
+    from urllib.parse import urlparse
+    webhook_base  = urlparse(webhook_url).netloc   # ej: wbot.gaxoblanco.com
+    redirect_base = urlparse(redirect_uri).netloc  # ej: gaxoblanco.com
+
+    if webhook_base != redirect_base:
+        raise ValueError(
+            f"[CONFIG] ❌ GOOGLE_OAUTH_REDIRECT_URI no coincide con WEBHOOK_URL.\n"
+            f"  El flujo OAuth2 va a fallar con 'redirect_uri_mismatch' en Google.\n"
+            f"\n"
+            f"  WEBHOOK_URL             : {webhook_url}\n"
+            f"  GOOGLE_OAUTH_REDIRECT_URI: {redirect_uri}\n"
+            f"\n"
+            f"  Dónde corregirlo:\n"
+            f"  Archivo  : .env\n"
+            f"  Variable : GOOGLE_OAUTH_REDIRECT_URI\n"
+            f"  Cambiar  : GOOGLE_OAUTH_REDIRECT_URI={webhook_url}/oauth/callback"
+        )
+
+    print(f"[CONFIG] ✅ GOOGLE_OAUTH_REDIRECT_URI coherente con WEBHOOK_URL")
 
 
 def _validate_single_professional_mode() -> None:
