@@ -273,3 +273,6 @@ ml-intent-service/models/
 ml-intent-service/models/**
 ml-intent-service/scripts/ml/models/
 ml-intent-service/scripts/ml/models/**
+
+oauth_token_temp.txt
+*.docx
