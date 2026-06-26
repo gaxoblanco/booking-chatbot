@@ -36,6 +36,8 @@ from datetime import datetime
 from typing import Dict
 
 from integrations.reminder import reminder_integration_service
+from src.integrations.google.oauth_health_checker import oauth_health_checker
+
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +221,18 @@ class SchedulerEngine:
                 timezone = timezone,
                 id       = "purge_events",
                 name     = "Purga conversation_events antiguos",
+                replace_existing = True,
+            )
+
+            # ── 8. OAuth Health Check ─────────────────────────────────────────
+            self._scheduler.add_job(
+                func     = oauth_health_checker.run,
+                trigger  = "cron",
+                hour     = 9,
+                minute   = 0,
+                timezone = timezone,
+                id       = "oauth_health",
+                name     = "OAuth Health Check — tokens profesionales",
                 replace_existing = True,
             )
 
