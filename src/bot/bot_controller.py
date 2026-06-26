@@ -40,7 +40,6 @@ from src.services.user_service import user_service
 from src.services.intent_detector import intent_detector, Intent
 from src.integrations.ml.hybrid_intent_detector import hybrid_intent_detector
 from src.integrations.conversation_context_service.event_store import event_store
-from src.core.normalizers import normalize_yes_no
 from src.integrations.waitlist.slot_offer_handler import should_handle_as_slot_offer, handle_slot_offer_response 
 from src.services.conversation_logger import conversation_logger
 from src.messages.messages_common import common_messages
@@ -403,55 +402,6 @@ class BotController:
                 handler = self.get_handler_for_state(session.state)
                 if handler:
                     return handler(session, message)
-
-            # -------------------------------------------------------
-            # INTERCEPCIÓN NORMALIZER — afirmaciones/negaciones puras
-            # -------------------------------------------------------
-            # "si", "no", "dale", "nope", etc. son deterministas:
-            # solos tienen un único significado y no necesitan ML.
-            # normalize_yes_no() los resuelve con vocabulario centralizado
-            # de normalizers.py — más rápido y sin falsos negativos del modelo.
-            # Solo aplica a estados de confirmación donde tiene sentido.
-            _CONFIRM_NLU_STATES = {
-                ConversationState.CLIENT_CONFIRM_BOOKING,
-                ConversationState.CLIENT_CONFIRM_CANCEL,
-                ConversationState.CLIENT_RESCHEDULE_CONFIRM,
-                ConversationState.CLIENT_MAIN_MENU,
-                ConversationState.CLIENT_NEW_USER_MENU,
-            }
-            if session.state in _CONFIRM_NLU_STATES:
-                _norm = normalize_yes_no(message)
-                if _norm == '1':
-                    print(f"[NLU] Normalizer → confirm_action ('{message}')")
-                    intent_result = {
-                        'intent': Intent.CONFIRM_ACTION,
-                        'confidence': 1.0,
-                        'entities': {},
-                        'can_shortcut': False,
-                        'missing_entities': [],
-                        'source': 'normalizer',
-                        'ml_confidence': 0.0,
-                        'rules_confidence': 1.0,
-                    }
-                    # Saltar al shortcut directamente
-                    result = self._try_intent_shortcut(session, intent_result, user_info)
-                    if result:
-                        return result
-                elif _norm == '2':
-                    print(f"[NLU] Normalizer → deny_action ('{message}')")
-                    intent_result = {
-                        'intent': Intent.DENY_ACTION,
-                        'confidence': 1.0,
-                        'entities': {},
-                        'can_shortcut': False,
-                        'missing_entities': [],
-                        'source': 'normalizer',
-                        'ml_confidence': 0.0,
-                        'rules_confidence': 1.0,
-                    }
-                    result = self._try_intent_shortcut(session, intent_result, user_info)
-                    if result:
-                        return result
 
             # Prefixear mensaje con estado para intenciones contextuales
             PREFIXED_STATES = {ConversationState.PROF_AGENDA_IMPORT_REVIEW}
@@ -924,6 +874,8 @@ class BotController:
         # ==========================================
         elif intent == Intent.INFO_CENTER:
             print("[NLU] → Shortcut: Info del centro")
+            session.transition_to(ConversationState.CLIENT_MAIN_MENU)
+            session.clear_temp()
             return user_service.get_center_info()
         
         # ==========================================
@@ -969,7 +921,43 @@ class BotController:
                 print("[NLU] → Falta info, iniciando flujo de filtros")
                 missing = intent_result.get('missing_entities', [])
                 return self._start_filter_flow(session, entities, missing)
-        
+
+        # ==========================================
+        # INTENT: CONFIRM_ACTION
+        # ==========================================
+        elif intent == Intent.CONFIRM_ACTION:
+            _CONFIRM_STATES = {
+                ConversationState.CLIENT_CONFIRM_BOOKING,
+                ConversationState.CLIENT_CONFIRM_CANCEL,
+                ConversationState.CLIENT_RESCHEDULE_CONFIRM,
+            }
+            if session.state in _CONFIRM_STATES:
+                print(f"[NLU] → confirm_action en {session.state.value} → message='1'")
+                handler = self.get_handler_for_state(session.state)
+                return handler(session, '1')
+            # En CLIENT_MAIN_MENU una afirmación = quiero agendar
+            if session.state == ConversationState.CLIENT_MAIN_MENU:
+                print("[NLU] → confirm_action en client_main_menu → freelance_start")
+                return freelance_handler.handle_freelance_start(session)
+            print(f"[NLU] → confirm_action fuera de estado de confirmación ({session.state.value}) — ignorado")
+            return None
+
+        # ==========================================
+        # INTENT: DENY_ACTION
+        # ==========================================
+        elif intent == Intent.DENY_ACTION:
+            _DENY_STATES = {
+                ConversationState.CLIENT_CONFIRM_BOOKING,
+                ConversationState.CLIENT_CONFIRM_CANCEL,
+                ConversationState.CLIENT_RESCHEDULE_CONFIRM,
+            }
+            if session.state in _DENY_STATES:
+                print(f"[NLU] → deny_action en {session.state.value} → message='0'")
+                handler = self.get_handler_for_state(session.state)
+                return handler(session, '0')
+            print(f"[NLU] → deny_action fuera de estado de confirmación ({session.state.value}) — ignorado")
+            return None
+
         # No hay shortcut disponible
         print("[NLU] → No se puede hacer shortcut")
         return None
