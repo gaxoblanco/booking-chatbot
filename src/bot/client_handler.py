@@ -30,7 +30,7 @@ from src.core.validators import parse_date, validate_time
 from src.services.client_service import client_service
 from src.services.analytics_service import analytics_service
 from src.database.database import db
-from src.core.normalizers import normalize_confirm_single
+from src.core.normalizers import normalize_confirm_single, normalize_yes_no
 from src.filters.filter_manager import FilterManager
 from src.filters.filter_types import FilterType
 
@@ -236,19 +236,14 @@ class ClientHandler:
                     })
 
         # --------------------------------------------------
-        # TEXTO LIBRE — afirmativos directos o delegar al NLU
+        # TEXTO LIBRE — delegar a normalizers o al NLU
         # --------------------------------------------------
-        # Si el usuario responde con un afirmativo (dale, sí, ok, etc.)
-        # en modo freelance, interpretar como "quiero agendar" y lanzar
-        # el flujo directamente sin pasar por el NLU.
-        # Para cualquier otro texto libre, resetear a START para NLU.
+        # normalize_yes_no() centraliza todo el vocabulario de afirmaciones
+        # (dale, sí, ok, va, listo, etc.) — no duplicar la lista acá.
+        # En modo freelance, una afirmación equivale a "quiero agendar".
+        # Cualquier otro texto libre sube al NLU via bot_controller.
         else:
-            _AFIRMATIVOS_MENU = {
-                'si', 'sí', 'dale', 'ok', 'va', 'listo', 'bueno',
-                'claro', 'vamos', 'perfecto', 'de una', 'obvio',
-                'quiero', 'agendar', 'agendemos',
-            }
-            if single_mode and message_lower in _AFIRMATIVOS_MENU:
+            if single_mode and normalize_yes_no(message) == '1':
                 # Modo freelance + afirmativo → ir directo a agendar
                 from src.bot.freelance_handler import handle_freelance_start
                 return handle_freelance_start(session)
@@ -1255,8 +1250,8 @@ class ClientHandler:
         msg_lower = message.strip().lower()
 
         # Si hay un solo resultado y el usuario confirma con lenguaje natural → seleccionar ese
-        CONFIRMAR_UNO = {'dale', 'si', 'sí', 'ok', 'ese', 'esa', 'bueno', 'perfecto', 'va'}
-        if len(results) == 1 and msg_lower in CONFIRMAR_UNO:
+        # normalize_confirm_single() centraliza este vocabulario (incluye _AFIRMACIONES + "ese", "esa", etc.)
+        if len(results) == 1 and normalize_confirm_single(msg_lower):
             message = '1'
 
         # Intentar matching por nombre si no es número
@@ -1761,10 +1756,10 @@ class ClientHandler:
                 return self.handle_client_view_appointments(session, '')
 
             else:
-                # Texto libre — si es confirmación natural, volver a mostrar el detalle
-                # Si es otra intención, resetear al NLU
-                CONFIRM_WORDS = {'dale', 'si', 'sí', 'ok', 'bueno', 'ver', 'mostrar'}
-                if message.strip().lower() in CONFIRM_WORDS:
+                # Texto libre — si es confirmación natural, volver a mostrar el detalle.
+                # normalize_yes_no() cubre dale/sí/ok/bueno/ver/mostrar y más.
+                # Si es otra intención, resetear al NLU.
+                if normalize_yes_no(message) == '1':
                     # Mostrar el detalle de la cita actual
                     apt = db.get_appointment(appointment_id)
                     if apt:
@@ -1822,10 +1817,7 @@ class ClientHandler:
         """
         from datetime import datetime, timedelta
 
-        # ==========================================
-        # NORMALIZAR TEXTO LIBRE → 1 o 2
-        # ==========================================
-        from src.core.normalizers import normalize_yes_no
+        # Normalizar texto libre → '1' (confirmar) o '2' (volver/cancelar)
         normalizado = normalize_yes_no(message)
         if normalizado:
             message = normalizado
@@ -2542,12 +2534,13 @@ class ClientHandler:
         """
         from datetime import datetime
 
-        # Normalizar texto libre → 1 o 0
-        _msg = message.strip().lower()
-        if _msg in ['1', 'si', 'sí', 'confirmar', 'confirmado', 'dale', 'ok', 'listo', 'va']:
+        # Normalizar texto libre → '1' (confirmar) o '0' (volver)
+        # normalize_yes_no() cubre sí/dale/ok/listo/no/volver/cancelar y más.
+        _normalizado = normalize_yes_no(message)
+        if _normalizado == '1':
             message = '1'
-        elif _msg in ['0', 'no', 'volver', 'cancelar', 'no confirmar']:
-            message = '0'
+        elif _normalizado == '2':
+            message = '0'  # negación → volver a selección de horario
 
         # Volver a selección de horario
         if message == '0':
@@ -2605,7 +2598,6 @@ class ClientHandler:
         
         message_lower = message.lower().strip()
         
-        from src.core.normalizers import normalize_yes_no
         if normalize_yes_no(message) == '1':
             appointment = session.get_temp('appointment_to_cancel')
             
@@ -2633,8 +2625,8 @@ class ClientHandler:
                 return ("⚠️ No se pudo cancelar el turno.\n\n"
                     "Por favor contacta al centro directamente.")
         
-        # Cancelar la cancelación
-        elif message_lower in ['no', 'volver', 'cancelar', 'atrás', 'atras']:
+        # Cancelar la cancelación — normalize_yes_no() cubre no/volver/cancelar/atrás y más
+        elif normalize_yes_no(message) == '2':
             session.clear_temp()
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             
@@ -2642,7 +2634,7 @@ class ClientHandler:
             user_info['phone_number'] = session.phone_number
             return user_service.generate_welcome_message(user_info)
         
-        # Opción inválida
+        # No reconocido — pedir aclaración
         else:
             return ("⚠️ Por favor responde:\n"
                 "• 'sí' para confirmar la cancelación\n"
@@ -2987,16 +2979,15 @@ class ClientHandler:
         from src.services.appointment_service import appointment_service
         from src.config.domain_config import DomainConfig
 
-        # Check for cancellation
-        # Acepta número o lenguaje natural
-        CONFIRMAR = {'1', 'si', 'sí', 'dale', 'ok', 'confirmo', 'confirmar',
-                     'bueno', 'perfecto', 'quiero', 'acepto', 'va', 'listo'}
-        CANCELAR  = {'0', 'no', 'cancelar', 'volver', 'atrás', 'atras',
-                     'nope', 'no quiero', 'salir'}
+        # Normalizar texto libre → '1' (confirmar) o '0' (cancelar)
+        # normalize_yes_no() cubre sí/dale/ok/confirmo/no/volver/cancelar y más.
+        # '0' en _NEGACIONES del normalizer mapea a '2'; acá lo re-mapeamos a '0'
+        # porque este handler usa 0=volver (no 2=no).
         msg_lower = message.strip().lower()
-        if msg_lower in CONFIRMAR:
+        _normalizado = normalize_yes_no(message)
+        if _normalizado == '1':
             message = '1'
-        elif msg_lower in CANCELAR:
+        elif _normalizado == '2':
             message = '0'
 
         if message == '0':
