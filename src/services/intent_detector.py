@@ -62,6 +62,12 @@ class Intent(Enum):
     # Grupo B — agendar para terceros
     BOOK_FOR_THIRD_PARTY  = "book_for_third_party"
 
+    # Grupo C — confirmación / negación genérica (flujo cliente)
+    # Sin prefijo de estado. El shortcut en bot_controller solo actúa
+    # en CLIENT_CONFIRM_BOOKING, CLIENT_CONFIRM_CANCEL y CLIENT_RESCHEDULE_CONFIRM.
+    CONFIRM_ACTION = "confirm_action"
+    DENY_ACTION    = "deny_action"
+
 
 class IntentDetector:
     """
