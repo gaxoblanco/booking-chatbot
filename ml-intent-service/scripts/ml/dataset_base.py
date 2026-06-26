@@ -1459,6 +1459,78 @@ DATASET_BASE = [
     {"message": "kiero kanselar", "intent": "cancel_appointment", "entities": {}},
     {"message": "KIERO CANCELAR MI TURNO", "intent": "cancel_appointment", "entities": {}},
     {"message": "no puedo ir kanselalo", "intent": "cancel_appointment", "entities": {}},
+    # ==========================================================================
+    # INTENT: CONFIRM_ACTION
+    # Sin prefijo — aplica en cualquier estado donde el bot pide confirmación
+    # al cliente (confirmar turno, confirmar cancelación, confirmar reprogramación).
+    #
+    # Diseño:
+    #   - Sin prefijo de estado: el usuario confirma cualquier acción pendiente.
+    #   - 20 ejemplos para cubrir el rango coloquial argentino.
+    #   - NO incluir "agendar", "buscar" ni especialidades — esos son
+    #     search_professional, no confirmaciones.
+    #   - El augmentation va a generar variantes con typos y mayúsculas.
+    #
+    # En bot_controller:
+    #   confirm_action → _try_intent_shortcut lo mapea a message='1'
+    #   en los estados CLIENT_CONFIRM_BOOKING, CLIENT_CONFIRM_CANCEL,
+    #   CLIENT_RESCHEDULE_CONFIRM (Paso 3).
+    # ==========================================================================
+
+    {"message": "sí", "intent": "confirm_action", "entities": {}},
+    {"message": "si", "intent": "confirm_action", "entities": {}},
+    {"message": "dale", "intent": "confirm_action", "entities": {}},
+    {"message": "ok", "intent": "confirm_action", "entities": {}},
+    {"message": "va", "intent": "confirm_action", "entities": {}},
+    {"message": "listo", "intent": "confirm_action", "entities": {}},
+    {"message": "bueno", "intent": "confirm_action", "entities": {}},
+    {"message": "claro", "intent": "confirm_action", "entities": {}},
+    {"message": "perfecto", "intent": "confirm_action", "entities": {}},
+    {"message": "de una", "intent": "confirm_action", "entities": {}},
+    {"message": "confirmo", "intent": "confirm_action", "entities": {}},
+    {"message": "confirmar", "intent": "confirm_action", "entities": {}},
+    {"message": "acepto", "intent": "confirm_action", "entities": {}},
+    {"message": "adelante", "intent": "confirm_action", "entities": {}},
+    {"message": "sí, confirmá", "intent": "confirm_action", "entities": {}},
+    {"message": "sí quiero", "intent": "confirm_action", "entities": {}},
+    {"message": "eso mismo", "intent": "confirm_action", "entities": {}},
+    {"message": "ese turno", "intent": "confirm_action", "entities": {}},
+    {"message": "sí dale", "intent": "confirm_action", "entities": {}},
+    {"message": "ta bien", "intent": "confirm_action", "entities": {}},
+
+    # ==========================================================================
+    # INTENT: DENY_ACTION
+    # Sin prefijo — aplica en cualquier estado donde el bot pide confirmación
+    # al cliente y el usuario rechaza o quiere volver.
+    #
+    # Diseño:
+    #   - Sin prefijo de estado: el usuario rechaza cualquier acción pendiente.
+    #   - 20 ejemplos cubriendo negación directa, rechazo cortés y vuelta atrás.
+    #   - NO incluir "cancelar turno" — eso es cancel_appointment.
+    #     "cancelar" solo, como respuesta a una pregunta, sí es deny_action.
+    #   - El modelo distingue por contexto de estado (Paso 3).
+    # ==========================================================================
+
+    {"message": "no", "intent": "deny_action", "entities": {}},
+    {"message": "nope", "intent": "deny_action", "entities": {}},
+    {"message": "nel", "intent": "deny_action", "entities": {}},
+    {"message": "para nada", "intent": "deny_action", "entities": {}},
+    {"message": "mejor no", "intent": "deny_action", "entities": {}},
+    {"message": "no gracias", "intent": "deny_action", "entities": {}},
+    {"message": "cancelar", "intent": "deny_action", "entities": {}},
+    {"message": "volver", "intent": "deny_action", "entities": {}},
+    {"message": "salir", "intent": "deny_action", "entities": {}},
+    {"message": "no quiero", "intent": "deny_action", "entities": {}},
+    {"message": "no me interesa", "intent": "deny_action", "entities": {}},
+    {"message": "no confirmo", "intent": "deny_action", "entities": {}},
+    {"message": "me arrepentí", "intent": "deny_action", "entities": {}},
+    {"message": "dejá", "intent": "deny_action", "entities": {}},
+    {"message": "no, volver", "intent": "deny_action", "entities": {}},
+    {"message": "prefiero no", "intent": "deny_action", "entities": {}},
+    {"message": "paso", "intent": "deny_action", "entities": {}},
+    {"message": "no va", "intent": "deny_action", "entities": {}},
+    {"message": "ni ahí", "intent": "deny_action", "entities": {}},
+    {"message": "no, cancelar", "intent": "deny_action", "entities": {}},
 ]
 
 

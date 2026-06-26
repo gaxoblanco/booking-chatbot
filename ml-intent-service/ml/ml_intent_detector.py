@@ -70,6 +70,9 @@ class MLIntentDetector:
             'agenda_cancel_upload': Intent.AGENDA_CANCEL_UPLOAD,
             # Grupo B — agendar para terceros
             'book_for_third_party': Intent.BOOK_FOR_THIRD_PARTY,
+            # Grupo C — confirmación / negación genérica (flujo cliente)
+            'confirm_action':        Intent.CONFIRM_ACTION,
+            'deny_action':           Intent.DENY_ACTION,
         }
 
     def load_model(self):
