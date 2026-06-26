@@ -40,6 +40,7 @@ from src.services.user_service import user_service
 from src.services.intent_detector import intent_detector, Intent
 from src.integrations.ml.hybrid_intent_detector import hybrid_intent_detector
 from src.integrations.conversation_context_service.event_store import event_store
+from src.core.normalizers import normalize_yes_no
 from src.integrations.waitlist.slot_offer_handler import should_handle_as_slot_offer, handle_slot_offer_response 
 from src.services.conversation_logger import conversation_logger
 from src.messages.messages_common import common_messages
@@ -402,6 +403,55 @@ class BotController:
                 handler = self.get_handler_for_state(session.state)
                 if handler:
                     return handler(session, message)
+
+            # -------------------------------------------------------
+            # INTERCEPCIÓN NORMALIZER — afirmaciones/negaciones puras
+            # -------------------------------------------------------
+            # "si", "no", "dale", "nope", etc. son deterministas:
+            # solos tienen un único significado y no necesitan ML.
+            # normalize_yes_no() los resuelve con vocabulario centralizado
+            # de normalizers.py — más rápido y sin falsos negativos del modelo.
+            # Solo aplica a estados de confirmación donde tiene sentido.
+            _CONFIRM_NLU_STATES = {
+                ConversationState.CLIENT_CONFIRM_BOOKING,
+                ConversationState.CLIENT_CONFIRM_CANCEL,
+                ConversationState.CLIENT_RESCHEDULE_CONFIRM,
+                ConversationState.CLIENT_MAIN_MENU,
+                ConversationState.CLIENT_NEW_USER_MENU,
+            }
+            if session.state in _CONFIRM_NLU_STATES:
+                _norm = normalize_yes_no(message)
+                if _norm == '1':
+                    print(f"[NLU] Normalizer → confirm_action ('{message}')")
+                    intent_result = {
+                        'intent': Intent.CONFIRM_ACTION,
+                        'confidence': 1.0,
+                        'entities': {},
+                        'can_shortcut': False,
+                        'missing_entities': [],
+                        'source': 'normalizer',
+                        'ml_confidence': 0.0,
+                        'rules_confidence': 1.0,
+                    }
+                    # Saltar al shortcut directamente
+                    result = self._try_intent_shortcut(session, intent_result, user_info)
+                    if result:
+                        return result
+                elif _norm == '2':
+                    print(f"[NLU] Normalizer → deny_action ('{message}')")
+                    intent_result = {
+                        'intent': Intent.DENY_ACTION,
+                        'confidence': 1.0,
+                        'entities': {},
+                        'can_shortcut': False,
+                        'missing_entities': [],
+                        'source': 'normalizer',
+                        'ml_confidence': 0.0,
+                        'rules_confidence': 1.0,
+                    }
+                    result = self._try_intent_shortcut(session, intent_result, user_info)
+                    if result:
+                        return result
 
             # Prefixear mensaje con estado para intenciones contextuales
             PREFIXED_STATES = {ConversationState.PROF_AGENDA_IMPORT_REVIEW}
