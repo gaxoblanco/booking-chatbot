@@ -75,6 +75,9 @@ class MLIntentDetector:
             'agenda_view_errors':   Intent.AGENDA_VIEW_ERRORS,
             'agenda_confirm_upload': Intent.AGENDA_CONFIRM_UPLOAD,
             'agenda_cancel_upload': Intent.AGENDA_CANCEL_UPLOAD,
+            # Grupo C — confirmación / negación genérica (flujo cliente)
+            'confirm_action':        Intent.CONFIRM_ACTION,
+            'deny_action':           Intent.DENY_ACTION,
         }
         
         # Advertencia si model_path fue especificado
