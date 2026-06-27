@@ -313,7 +313,8 @@ def oauth_callback():
         )
 
         # Intercambiar código por tokens
-        flow.fetch_token(code=code)
+        authorization_response = request.url.replace('http://', 'https://')
+        flow.fetch_token(authorization_response=authorization_response)
         credentials = flow.credentials
 
         # Recuperar el teléfono del profesional desde el state
