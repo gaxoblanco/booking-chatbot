@@ -456,7 +456,26 @@ class AppointmentCalendarService:
         # Renovar access_token si expiró
         if credentials.expired or not credentials.valid:
             logger.info(f"[OAUTH] Renovando access_token para {professional_phone}...")
-            credentials.refresh(Request())
+            
+            try:
+                credentials.refresh(Request())
+            except Exception as refresh_err:
+                # Detectar token revocado (invalid_grant) y notificar al profesional
+                if 'invalid_grant' in str(refresh_err).lower():
+                    logger.error(
+                        f"[OAUTH] ❌ Token revocado para {professional_phone}. "
+                        f"Disparando notificación al profesional."
+                    )
+                    # Notificar en background — no bloquea ni cambia el flujo de error
+                    try:
+                        from src.integrations.google.oauth_health_checker import oauth_health_checker
+                        prof = self.db.get_professional(professional_phone)
+                        if prof:
+                            oauth_health_checker._notify_professional(prof)
+                    except Exception as notify_err:
+                        logger.error(f"[OAUTH] Error enviando notificación: {notify_err}")
+                # Relanzar siempre — el except de create_appointment() maneja el resto
+                raise
 
             # Persistir el nuevo access_token en BD
             self.db.update_professional_oauth_tokens(
