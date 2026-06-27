@@ -306,6 +306,11 @@ def _build_reauth_email(name: str, reauth_url: str, business_name: str) -> str:
     .footer    {{ background:#f0f0f0; text-align:center; padding:14px;
                   font-size:12px; color:#999; }}
     a          {{ color:#1a73e8; }}
+
+    .url-box  {{ background:#f9f9f9; border:1px solid #ddd; border-radius:4px;
+              padding:12px 16px; margin:12px 0; word-break:break-all; }}
+    .url-label {{ font-size:11px; color:#888; margin:0 0 6px; }}
+    .url-text  {{ font-family:monospace; font-size:12px; color:#333; margin:0; }}
   </style>
 </head>
 <body>
@@ -330,7 +335,11 @@ def _build_reauth_email(name: str, reauth_url: str, business_name: str) -> str:
     </p>
 
     <div class="btn-wrap">
-      <a href="{reauth_url}" class="btn">🔄 Renovar autorización</a>
+        <a href="{reauth_url}" class="btn">🔄 Renovar autorización</a>
+    </div>
+    <div class="url-box">
+        <p class="url-label">O copiá este link en tu browser:</p>
+        <p class="url-text">{reauth_url}</p>
     </div>
 
     <div class="note">
