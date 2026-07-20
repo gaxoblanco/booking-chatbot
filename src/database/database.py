@@ -1696,7 +1696,14 @@ class Database:
                         end = ?,
                         status = 'confirmada',
                         updated_at = CURRENT_TIMESTAMP,
-                        last_synced_at = NULL
+                        last_synced_at = NULL,
+                        -- FIX recordatorios: un cambio de fecha invalida el ciclo
+                        -- de recordatorio anterior. Sin este reset, un turno
+                        -- reprogramado queda con reminder_sent=1 y
+                        -- send_daily_reminders() nunca lo vuelve a incluir.
+                        reminder_sent = 0,
+                        confirmed_by_client = 0,
+                        confirmed_by_client_at = NULL
                     WHERE id = ?
                 """, (new_date, new_start_time, new_end_time, appointment_id))
 
@@ -2035,6 +2042,19 @@ class Database:
                 cursor.execute("""
                     UPDATE appointments 
                     SET 
+                        -- FIX recordatorios: si Google movió la fecha/hora,
+                        -- el recordatorio anterior queda inválido → reset.
+                        -- Si el sync no cambió fecha/hora (ej: solo status),
+                        -- los flags se conservan intactos.
+                        reminder_sent = CASE
+                            WHEN appointment_date != ? OR start != ?
+                            THEN 0 ELSE reminder_sent END,
+                        confirmed_by_client = CASE
+                            WHEN appointment_date != ? OR start != ?
+                            THEN 0 ELSE confirmed_by_client END,
+                        confirmed_by_client_at = CASE
+                            WHEN appointment_date != ? OR start != ?
+                            THEN NULL ELSE confirmed_by_client_at END,
                         appointment_date = ?,
                         start = ?,
                         end = ?,
@@ -2043,6 +2063,9 @@ class Database:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (
+                    google_event_data['date'], google_event_data['start'],
+                    google_event_data['date'], google_event_data['start'],
+                    google_event_data['date'], google_event_data['start'],
                     google_event_data['date'],
                     google_event_data['start'],
                     google_event_data['end'],
@@ -2254,7 +2277,12 @@ class Database:
             UPDATE appointments
             SET appointment_date = ?,
                 start = ?,
-                moved_from_offer_id = ?
+                moved_from_offer_id = ?,
+                -- FIX recordatorios: turno adelantado por waitlist =
+                -- nueva fecha → el ciclo de recordatorio arranca de cero
+                reminder_sent = 0,
+                confirmed_by_client = 0,
+                confirmed_by_client_at = NULL
             WHERE id = ?
         """
         
