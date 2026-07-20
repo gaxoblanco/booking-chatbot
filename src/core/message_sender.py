@@ -80,6 +80,7 @@ class MessageSender:
         appointment_id:      Optional[int] = None,
         content_sid:         Optional[str] = None,
         content_variables:   Optional[str] = None,
+        template_lang:       Optional[str] = None,
     ) -> bool:
         """
         Envía un WhatsApp con reintento automático en caso de fallo.
@@ -111,6 +112,7 @@ class MessageSender:
             message            = message,
             content_sid        = content_sid,
             content_variables  = content_variables,
+            template_lang      = template_lang,
         )
 
         if success:
@@ -149,6 +151,7 @@ class MessageSender:
             appointment_id     = appointment_id,
             content_sid        = content_sid,
             content_variables  = content_variables,
+            template_lang      = template_lang,
         )
         return False
 
@@ -204,6 +207,7 @@ class MessageSender:
                         message           = item['message'],
                         content_sid       = item.get('content_sid'),
                         content_variables = item.get('content_variables'),
+                        template_lang     = item.get('template_lang'),
                     )
 
                     if success:
@@ -264,6 +268,7 @@ class MessageSender:
         message:           str,
         content_sid:       Optional[str] = None,
         content_variables: Optional[str] = None,
+        template_lang:     Optional[str] = None,
     ) -> tuple[bool, Optional[int]]:
         """
         Llama directamente a Meta Cloud API (Graph API) para enviar el mensaje.
@@ -326,7 +331,7 @@ class MessageSender:
                     'type':              'template',
                     'template': {
                         'name':     content_sid,
-                        'language': {'code': os.getenv('META_REMINDER_TEMPLATE_LANG', 'es_AR')},
+                        'language': {'code': template_lang or os.getenv('META_REMINDER_TEMPLATE_LANG', 'es_AR')},
                         'components': [{
                             'type':       'body',
                             'parameters': parameters,
@@ -471,6 +476,7 @@ class MessageSender:
         appointment_id:     Optional[int],
         content_sid:        Optional[str],
         content_variables:  Optional[str],
+        template_lang:      Optional[str] = None,
     ):
         """Inserta un mensaje en la cola de reintentos."""
         try:
@@ -485,12 +491,12 @@ class MessageSender:
                 conn.execute("""
                     INSERT INTO message_retry_queue
                         (to_phone, message, professional_phone, patient_name,
-                         appointment_id, content_sid, content_variables,
+                         appointment_id, content_sid, content_variables, template_lang,
                          attempts, next_retry_at, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending')
                 """, (
                     to_phone, message, professional_phone, patient_name,
-                    appointment_id, content_sid, content_variables,
+                    appointment_id, content_sid, content_variables, template_lang,
                     next_retry,
                 ))
             logger.info(
