@@ -35,7 +35,7 @@ import os
 from datetime import datetime
 from typing import Dict
 
-from integrations.reminder import reminder_integration_service
+from src.integrations.reminder import reminder_integration_service
 from src.integrations.google.oauth_health_checker import oauth_health_checker
 
 
@@ -362,7 +362,7 @@ def job_auto_confirm() -> Dict:
     """Auto-confirmación por timeout — delegado al ReminderIntegrationService."""
     logger.info("[JOB] 🔔 Iniciando: auto-confirm")
     try:
-        return reminder_integration_service.run_send_cycle()
+        return reminder_integration_service.run_confirm_cycle()
     except Exception as e:
         logger.error(f"[JOB] ❌ Error en auto-confirm: {e}")
         return {"confirmed": 0, "errors": 1, "error_detail": str(e)}
