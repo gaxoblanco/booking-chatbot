@@ -174,13 +174,15 @@ class ReminderService:
             return []
     
     def _send_reminder(self, apt: Dict) -> bool:
-        """Envía recordatorio usando MessageSender centralizado."""
+        """Envía recordatorio usando template aprobado de Meta Cloud API."""
         import json
         from src.core.message_sender import message_sender
 
-        content_sid = os.getenv('TWILIO_REMINDER_TEMPLATE_SID')
-        if not content_sid:
-            logger.error("TWILIO_REMINDER_TEMPLATE_SID no configurado")
+        template_name = os.getenv('META_REMINDER_TEMPLATE_NAME')
+        template_lang = os.getenv('META_REMINDER_TEMPLATE_LANG', 'es_AR')
+
+        if not template_name:
+            logger.error("META_REMINDER_TEMPLATE_NAME no configurado en .env")
             return False
 
         date_obj        = datetime.strptime(apt['appointment_date'], "%Y-%m-%d")
@@ -203,8 +205,9 @@ class ReminderService:
             professional_phone = apt.get('professional_phone'),
             patient_name       = apt.get('client_name'),
             appointment_id     = apt['id'],
-            content_sid        = content_sid,
+            content_sid        = template_name,
             content_variables  = variables_json,
+            template_lang      = template_lang,
         )
 
         if sent:
@@ -687,7 +690,7 @@ _Caso de no responder se auto-confirma_"""
         elif sent == 0:
             message = (
                 f"⚠️ Se revisaron {checked} cita(s) pero no se enviaron recordatorios.\n"
-                "Posibles causas: ya fueron enviados hoy, o falta `TWILIO_REMINDER_TEMPLATE_SID` en `.env`."
+                "Posibles causas: ya fueron enviados hoy, o falta `META_REMINDER_TEMPLATE_NAME` en `.env`."
             )
         else:
             message = (
