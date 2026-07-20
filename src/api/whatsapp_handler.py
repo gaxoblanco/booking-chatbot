@@ -87,6 +87,16 @@ app = Flask(__name__)
 # Ensure certificates directory exists
 os.makedirs(Config.CERTIFICATES_DIR, exist_ok=True)
 
+# ── Scheduler ──────────────────────────────────────────────────────────────────
+# Se inicia a nivel de módulo para que gunicorn también lo arranque.
+# En development los jobs no se disparan solos (solo via comando secreto).
+# En production corren según REMINDER_TIME definido en .env.
+import atexit
+from src.integrations.scheduler.engine import scheduler_engine
+scheduler_engine.start()
+atexit.register(scheduler_engine.stop)
+# ──────────────────────────────────────────────────────────────────────────────
+
 
 # ==========================================
 # WATCH MANAGER — lazy init
@@ -787,15 +797,6 @@ if __name__ == '__main__':
     print(f"📍 Google Calendar:   POST http://0.0.0.0:{Config.FLASK_PORT}/google-calendar/webhook")
     print(f"\n💡 Configurar en Meta: developers.facebook.com → App → WhatsApp → Webhooks")
     print(f"   URL: {os.getenv('WEBHOOK_URL', 'https://gaxoblanco.com')}/webhook\n")
-
-    # ── Scheduler ──────────────────────────────────────────────────────────
-    # Corre en background thread. En development los jobs no se disparan solos
-    # (solo via comando secreto del bot). En production corren según REMINDER_TIME.
-    from src.integrations.scheduler.engine import scheduler_engine
-    import atexit
-    scheduler_engine.start()
-    atexit.register(scheduler_engine.stop)
-    # ───────────────────────────────────────────────────────────────────────
 
     app.run(
         host='0.0.0.0',
