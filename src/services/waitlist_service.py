@@ -14,6 +14,7 @@ Author: Salud Conecta
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import logging
+import os
 
 from src.database.database import db
 
@@ -278,12 +279,19 @@ class WaitlistService:
             # Enviar vía MessageSender centralizado
             from src.core.message_sender import message_sender
 
+            # Si hay template de Meta configurado para ofertas, usarlo
+            # (evita restricción de ventana 24hs para mensajes iniciados por el negocio)
+            slot_template_name = os.getenv('META_SLOT_OFFER_TEMPLATE_NAME')
+            slot_template_lang = os.getenv('META_SLOT_OFFER_TEMPLATE_LANG', 'es_AR')
+
             sent = message_sender.send_with_retry(
                 to_phone           = candidate['client_phone'],
                 message            = message,
                 professional_phone = freed_apt['professional_phone'],
                 patient_name       = candidate.get('client_name'),
                 appointment_id     = candidate.get('id'),
+                content_sid        = slot_template_name or None,
+                template_lang      = slot_template_lang if slot_template_name else None,
             )
 
             if sent:
@@ -526,10 +534,13 @@ class WaitlistService:
                 # 3. Mover la cita del cliente a la nueva fecha/hora
                 cursor.execute("""
                     UPDATE appointments
-                    SET appointment_date    = ?,
-                        start               = ?,
-                        end                 = ?,
-                        moved_from_offer_id = ?
+                    SET appointment_date       = ?,
+                        start                  = ?,
+                        end                    = ?,
+                        moved_from_offer_id    = ?,
+                        reminder_sent          = 0,
+                        confirmed_by_client    = 0,
+                        confirmed_by_client_at = NULL
                     WHERE id = ?
                 """, (new_date, new_start, new_end, offer['id'], original_apt_id))
 
