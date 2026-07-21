@@ -199,6 +199,11 @@ class ReminderService:
 
         logger.info(f"📤 Enviando recordatorio a {apt['client_phone']} (Cita #{apt['id']})")
 
+        # ── CLAIM ATÓMICO: reclamar la cita ANTES de enviar ──────────────────
+        if not self._claim_reminder(apt['id']):
+            logger.info(f"⏭️ Cita #{apt['id']} ya reclamada por otro proceso — skip")
+            return False
+
         sent = message_sender.send_with_retry(
             to_phone           = apt['client_phone'],
             message            = "",
@@ -210,9 +215,15 @@ class ReminderService:
             template_lang      = template_lang,
         )
 
+        if not sent:
+            # El envío falló → liberar el claim para reintentar en el próximo ciclo
+            self._release_reminder(apt['id'])
+            logger.warning(f"⚠️ Envío falló para cita #{apt['id']} — claim liberado")
+            return False
+
         if sent:
-            self._mark_reminder_sent(apt['id'])   # ← mantener siempre
-            logger.info(f"✅ Recordatorio enviado exitosamente")
+            self._register_reminder_row(apt['id'])   # solo el INSERT en appointment_reminders
+
             # Limpiar sesión del paciente para que el próximo mensaje
             # sea interceptado como respuesta al recordatorio,
             # sin importar en qué flujo estaba antes.
@@ -297,46 +308,55 @@ _Por favor, responde antes de las 20:00 hs_
 _Caso de no responder se auto-confirma_"""
 
         return message
-    
-    def _mark_reminder_sent(self, appointment_id: int) -> bool:
+
+    def _claim_reminder(self, appointment_id: int) -> bool:
         """
-        Marca la cita como "recordatorio enviado" en BD.
-        
-        Args:
-            appointment_id: ID de la cita
-        
-        Returns:
-            True si se actualizó correctamente
+        Reclama una cita para envío de forma atómica.
+
+        Marca reminder_sent=1 SOLO si estaba en 0. Devuelve True si este
+        proceso ganó el claim (debe enviar), False si otro ya lo tenía.
+        El WHERE reminder_sent=0 hace que verificar+marcar sean un solo
+        paso indivisible → no hay ventana de carrera.
         """
         try:
             with self.db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Actualizar appointment
-                cursor.execute("""
-                    UPDATE appointments 
+                cur = conn.cursor()
+                cur.execute("""
+                    UPDATE appointments
                     SET reminder_sent = 1
-                    WHERE id = ?
+                    WHERE id = ? AND (reminder_sent IS NULL OR reminder_sent = 0)
                 """, (appointment_id,))
-                
-                # Registrar en tabla reminders
-                cursor.execute("""
-                    INSERT INTO appointment_reminders 
-                    (appointment_id, client_phone, professional_phone, 
-                     appointment_date, appointment_time, status)
-                    SELECT id, client_phone, professional_phone, 
-                           appointment_date, start, 'sent'
-                    FROM appointments
-                    WHERE id = ?
-                """, (appointment_id,))
-                
-                logger.info(f"✅ Marcado reminder_sent = 1 para cita #{appointment_id}")
-                return True
-                
+                return cur.rowcount == 1
         except Exception as e:
-            logger.error(f"Error marcando reminder enviado: {e}")
+            logger.error(f"Error reclamando cita #{appointment_id}: {e}")
             return False
-    
+
+    def _release_reminder(self, appointment_id: int) -> None:
+        """Libera el claim (vuelve reminder_sent a 0) si el envío falló."""
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE appointments SET reminder_sent = 0 WHERE id = ?",
+                    (appointment_id,)
+                )
+        except Exception as e:
+            logger.error(f"Error liberando cita #{appointment_id}: {e}")
+
+    def _register_reminder_row(self, appointment_id: int) -> None:
+        """Registra el envío en appointment_reminders (historial/tracking)."""
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO appointment_reminders
+                        (appointment_id, client_phone, professional_phone,
+                         appointment_date, appointment_time, status)
+                    SELECT id, client_phone, professional_phone,
+                           appointment_date, start, 'sent'
+                    FROM appointments WHERE id = ?
+                """, (appointment_id,))
+        except Exception as e:
+            logger.error(f"Error registrando reminder de cita #{appointment_id}: {e}")
+
     # =========================================================================
     # RESPUESTAS DEL CLIENTE
     # =========================================================================
@@ -378,7 +398,8 @@ _Caso de no responder se auto-confirma_"""
 
         # Opción 1: CONFIRMAR
         if response == '1':
-            return self._confirm_appointment(appointment_id, client_phone)
+            # source='client': el paciente respondió activamente
+            return self._confirm_appointment(appointment_id, client_phone, source='client')
         
         # Opción 2: REPROGRAMAR
         elif response == '2':
@@ -407,7 +428,11 @@ _Caso de no responder se auto-confirma_"""
             JOIN appointments a ON r.appointment_id = a.id
             WHERE r.client_phone = ?
             AND r.status = 'sent'
-            AND a.appointment_date >= DATE('now')
+            AND (
+                        a.appointment_date > DATE('now','localtime')
+                        OR (a.appointment_date = DATE('now','localtime')
+                            AND a.end >= TIME('now','localtime'))
+                    )
             ORDER BY r.sent_at DESC
             LIMIT 1
         """
@@ -427,8 +452,22 @@ _Caso de no responder se auto-confirma_"""
             logger.error(f"Error buscando reminder: {e}")
             return None
     
-    def _confirm_appointment(self, appointment_id: int, client_phone: str) -> Dict:
-        """Confirma asistencia del cliente."""
+    def _confirm_appointment(
+        self,
+        appointment_id: int,
+        client_phone: str,
+        source: str = 'client',   # 'client' = respondió "1" | 'auto' = timeout
+    ) -> Dict:
+        """
+        Confirma asistencia del cliente.
+
+        Args:
+            source: origen de la confirmación. 'client' si el paciente
+                    respondió activamente, 'auto' si fue por timeout.
+                    Se persiste en appointments.confirmation_source para
+                    métricas de compromiso (un paciente con muchas 'auto'
+                    es candidato a no-show).
+        """
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor()
@@ -437,9 +476,10 @@ _Caso de no responder se auto-confirma_"""
                 cursor.execute("""
                     UPDATE appointments 
                     SET confirmed_by_client = 1,
-                        confirmed_by_client_at = CURRENT_TIMESTAMP
+                        confirmed_by_client_at = CURRENT_TIMESTAMP,
+                        confirmation_source = ?
                     WHERE id = ?
-                """, (appointment_id,))
+                """, (source, appointment_id))
                 
                 # Actualizar reminder
                 cursor.execute("""
@@ -451,7 +491,8 @@ _Caso de no responder se auto-confirma_"""
                     AND client_phone = ?
                 """, (appointment_id, client_phone))
                 
-                logger.info(f"✅ Cita #{appointment_id} confirmada por cliente")
+                origen = "por cliente" if source == 'client' else "automáticamente (timeout)"
+                logger.info(f"✅ Cita #{appointment_id} confirmada {origen}")
                 
                 return {
                     'success': True,
@@ -582,6 +623,8 @@ _Caso de no responder se auto-confirma_"""
             - Si el cliente no responde asumimos que asiste (reduce no-shows)
             - El cliente igual recibió el recordatorio, está avisado
             - No se envía nuevo WhatsApp (evita spam)
+            - source='auto': la confirmación queda marcada como automática
+              en appointments.confirmation_source (métricas de compromiso)
 
         Args:
             timeout_hours: Horas sin respuesta para auto-confirmar (default: 3)
@@ -610,7 +653,14 @@ _Caso de no responder se auto-confirma_"""
             JOIN appointments a ON r.appointment_id = a.id
             WHERE r.status = "sent"
             AND r.sent_at <= datetime("now", :timeout)
-            AND a.appointment_date >= DATE("now")
+            -- CAMBIO 1: solo auto-confirmar citas que AÚN NO TERMINARON,
+            -- comparando fecha+hora en horario LOCAL (DATE('now') a secas
+            -- es UTC → corría 3hs adelantado). Mismo patrón que la Capa 1.
+            AND (
+                a.appointment_date > DATE('now','localtime')
+                OR (a.appointment_date = DATE('now','localtime')
+                    AND a.end >= TIME('now','localtime'))
+            )
             ORDER BY r.sent_at ASC
         """
 
@@ -632,7 +682,9 @@ _Caso de no responder se auto-confirma_"""
                 sent_at = reminder["sent_at"]
 
                 logger.info(f"  > Cita #{apt_id} | {client} | enviado {sent_at}")
-                result = self._confirm_appointment(apt_id, client)
+                # CAMBIO 2: source='auto' → queda registrado que el paciente
+                # NO respondió y la confirmación fue por timeout.
+                result = self._confirm_appointment(apt_id, client, source='auto')
 
                 if result.get("success"):
                     stats["confirmed"] += 1
