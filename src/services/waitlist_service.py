@@ -531,7 +531,8 @@ class WaitlistService:
                     WHERE id = ?
                 """, (offer['id'],))
 
-                # 3. Mover la cita del cliente a la nueva fecha/hora
+                # 3. Mover la cita del cliente a la nueva fecha/hora.
+                #    Al mover la fecha se resetea el ciclo de recordatorio completo.
                 cursor.execute("""
                     UPDATE appointments
                     SET appointment_date       = ?,
@@ -540,7 +541,8 @@ class WaitlistService:
                         moved_from_offer_id    = ?,
                         reminder_sent          = 0,
                         confirmed_by_client    = 0,
-                        confirmed_by_client_at = NULL
+                        confirmed_by_client_at = NULL,
+                        confirmation_source    = NULL
                     WHERE id = ?
                 """, (new_date, new_start, new_end, offer['id'], original_apt_id))
 
