@@ -236,6 +236,22 @@ class SchedulerEngine:
                 replace_existing = True,
             )
 
+            # ── 9. Ciclo de vida: completar citas pasadas ─────────────────────
+            # Corre 1 minuto ANTES de los recordatorios: cierra el día
+            # (confirmada → completada) antes de iniciar el ciclo de envío.
+            complete_m = reminder_m - 1 if reminder_m > 0 else 59
+            complete_h = reminder_h if reminder_m > 0 else (reminder_h - 1) % 24
+            self._scheduler.add_job(
+                func     = job_complete_past,
+                trigger  = "cron",
+                hour     = complete_h,
+                minute   = complete_m,
+                timezone = timezone,
+                id       = "complete_past",
+                name     = "Ciclo de vida — completar citas pasadas",
+                replace_existing = True,
+            )
+
         else:
             # Development: registrar jobs sin trigger activo
             # Solo se ejecutan via trigger_job() manual
@@ -247,6 +263,7 @@ class SchedulerEngine:
                 ("watches",      job_watches,      "Renovación watches"),
                 ("waitlist",     job_waitlist,      "Waitlist"),
                 ("purge_events", job_purge_events,  "Purga events"),
+                ("complete_past", job_complete_past, "Ciclo de vida — completar citas pasadas"),
             ]:
                 # Fecha en el pasado → nunca se dispara solo
                 self._scheduler.add_job(
@@ -516,6 +533,24 @@ def job_purge_events() -> Dict:
     except Exception as e:
         logger.error(f"[JOB] ❌ Error en purge events: {e}")
         return {"deleted": 0, "errors": 1, "error_detail": str(e)}
+    
+def job_complete_past() -> Dict:
+    """
+    Ciclo de vida: marca como 'completada' toda cita confirmada cuya
+    hora de fin ya pasó (horario local).
+
+    Corre un minuto ANTES de job_reminders para que el día quede
+    cerrado antes de iniciar el ciclo de recordatorios.
+    """
+    logger.info("[JOB] 🔔 Iniciando: completar citas pasadas")
+    try:
+        from src.database.database import db
+        count = db.complete_past_appointments()
+        logger.info(f"[JOB] ✅ Citas completadas: {count}")
+        return {"completed": count, "errors": 0}
+    except Exception as e:
+        logger.error(f"[JOB] ❌ Error completando citas pasadas: {e}")
+        return {"completed": 0, "errors": 1, "error_detail": str(e)}
 
 
 # =============================================================================
