@@ -690,7 +690,11 @@ class ClientService:
                     JOIN professionals p ON a.professional_phone = p.phone
                     WHERE a.client_phone = ?
                     AND a.status IN ('confirmada', 'pendiente_confirmacion')
-                    AND a.appointment_date >= DATE('now')
+                    AND (
+                        a.appointment_date > DATE('now','localtime')
+                        OR (a.appointment_date = DATE('now','localtime')
+                            AND a.end >= TIME('now','localtime'))
+                    )
                     ORDER BY a.appointment_date ASC, a.start ASC
                 """, (phone_number,))
                 
