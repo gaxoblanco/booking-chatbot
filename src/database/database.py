@@ -690,6 +690,18 @@ class Database:
                     conn.commit()
                     print("✅ Migración appointments: UNIQUE constraint reemplazado por índice parcial")
 
+                # ── Migración: origen de la confirmación del recordatorio ──────────
+                # 'client' → el paciente respondió "1" activamente
+                # 'auto'   → auto-confirmado por timeout (NO respondió)
+                # NULL     → ciclo de recordatorio aún no completado
+                # Permite métricas de compromiso y detectar candidatos a no-show.
+                try:
+                    cursor.execute(
+                        "ALTER TABLE appointments ADD COLUMN confirmation_source TEXT DEFAULT NULL"
+                    )
+                except Exception:
+                    pass  # columna ya existe
+            
             except Exception as e:
                 print(f"⚠️ Migración appointments UNIQUE: {e}")
     # ==========================================
@@ -1491,7 +1503,11 @@ class Database:
                     WHERE client_phone = ?
                     AND professional_phone = ?
                     AND status IN ('pendiente_confirmacion', 'confirmada')
-                    AND appointment_date >= DATE('now')
+                    AND (
+                        appointment_date > DATE('now','localtime')
+                        OR (appointment_date = DATE('now','localtime')
+                            AND end >= TIME('now','localtime'))
+                    )
                 """, (client_phone, professional_phone))
 
                 row = cursor.fetchone()
@@ -1532,7 +1548,11 @@ class Database:
                     FROM appointments
                     WHERE client_phone = ?
                     AND status IN ('pendiente_confirmacion', 'confirmada')
-                    AND appointment_date >= DATE('now')
+                    AND (
+                        appointment_date > DATE('now','localtime')
+                        OR (appointment_date = DATE('now','localtime')
+                            AND end >= TIME('now','localtime'))
+                    )
                 """, (client_phone,))
 
                 row = cursor.fetchone()
@@ -1543,6 +1563,49 @@ class Database:
 
         except Exception as e:
             print(f"[DB] ❌ Error contando turnos activos globales: {e}")
+            return 0
+
+    def complete_past_appointments(self) -> int:
+        """
+        Transición de ciclo de vida: marca como 'completada' toda cita
+        confirmada cuya hora de fin ya pasó (horario local).
+
+        Diseño:
+            - Solo toca status 'confirmada' — no pisa cancelaciones ni pendientes.
+            - Usa 'localtime' (DATE('now') a secas es UTC, corre 3hs adelantado).
+            - Compara contra 'end': un turno en curso NO se completa todavía.
+            - No inserta en appointment_history (operación masiva diaria;
+              completed_at ya deja el rastro temporal).
+
+        Llamado por: engine.job_complete_past (cron diario, 1 min antes
+        de los recordatorios).
+
+        Returns:
+            Cantidad de citas marcadas como completadas.
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE appointments
+                    SET status = 'completada',
+                        completed_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE status = 'confirmada'
+                    AND (
+                        appointment_date < DATE('now','localtime')
+                        OR (appointment_date = DATE('now','localtime')
+                            AND end < TIME('now','localtime'))
+                    )
+                """)
+                count = cursor.rowcount
+
+            if count:
+                print(f"[DB] ✅ {count} citas pasadas marcadas como 'completada'")
+            return count
+
+        except Exception as e:
+            print(f"[DB] ❌ Error completando citas pasadas: {e}")
             return 0
         
     def get_appointments_by_professional(
@@ -1697,13 +1760,11 @@ class Database:
                         status = 'confirmada',
                         updated_at = CURRENT_TIMESTAMP,
                         last_synced_at = NULL,
-                        -- FIX recordatorios: un cambio de fecha invalida el ciclo
-                        -- de recordatorio anterior. Sin este reset, un turno
-                        -- reprogramado queda con reminder_sent=1 y
-                        -- send_daily_reminders() nunca lo vuelve a incluir.
+                        -- Cambio de fecha invalida el ciclo de recordatorio anterior
                         reminder_sent = 0,
                         confirmed_by_client = 0,
-                        confirmed_by_client_at = NULL
+                        confirmed_by_client_at = NULL,
+                        confirmation_source = NULL
                     WHERE id = ?
                 """, (new_date, new_start_time, new_end_time, appointment_id))
 
@@ -2042,10 +2103,10 @@ class Database:
                 cursor.execute("""
                     UPDATE appointments 
                     SET 
-                        -- FIX recordatorios: si Google movió la fecha/hora,
-                        -- el recordatorio anterior queda inválido → reset.
+                        -- Si Google movió fecha u hora, el ciclo de recordatorio
+                        -- anterior queda inválido → reset completo.
                         -- Si el sync no cambió fecha/hora (ej: solo status),
-                        -- los flags se conservan intactos.
+                        -- los cuatro campos se conservan intactos.
                         reminder_sent = CASE
                             WHEN appointment_date != ? OR start != ?
                             THEN 0 ELSE reminder_sent END,
@@ -2055,6 +2116,9 @@ class Database:
                         confirmed_by_client_at = CASE
                             WHEN appointment_date != ? OR start != ?
                             THEN NULL ELSE confirmed_by_client_at END,
+                        confirmation_source = CASE
+                            WHEN appointment_date != ? OR start != ?
+                            THEN NULL ELSE confirmation_source END,
                         appointment_date = ?,
                         start = ?,
                         end = ?,
@@ -2063,9 +2127,12 @@ class Database:
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                 """, (
-                    google_event_data['date'], google_event_data['start'],
-                    google_event_data['date'], google_event_data['start'],
-                    google_event_data['date'], google_event_data['start'],
+                    # 4 pares (date, start) — uno por cada CASE, en orden:
+                    google_event_data['date'], google_event_data['start'],  # reminder_sent
+                    google_event_data['date'], google_event_data['start'],  # confirmed_by_client
+                    google_event_data['date'], google_event_data['start'],  # confirmed_by_client_at
+                    google_event_data['date'], google_event_data['start'],  # confirmation_source
+                    # asignaciones finales:
                     google_event_data['date'],
                     google_event_data['start'],
                     google_event_data['end'],
@@ -2278,11 +2345,11 @@ class Database:
             SET appointment_date = ?,
                 start = ?,
                 moved_from_offer_id = ?,
-                -- FIX recordatorios: turno adelantado por waitlist =
-                -- nueva fecha → el ciclo de recordatorio arranca de cero
+                -- Turno movido por waitlist = nueva fecha → ciclo de recordatorio de cero
                 reminder_sent = 0,
                 confirmed_by_client = 0,
-                confirmed_by_client_at = NULL
+                confirmed_by_client_at = NULL,
+                confirmation_source = NULL
             WHERE id = ?
         """
         
