@@ -16,14 +16,20 @@ Endpoints:
   GET  /                         → health check
 """
 import os
+import logging
 import importlib
 import threading
 import requests
+import atexit
+import fcntl
 from flask import Flask, request, jsonify
 from src.config.config import Config
 from src.config.domain_config import DomainConfig, load_preset
 from src.core.rate_limiter import rate_limiter, RateLimiter
 from src.core.logger import _sanitize
+from src.integrations.scheduler.engine import scheduler_engine
+
+logger = logging.getLogger(__name__)
 
 # ── Validador Meta (reemplaza twilio_validator) ───────────────────────────────
 from src.security.meta_validator import (
@@ -88,13 +94,43 @@ app = Flask(__name__)
 os.makedirs(Config.CERTIFICATES_DIR, exist_ok=True)
 
 # ── Scheduler ──────────────────────────────────────────────────────────────────
-# Se inicia a nivel de módulo para que gunicorn también lo arranque.
+# EXACTAMENTE UN proceso debe correr el scheduler. Dos guards complementarios:
+#
+#   Guard 1 — Reloader de Flask (debug): werkzeug crea un proceso padre
+#   vigilante y un hijo que sirve. Solo el hijo tiene WERKZEUG_RUN_MAIN='true'.
+#   El padre NO debe arrancar el scheduler.
+#
+#   Guard 2 — File lock inter-proceso (fcntl.flock): red de seguridad por si
+#   mañana se corre con gunicorn multi-worker. Solo el primer proceso que
+#   agarra el lock arranca; el lock se libera solo cuando el proceso muere.
+#
 # En development los jobs no se disparan solos (solo via comando secreto).
 # En production corren según REMINDER_TIME definido en .env.
-import atexit
-from src.integrations.scheduler.engine import scheduler_engine
-scheduler_engine.start()
-atexit.register(scheduler_engine.stop)
+
+_scheduler_lock = None  # referencia viva: si el archivo se cierra, el lock se libera
+
+def _start_scheduler_once() -> None:
+    global _scheduler_lock
+
+    # Guard 1: proceso padre del reloader → no arranca
+    if Config.FLASK_DEBUG and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        logger.info("[SCHEDULER] ⏭️ Proceso padre del reloader — scheduler omitido")
+        return
+
+    # Guard 2: lock exclusivo no-bloqueante → solo un proceso lo consigue
+    lock_file = open('/tmp/scheduler.lock', 'w')
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        logger.info("[SCHEDULER] ⏭️ Otro proceso ya corre el scheduler — omitido")
+        return
+
+    _scheduler_lock = lock_file  # mantener vivo el lock toda la vida del proceso
+    scheduler_engine.start()
+    atexit.register(scheduler_engine.stop)
+
+_start_scheduler_once()
 # ──────────────────────────────────────────────────────────────────────────────
 
 
