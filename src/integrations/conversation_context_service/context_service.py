@@ -270,7 +270,11 @@ class ContextService:
                     JOIN appointments a ON r.appointment_id = a.id
                     WHERE r.client_phone = ?
                     AND r.status = 'sent'
-                    AND a.appointment_date >= DATE('now')
+                    AND (
+                        a.appointment_date > DATE('now','localtime')
+                        OR (a.appointment_date = DATE('now','localtime')
+                            AND a.end >= TIME('now','localtime'))
+                    )
                 """, (client_phone,)).fetchone()
                 return row['cnt'] > 0
         except Exception:
