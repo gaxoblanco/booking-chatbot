@@ -36,21 +36,32 @@ class WaitlistService:
     # =========================================================================
     
     def handle_slot_freed(
-        self, 
+        self,
         freed_appointment_id: int,
-        reason: str = "cancelled"
+        reason: str = 'cancelled',
+        freed_date: str = None,
+        freed_time: str = None,
     ) -> Dict:
         """
         Función principal cuando se libera un turno.
-        
+
+        ⚠️ Llamar SOLO desde el punto de commit (cuando la BD ya confirmó
+        que el horario quedó vacante), nunca cuando el paciente apenas
+        declara la intención de cancelar o reprogramar.
+
         Se llama desde:
-        - appointment_service.cancel_appointment()
-        - appointment_service.reschedule_appointment()
-        
+        - client_handler.handle_confirm_cancel()        → tras el commit a 'cancelada_cliente'
+        - client_handler.handle_client_reschedule_confirm() → tras el commit de la nueva fecha
+
         Args:
             freed_appointment_id: ID de la cita que se liberó
             reason: 'cancelled' o 'rescheduled'
-        
+            freed_date: fecha del slot liberado (YYYY-MM-DD). Obligatorio en
+                        reprogramaciones: después del commit la fila ya tiene
+                        la fecha NUEVA, así que la vieja debe pasarse acá.
+                        En cancelaciones se omite (se lee de la BD).
+            freed_time: hora del slot liberado (HH:MM). Misma lógica.
+
         Returns:
             {
                 'success': True/False,
@@ -61,29 +72,46 @@ class WaitlistService:
         logger.info("=" * 60)
         logger.info(f"🔓 TURNO LIBERADO - ID #{freed_appointment_id}")
         logger.info("=" * 60)
-        
+
         try:
             # Paso 1: Obtener datos del turno liberado
             freed_apt = self.db.get_appointment(freed_appointment_id)
-            
+
             if not freed_apt:
                 logger.error(f"Cita #{freed_appointment_id} no encontrada")
                 return {'success': False}
-            
-            logger.info(f"📅 Turno liberado:")
-            logger.info(f"   Profesional: {freed_apt['professional_phone']}")
-            logger.info(f"   Fecha: {freed_apt['appointment_date']}")
-            logger.info(f"   Hora: {freed_apt['start']}")
-            
+
+            # ── CAMBIO 1: determinar el slot que realmente quedó vacante ──────
+            # Cancelación   → la fila conserva su fecha/hora: se leen de la BD.
+            # Reprogramación → la fila YA tiene la fecha nueva, así que usamos
+            #                  la fecha/hora viejas que pasó el llamador.
+            freed_slot = dict(freed_apt)
+            if freed_date:
+                freed_slot['appointment_date'] = freed_date
+            if freed_time:
+                freed_slot['start'] = freed_time
+
+            logger.info(f"📅 Turno liberado ({reason}):")
+            logger.info(f"   Profesional: {freed_slot['professional_phone']}")
+            logger.info(f"   Fecha: {freed_slot['appointment_date']}")
+            logger.info(f"   Hora: {freed_slot['start']}")
+
             # Paso 2: Buscar candidatos
             candidates = self._find_candidates(
-                professional_phone=freed_apt['professional_phone'],
-                freed_date=freed_apt['appointment_date'],
-                freed_time=freed_apt['start']
+                professional_phone=freed_slot['professional_phone'],
+                freed_date=freed_slot['appointment_date'],
+                freed_time=freed_slot['start'],
+                # ── CAMBIO 2: excluir a quien liberó el turno ──────────────
+                # Sin esto el propio paciente recibe una oferta para volver
+                # al horario que acaba de dejar.
+                exclude_phone=freed_slot['client_phone'],
+                # ── CAMBIO 3: habilitar exclusión de cascada ───────────────
+                # Sin este ID el filtro de "ya rechazó este slot" usa -1.
+                freed_apt_id=freed_appointment_id,
             )
-            
+
             logger.info(f"👥 Candidatos encontrados: {len(candidates)}")
-            
+
             if not candidates:
                 logger.info("✅ No hay candidatos para ofrecer el turno")
                 return {
@@ -91,16 +119,19 @@ class WaitlistService:
                     'offered_to': None,
                     'candidates_found': 0
                 }
-            
+
             # Paso 3: Ofrecer al primer candidato
             first_candidate = candidates[0]
-            
+
             success = self._send_offer(
                 freed_appointment_id=freed_appointment_id,
                 candidate=first_candidate,
-                freed_apt=freed_apt
+                # ── CAMBIO 4: pasar el slot corregido ──────────────────────
+                # Si acá fuera freed_apt, el mensaje de oferta mostraría el
+                # horario NUEVO en vez del que se liberó.
+                freed_apt=freed_slot
             )
-            
+
             if success:
                 logger.info(f"✅ Oferta enviada a {first_candidate['client_phone']}")
                 return {
@@ -114,13 +145,13 @@ class WaitlistService:
                     'success': False,
                     'candidates_found': len(candidates)
                 }
-                
+
         except Exception as e:
             logger.error(f"Error en handle_slot_freed: {e}")
             import traceback
             traceback.print_exc()
             return {'success': False}
-    
+        
     # =========================================================================
     # BÚSQUEDA DE CANDIDATOS
     # =========================================================================
@@ -284,6 +315,28 @@ class WaitlistService:
             slot_template_name = os.getenv('META_SLOT_OFFER_TEMPLATE_NAME')
             slot_template_lang = os.getenv('META_SLOT_OFFER_TEMPLATE_LANG', 'es_AR')
 
+            # Construir las 6 variables que espera el template 'oferta_turno_para_adelantar':
+            #   {{1}} profesional        {{2}} fecha liberada   {{3}} hora liberada
+            #   {{4}} fecha turno actual {{5}} hora turno actual {{6}} minutos de expiración
+            # Faltaban por completo → Meta rechazaba con error 132000.
+            slot_variables = None
+            if slot_template_name:
+                import json
+                dias = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+
+                def _fecha_larga(fecha_str: str) -> str:
+                    d = datetime.strptime(fecha_str, "%Y-%m-%d")
+                    return f"{dias[d.weekday()]} {d.strftime('%d/%m/%Y')}"
+
+                slot_variables = json.dumps({
+                    "1": freed_apt.get('professional_name', 'tu profesional'),
+                    "2": _fecha_larga(freed_apt['appointment_date']),   # turno liberado
+                    "3": freed_apt['start'],                             # hora liberada
+                    "4": _fecha_larga(candidate['appointment_date']),   # turno actual candidato
+                    "5": candidate['start'],                             # hora actual candidato
+                    "6": str(self.offer_expiration_minutes),            # minutos de expiración
+                })
+
             sent = message_sender.send_with_retry(
                 to_phone           = candidate['client_phone'],
                 message            = message,
@@ -291,6 +344,7 @@ class WaitlistService:
                 patient_name       = candidate.get('client_name'),
                 appointment_id     = candidate.get('id'),
                 content_sid        = slot_template_name or None,
+                content_variables  = slot_variables,          # ← lo que faltaba
                 template_lang      = slot_template_lang if slot_template_name else None,
             )
 
