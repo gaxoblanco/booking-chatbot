@@ -321,8 +321,8 @@ class MessageSender:
                 # Convertir variables a formato de componentes de Meta
                 # Meta espera una lista de parámetros, no un dict con keys "1", "2"...
                 parameters = [
-                    {'type': 'text', 'text': str(v)}
-                    for v in variables.values()
+                    {'type': 'text', 'text': str(variables[k])}
+                    for k in sorted(variables.keys(), key=lambda x: int(x))
                 ]
 
                 payload = {
@@ -338,6 +338,8 @@ class MessageSender:
                         }] if parameters else [],
                     }
                 }
+                # DEBUG temporal — ver qué se manda a Meta
+                logger.info(f"[DEBUG-PAYLOAD] {content_sid}: {len(parameters)} params → {_json.dumps(payload['template']['components'])}")
 
             # ── Modo mensaje libre ────────────────────────────────────────────
             else:
