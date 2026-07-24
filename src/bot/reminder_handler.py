@@ -287,12 +287,8 @@ def handle_reminder_response(session: SessionData, message: str) -> str:
             session.set_temp('new_date', None)
             session.set_temp('new_date_str', None)
             session.set_temp('reschedule_dates_shown', False)
-            threading.Thread(
-                target=_trigger_waitlist,
-                args=(apt_id, 'rescheduled'),
-                daemon=True,
-                name=f"waitlist-reminder-{apt_id}"
-            ).start()
+            # Waitlist eliminada de acá: el turno todavía es del paciente.
+            # Se dispara al confirmar la nueva fecha (client_handler).
 
         # Ir directo a selección de fecha — sin mensaje intermedio
         from src.bot.client_handler import ClientHandler
@@ -310,12 +306,8 @@ def handle_reminder_response(session: SessionData, message: str) -> str:
             session.clear_temp()
             session.set_temp('appointment_id', apt_id)
             session.set_temp('from_reminder', True)
-            threading.Thread(
-                target=_trigger_waitlist,
-                args=(apt_id, 'cancelled'),
-                daemon=True,
-                name=f"waitlist-reminder-{apt_id}"
-            ).start()
+            # Waitlist eliminada: la cancelación aún no se confirmó.
+            # El disparo correcto ya existe en client_handler tras el commit.
         session.transition_to(ConversationState.CLIENT_CANCEL_APPOINTMENT)
         return result['message']
 
@@ -326,7 +318,7 @@ def handle_reminder_response(session: SessionData, message: str) -> str:
 # =========================================================================
 # PASO 4 — WAITLIST (sin cambios respecto a v1.0)
 # =========================================================================
-
+# Deprecada _trigger_waitlist()
 def _trigger_waitlist(appointment_id: int, reason: str = 'cancelled') -> None:
     """
     Dispara la lógica de waitlist para un slot liberado.
