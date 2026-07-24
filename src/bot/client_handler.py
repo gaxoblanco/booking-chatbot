@@ -15,6 +15,7 @@ Responsabilidades:
 Este archivo contiene ~800 líneas de lógica específica del cliente.
 """
 from email.mime import message
+import threading
 from typing import Dict
 from venv import logger
 from requests import session
@@ -29,6 +30,7 @@ from src.utils.validators import validate_name, validate_phone_ar, validate_age
 from src.core.validators import parse_date, validate_time
 from src.services.client_service import client_service
 from src.services.analytics_service import analytics_service
+from src.services import waitlist_service
 from src.database.database import db
 from src.core.normalizers import normalize_confirm_single, normalize_yes_no
 from src.filters.filter_manager import FilterManager
@@ -2564,10 +2566,16 @@ class ClientHandler:
             session.transition_to(ConversationState.CLIENT_MAIN_MENU)
             return "❌ Error: Datos incompletos\n\n" + client_messages.CLIENT_MAIN_MENU
 
+        # Capturar el slot VIEJO antes de mover la cita: después del commit
+        # la fila ya tiene la fecha nueva y este dato se pierde.
+        old_apt   = db.get_appointment(int(appointment_id))
+        old_date  = old_apt['appointment_date'] if old_apt else None
+        old_start = old_apt['start'] if old_apt else None
+
         # Actualizar cita en BD
         calendar_service = AppointmentCalendarService(db)
         success = calendar_service.reschedule_appointment(
-            appointment_id=int(appointment_id),  # ← fix Pylance
+            appointment_id=int(appointment_id),
             new_date=new_date,
             new_start_time=new_start_time,
             new_end_time=new_end_time
@@ -2575,6 +2583,22 @@ class ClientHandler:
 
         if not success:
             return "❌ Error al reprogramar la cita. Intentá nuevamente.\n\n_Escribí *0* para volver_"
+
+        # ── COMMIT CONFIRMADO ──────────────────────────────────────────────
+        # Recién ahora el horario viejo quedó vacante y puede ofrecerse.
+        # En hilo aparte para no demorar la respuesta al paciente.
+        if old_date and old_start:
+            threading.Thread(
+                target = waitlist_service.handle_slot_freed,
+                kwargs = {
+                    'freed_appointment_id': int(appointment_id),
+                    'reason':               'rescheduled',
+                    'freed_date':           old_date,
+                    'freed_time':           old_start,
+                },
+                daemon = True,
+                name   = f"waitlist-reschedule-{appointment_id}",
+            ).start()
 
         session.transition_to(ConversationState.CLIENT_CANCEL_SUCCESS)
 
